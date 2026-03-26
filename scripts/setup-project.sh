@@ -689,6 +689,190 @@ do_release() {
     fi
 }
 
+# ─── Setup git remote ─────────────────────────────────────────────────────────
+setup_git_remote() {
+    # Check if remote already exists
+    if git remote get-url origin &>/dev/null 2>&1; then
+        local current_remote=$(git remote get-url origin)
+        success "Remote origin already set: $current_remote"
+        echo ""
+        read -p "  Change remote? (y/N): " change_remote
+        if [[ ! "$change_remote" =~ ^[Yy] ]]; then
+            return
+        fi
+    fi
+
+    header "Git Remote Setup"
+
+    echo "  How would you like to set up the remote?"
+    echo ""
+    echo "  1) Enter GitHub repo URL (SSH or HTTPS)"
+    echo "  2) Create new repo on GitHub (requires 'gh' CLI)"
+    echo "  3) Skip for now"
+    echo ""
+    read -p "  Choice [1/2/3]: " choice
+
+    case "$choice" in
+        1)
+            echo ""
+            echo "  Examples:"
+            echo "    SSH:   git@github.com:username/repo.git"
+            echo "    HTTPS: https://github.com/username/repo.git"
+            echo ""
+            read -p "  Repo URL: " repo_url
+
+            if [ -z "$repo_url" ]; then
+                warn "No URL entered. Skipping remote setup."
+                return
+            fi
+
+            if git remote get-url origin &>/dev/null 2>&1; then
+                git remote set-url origin "$repo_url"
+            else
+                git remote add origin "$repo_url"
+            fi
+            success "Remote origin set to: $repo_url"
+
+            # Test connection
+            echo ""
+            info "Testing connection..."
+            if git ls-remote origin &>/dev/null 2>&1; then
+                success "Connection successful!"
+            else
+                warn "Could not connect to remote. Check URL and permissions."
+                echo ""
+                echo "  Common fixes:"
+                echo "    - SSH: Ensure your SSH key is added to GitHub"
+                echo "      Test: ssh -T git@github.com"
+                echo "    - SSH alias: If using SSH config aliases, use that hostname"
+                echo "      Example: git@github.com-myalias:user/repo.git"
+                echo "    - HTTPS: You may need a personal access token"
+                echo ""
+                read -p "  Enter corrected URL (or press Enter to skip): " corrected_url
+                if [ -n "$corrected_url" ]; then
+                    git remote set-url origin "$corrected_url"
+                    success "Remote updated to: $corrected_url"
+                fi
+            fi
+            ;;
+        2)
+            if ! command -v gh &>/dev/null; then
+                error "'gh' CLI not installed. Install from: https://cli.github.com"
+                echo ""
+                read -p "  Enter repo URL manually instead: " repo_url
+                if [ -n "$repo_url" ]; then
+                    git remote add origin "$repo_url" 2>/dev/null || git remote set-url origin "$repo_url"
+                    success "Remote origin set to: $repo_url"
+                fi
+                return
+            fi
+
+            local repo_name=$(basename "$(pwd)")
+            echo ""
+            read -p "  Repo name [$repo_name]: " custom_name
+            repo_name=${custom_name:-$repo_name}
+
+            echo ""
+            echo "  Visibility:"
+            echo "    1) Private (default)"
+            echo "    2) Public"
+            read -p "  Choice [1/2]: " visibility
+            local vis_flag="--private"
+            if [ "$visibility" = "2" ]; then
+                vis_flag="--public"
+            fi
+
+            info "Creating GitHub repo: $repo_name..."
+            if gh repo create "$repo_name" $vis_flag --source=. --remote=origin 2>&1; then
+                success "GitHub repo created and remote set!"
+            else
+                error "Failed to create repo. Check 'gh auth status'."
+            fi
+            ;;
+        3)
+            info "Skipping remote setup. You can add it later:"
+            echo "    git remote add origin <your-repo-url>"
+            ;;
+        *)
+            warn "Invalid choice. Skipping remote setup."
+            ;;
+    esac
+}
+
+# ─── Initial commit and push ─────────────────────────────────────────────────
+initial_commit_and_push() {
+    header "Initial Commit & Push"
+
+    # Check if there are files to commit
+    local staged=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+    local untracked=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')
+    local modified=$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+
+    if [ "$staged" = "0" ] && [ "$untracked" = "0" ] && [ "$modified" = "0" ]; then
+        success "Nothing to commit — working tree clean"
+        return
+    fi
+
+    echo "  Changes detected:"
+    [ "$untracked" != "0" ] && echo "    $untracked untracked file(s)"
+    [ "$modified" != "0" ] && echo "    $modified modified file(s)"
+    [ "$staged" != "0" ] && echo "    $staged staged file(s)"
+    echo ""
+
+    read -p "  Commit and push all changes? (Y/n): " do_commit
+    if [[ "$do_commit" =~ ^[Nn] ]]; then
+        info "Skipping commit. You can do it manually later."
+        return
+    fi
+
+    # Stage all files (respecting .gitignore)
+    git add -A
+
+    # Show what will be committed
+    echo ""
+    info "Files to commit:"
+    git diff --cached --stat | tail -5
+    echo ""
+
+    # Commit
+    local default_msg="chore: initial project setup with CI/CD pipeline"
+    read -p "  Commit message [$default_msg]: " commit_msg
+    commit_msg=${commit_msg:-$default_msg}
+
+    git commit -m "$commit_msg"
+    success "Committed!"
+
+    # Push
+    if git remote get-url origin &>/dev/null 2>&1; then
+        echo ""
+        read -p "  Push to origin? (Y/n): " do_push
+        if [[ ! "$do_push" =~ ^[Nn] ]]; then
+            local branch=$(git branch --show-current)
+            info "Pushing to origin/$branch..."
+            if git push -u origin "$branch" 2>&1; then
+                success "Pushed successfully!"
+                echo ""
+                local remote_url=$(git remote get-url origin 2>/dev/null | sed 's/git@github.com[^:]*:/https:\/\/github.com\//' | sed 's/\.git$//')
+                if [ -n "$remote_url" ]; then
+                    info "View your repo: $remote_url"
+                    info "Check CI status: ${remote_url}/actions"
+                fi
+            else
+                error "Push failed. Check remote URL and permissions."
+                echo ""
+                echo "  Try:"
+                echo "    git remote -v                    # Check remote URL"
+                echo "    ssh -T git@github.com            # Test SSH connection"
+                echo "    git push -u origin $branch       # Retry push"
+            fi
+        fi
+    else
+        warn "No remote configured. Add one and push manually:"
+        echo "    git remote add origin <your-repo-url>"
+        echo "    git push -u origin $(git branch --show-current)"
+    fi
+}
+
 # ─── Full setup ───────────────────────────────────────────────────────────────
 full_setup() {
     local target_dir=${1:-"."}
@@ -735,6 +919,12 @@ full_setup() {
     # Validate
     validate_project
 
+    # Setup git remote
+    setup_git_remote
+
+    # Initial commit and push
+    initial_commit_and_push
+
     # Summary
     header "Setup Complete!"
     echo "  Files created/updated:"
@@ -746,12 +936,11 @@ full_setup() {
     fi
     echo "    .git/hooks/pre-commit"
     echo ""
-    echo "  Next steps:"
-    echo "    1. Review and commit the generated files"
-    echo "    2. Push to GitHub"
-    echo "    3. Check Actions tab for CI status"
+    echo "  Available commands:"
+    echo "    ./scripts/setup-project.sh --validate      # Check CI readiness"
+    echo "    ./scripts/setup-project.sh --fix           # Auto-fix issues"
     if [ "$project_type" = "electron" ]; then
-        echo "    4. To release: ./scripts/setup-project.sh --release v1.0.0"
+        echo "    ./scripts/setup-project.sh --release v1.0.0  # Create release"
     fi
     echo ""
 }
