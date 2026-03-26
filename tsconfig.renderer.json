@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "renderer/src",
+    "outDir": "renderer/dist"
+  },
+  "include": ["renderer/src/**/*.ts"],
+  "exclude": ["node_modules", "app"]
+}

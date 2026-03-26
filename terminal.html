@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:">
+  <title>Terminal</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e2e; }
+    #terminal { width: 100%; height: 100%; }
+  </style>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+</head>
+<body>
+  <div id="terminal"></div>
+  <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+  <script>
+    const api = window.terminalAPI
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('sid')
+
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: "'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace",
+      theme: {
+        background: '#1e1e2e',
+        foreground: '#cdd6f4',
+        cursor: '#f5e0dc',
+        selectionBackground: '#45475a',
+        black: '#45475a',
+        red: '#f38ba8',
+        green: '#a6e3a1',
+        yellow: '#f9e2af',
+        blue: '#89b4fa',
+        magenta: '#f5c2e7',
+        cyan: '#94e2d5',
+        white: '#bac2de',
+      },
+    })
+
+    const fitAddon = new FitAddon.FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.loadAddon(new WebLinksAddon.WebLinksAddon())
+
+    terminal.open(document.getElementById('terminal'))
+    fitAddon.fit()
+
+    // Send initial size
+    const dims = fitAddon.proposeDimensions()
+    if (dims && sessionId) {
+      api.ptyResize(sessionId, dims.cols, dims.rows)
+    }
+
+    // Wire input → PTY
+    terminal.onData(function(data) {
+      if (sessionId) api.ptyInput(sessionId, data)
+    })
+
+    // Wire PTY output → terminal
+    api.onPtyData(function(sid, data) {
+      if (sid === sessionId) terminal.write(data)
+    })
+
+    // Handle PTY exit
+    api.onPtyExit(function(sid, exitCode) {
+      if (sid === sessionId) {
+        terminal.write('\r\n\x1b[90m[Session ended (exit ' + exitCode + ') — close this window]\x1b[0m\r\n')
+      }
+    })
+
+    // Handle resize
+    window.addEventListener('resize', function() {
+      fitAddon.fit()
+      var d = fitAddon.proposeDimensions()
+      if (d && sessionId) api.ptyResize(sessionId, d.cols, d.rows)
+    })
+
+    terminal.focus()
+  </script>
+</body>
+</html>
