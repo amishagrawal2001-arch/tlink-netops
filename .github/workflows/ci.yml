@@ -20,13 +20,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies (skip optional native modules)
-        run: npm install --ignore-optional 2>&1 || true
-
-      - name: Ensure TypeScript and webpack are available
-        run: |
-          npx tsc --version
-          npx webpack --version
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --ignore-optional
 
       - name: Build main process
         run: npx tsc -p tsconfig.main.json
@@ -34,7 +29,7 @@ jobs:
       - name: Build renderer
         run: npx webpack --config webpack.renderer.config.mjs --progress
 
-      - name: Build succeeded
+      - name: Build summary
         run: |
           echo "✅ Build passed!" >> $GITHUB_STEP_SUMMARY
           du -sh app/dist/ renderer/dist/ >> $GITHUB_STEP_SUMMARY
@@ -52,9 +47,9 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies (skip optional native modules)
-        run: npm install --ignore-optional 2>&1 || true
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --ignore-optional
 
       - name: Run tests
         continue-on-error: true
-        run: npx jest --ci --verbose 2>&1 || echo "⚠️ Some tests failed (pre-existing)"
+        run: npx jest --ci --verbose
