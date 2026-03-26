@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tlink NetOps</title>
+  <style>
+    :root {
+      /* Backgrounds */
+      --bg-app: #0d1117; --bg-toolbar: #161b22; --bg-palette: #0f1923;
+      --bg-canvas: #0a0f18; --bg-card: #141e2d; --bg-input: #0a1120;
+      --bg-hover: #1c2736; --bg-menubar: #1c2128; --bg-topbar: #0f1318;
+      --bg-menu: #161e2e;
+      /* Borders */
+      --border: #21262d; --border-panel: #1e2d42; --border-menu: #30363d;
+      /* Text */
+      --text: #c9d1d9; --text-muted: #8b949e; --text-heading: #dbeafe;
+      --text-secondary: #6e8099; --text-link: #58a6ff;
+      /* Accent colors */
+      --accent: #3b82f6; --accent-hover: #4d94f8; --accent-light: #58a6ff;
+      --accent-bright: #79c0ff;
+      --danger: #ef4444; --warning: #f59e0b; --success: #22c55e;
+      --node-select: #f0a500; --info: #38bdf8;
+      /* SVG / Canvas */
+      --link-stroke: #3a5a8a; --link-label: #5a7a9a;
+      /* Overlays */
+      --overlay-bg: rgba(0,0,0,0.65);
+      /* Opacity variants */
+      --accent-6: rgba(59,130,246,0.06); --accent-8: rgba(59,130,246,0.08);
+      --accent-10: rgba(59,130,246,0.10); --accent-12: rgba(59,130,246,0.12);
+      --accent-15: rgba(59,130,246,0.15); --accent-20: rgba(59,130,246,0.20);
+      --accent-25: rgba(59,130,246,0.25); --accent-30: rgba(59,130,246,0.30);
+      --accent-35: rgba(59,130,246,0.35); --accent-40: rgba(59,130,246,0.40);
+      --accent-45: rgba(59,130,246,0.45); --accent-55: rgba(59,130,246,0.55);
+      --danger-8: rgba(239,68,68,0.08); --danger-10: rgba(239,68,68,0.10);
+      --danger-12: rgba(239,68,68,0.12); --danger-15: rgba(239,68,68,0.15);
+      --danger-20: rgba(239,68,68,0.20); --danger-30: rgba(239,68,68,0.30);
+      --danger-40: rgba(239,68,68,0.40); --danger-50: rgba(239,68,68,0.50);
+      --danger-60: rgba(239,68,68,0.60); --danger-70: rgba(239,68,68,0.70);
+      --warning-6: rgba(245,158,11,0.06); --warning-8: rgba(245,158,11,0.08);
+      --warning-10: rgba(245,158,11,0.10); --warning-12: rgba(245,158,11,0.12);
+      --warning-15: rgba(245,158,11,0.15); --warning-20: rgba(245,158,11,0.20);
+      --warning-25: rgba(245,158,11,0.25); --warning-30: rgba(245,158,11,0.30);
+      --warning-50: rgba(245,158,11,0.50); --warning-light: #fbbf24;
+      --success-8: rgba(34,197,94,0.08); --success-10: rgba(34,197,94,0.10);
+      --success-12: rgba(34,197,94,0.12); --success-15: rgba(34,197,94,0.15);
+      --success-16: rgba(34,197,94,0.16); --success-20: rgba(34,197,94,0.20);
+      --success-30: rgba(34,197,94,0.30); --success-50: rgba(34,197,94,0.50);
+      --white-6: rgba(255,255,255,0.06);
+      --bg-app-95: rgba(13,17,23,0.95); --border-30: rgba(33,38,45,0.30);
+      --node-select-15: rgba(240,165,0,0.15); --node-select-20: rgba(240,165,0,0.20);
+      --border-panel-light: #2a3b53; --accent-light-hover: #79c0ff;
+      --accent-08: rgba(59,130,246,0.08); --accent-16: rgba(59,130,246,0.16);
+      --accent-22: rgba(59,130,246,0.22); --accent-24: rgba(59,130,246,0.24);
+      --accent-50: rgba(59,130,246,0.50);
+      --border-panel-30: rgba(30,45,66,0.30); --border-panel-50: rgba(30,45,66,0.50);
+      --success-40: rgba(34,197,94,0.40); --warning-40: rgba(245,158,11,0.40);
+    }
+    [data-theme="light"] {
+      --bg-app: #ffffff; --bg-toolbar: #f6f8fa; --bg-palette: #f0f2f5;
+      --bg-canvas: #fafbfc; --bg-card: #ffffff; --bg-input: #f0f2f5;
+      --bg-hover: #e8eaed; --bg-menubar: #f0f2f5; --bg-topbar: #f6f8fa;
+      --bg-menu: #ffffff;
+      --border: #d0d7de; --border-panel: #c8d1da; --border-menu: #d0d7de;
+      --text: #24292f; --text-muted: #57606a; --text-heading: #1f2328;
+      --text-secondary: #656d76; --text-link: #0969da;
+      --accent: #0969da; --accent-hover: #0550ae; --accent-light: #0969da;
+      --accent-bright: #0550ae;
+      --danger: #cf222e; --warning: #bf8700; --success: #1a7f37;
+      --node-select: #d4820a; --info: #0284c7;
+      --link-stroke: #6e8caa; --link-label: #57606a;
+      --overlay-bg: rgba(0,0,0,0.4);
+      --accent-6: rgba(9,105,218,0.06); --accent-8: rgba(9,105,218,0.08);
+      --accent-10: rgba(9,105,218,0.10); --accent-12: rgba(9,105,218,0.12);
+      --accent-15: rgba(9,105,218,0.15); --accent-20: rgba(9,105,218,0.20);
+      --accent-25: rgba(9,105,218,0.25); --accent-30: rgba(9,105,218,0.30);
+      --accent-35: rgba(9,105,218,0.35); --accent-40: rgba(9,105,218,0.40);
+      --accent-45: rgba(9,105,218,0.45); --accent-55: rgba(9,105,218,0.55);
+      --danger-8: rgba(207,34,46,0.08); --danger-10: rgba(207,34,46,0.10);
+      --danger-12: rgba(207,34,46,0.12); --danger-15: rgba(207,34,46,0.15);
+      --danger-20: rgba(207,34,46,0.20); --danger-30: rgba(207,34,46,0.30);
+      --danger-40: rgba(207,34,46,0.40); --danger-50: rgba(207,34,46,0.50);
+      --danger-60: rgba(207,34,46,0.60); --danger-70: rgba(207,34,46,0.70);
+      --warning-6: rgba(191,135,0,0.06); --warning-8: rgba(191,135,0,0.08);
+      --warning-10: rgba(191,135,0,0.10); --warning-12: rgba(191,135,0,0.12);
+      --warning-15: rgba(191,135,0,0.15); --warning-20: rgba(191,135,0,0.20);
+      --warning-25: rgba(191,135,0,0.25); --warning-30: rgba(191,135,0,0.30);
+      --warning-50: rgba(191,135,0,0.50); --warning-light: #e09400;
+      --success-8: rgba(26,127,55,0.08); --success-10: rgba(26,127,55,0.10);
+      --success-12: rgba(26,127,55,0.12); --success-15: rgba(26,127,55,0.15);
+      --success-16: rgba(26,127,55,0.16); --success-20: rgba(26,127,55,0.20);
+      --success-30: rgba(26,127,55,0.30); --success-50: rgba(26,127,55,0.50);
+      --white-6: rgba(0,0,0,0.04);
+      --bg-app-95: rgba(255,255,255,0.95); --border-30: rgba(208,215,222,0.30);
+      --node-select-15: rgba(212,130,10,0.15); --node-select-20: rgba(212,130,10,0.20);
+      --border-panel-light: #e1e4e8; --accent-light-hover: #0550ae;
+      --accent-08: rgba(9,105,218,0.08); --accent-16: rgba(9,105,218,0.16);
+      --accent-22: rgba(9,105,218,0.22); --accent-24: rgba(9,105,218,0.24);
+      --accent-50: rgba(9,105,218,0.50);
+      --border-panel-30: rgba(200,209,218,0.30); --border-panel-50: rgba(200,209,218,0.50);
+      --success-40: rgba(26,127,55,0.40); --warning-40: rgba(191,135,0,0.40);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-app) }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text) }
+  </style>
+</head>
+<body>
+  <app-shell>
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#3b82f6;font-size:18px">
+      Loading NetOps Designer…
+    </div>
+  </app-shell>
+  <script src="renderer/dist/index.js"></script>
+</body>
+</html>

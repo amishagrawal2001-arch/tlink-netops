@@ -1,0 +1,693 @@
+$radius:    10px;
+
+// ─── Overlay ──────────────────────────────────────────────────────────────────
+
+.builder-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(3px);
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+.builder-modal {
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: $radius;
+    width: 780px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+.builder-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.builder-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+
+    .builder-title-icon {
+        font-size: 18px;
+        color: var(--accent);
+    }
+}
+
+.builder-close-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+
+    &:hover { background: #2a1010; color: var(--danger); border-color: var(--danger) }
+}
+
+.builder-subtitle {
+    padding: 10px 20px 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+// ─── Step tabs ────────────────────────────────────────────────────────────────
+
+.builder-steps {
+    display: flex;
+    gap: 0;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.step-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+
+    .step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    &.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+
+        .step-num {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+    }
+
+    &.completed {
+        color: var(--success);
+
+        .step-num {
+            background: var(--success-20);
+            color: var(--success);
+            border-color: var(--success);
+        }
+    }
+
+    &:hover:not(.active) { color: var(--text) }
+}
+
+// ─── Body ─────────────────────────────────────────────────────────────────────
+
+.builder-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-track { background: transparent }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+.step-panel {
+    display: flex;
+    gap: 20px;
+}
+
+.step-main {
+    flex: 1;
+    min-width: 0;
+}
+
+// ─── Preview sidebar ──────────────────────────────────────────────────────────
+
+.step-preview {
+    width: 180px;
+    flex-shrink: 0;
+    background: var(--bg-palette);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    align-self: flex-start;
+}
+
+.preview-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.preview-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+
+    .preview-label {
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .preview-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        font-family: monospace;
+    }
+}
+
+// ─── Group cards ──────────────────────────────────────────────────────────────
+
+.groups-list, .rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.group-card, .rule-card {
+    background: var(--bg-palette);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.group-header, .rule-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.12s;
+
+    &:hover { background: var(--bg-card) }
+}
+
+.group-icon {
+    font-size: 16px;
+}
+
+.group-role {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+}
+
+.group-count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.group-expand {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+
+.group-remove, .rule-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.12s, background 0.12s;
+
+    &:hover { color: var(--danger); background: var(--danger-12) }
+}
+
+.group-body, .rule-body {
+    padding: 8px 14px 14px;
+    border-top: 1px solid var(--border);
+}
+
+.rule-header {
+    cursor: default;
+}
+
+.rule-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+}
+
+// ─── Form rows ────────────────────────────────────────────────────────────────
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+
+    > label {
+        flex: 0 0 110px;
+        font-size: 12px;
+        color: var(--text-muted);
+        text-align: right;
+    }
+
+    > input, > select {
+        flex: 1;
+        background: var(--bg-app);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 12px;
+        padding: 6px 10px;
+        outline: none;
+        transition: border-color 0.12s;
+
+        &:focus { border-color: var(--accent) }
+    }
+
+    > input[type='number'] { width: 80px; flex: 0 0 80px }
+
+    &.form-check {
+        > label {
+            flex: 1;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 12px;
+
+            input[type='checkbox'] {
+                accent-color: var(--accent);
+                width: 14px;
+                height: 14px;
+            }
+        }
+    }
+}
+
+.addr-section {
+    max-width: 440px;
+}
+
+.svc-profile-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 0 0 4px 120px;
+    line-height: 1.4;
+}
+
+// ─── Add buttons ──────────────────────────────────────────────────────────────
+
+.btn-add-group {
+    width: 100%;
+    padding: 10px;
+    background: var(--accent-08);
+    border: 1px dashed var(--accent-40);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+
+    &:hover {
+        background: var(--accent-16);
+        border-color: var(--accent);
+    }
+}
+
+// ─── Error ────────────────────────────────────────────────────────────────────
+
+.builder-error {
+    padding: 8px 20px;
+    background: var(--danger-12);
+    color: var(--danger);
+    font-size: 12px;
+    border-top: 1px solid var(--danger-30);
+}
+
+.builder-warning {
+    padding: 8px 12px;
+    background: var(--warning-12);
+    color: var(--warning);
+    font-size: 11px;
+    line-height: 1.4;
+    border-radius: 6px;
+    border: 1px solid var(--warning-30);
+    margin-top: 10px;
+}
+
+.rule-warning {
+    padding: 6px 14px 10px;
+    font-size: 11px;
+    color: var(--warning);
+    line-height: 1.3;
+    border-top: 1px dashed var(--warning-30);
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+.builder-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.footer-spacer { flex: 1 }
+
+.btn-secondary, .btn-primary {
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.btn-secondary {
+    background: var(--bg-palette);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+
+    &:hover { color: var(--text); border-color: var(--text-muted) }
+}
+
+.btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+
+    &:hover { background: var(--accent-hover) }
+}
+
+.btn-build {
+    background: var(--success);
+    border-color: var(--success);
+
+    &:hover { background: var(--success) }
+}
+
+// ─── Step 4: Preview ─────────────────────────────────────────────────────────
+
+.step-panel-preview {
+    flex-direction: column;
+    gap: 14px;
+}
+
+.preview-canvas {
+    background: var(--bg-palette);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.preview-svg {
+    width: 100%;
+    height: 100%;
+    padding: 12px;
+}
+
+.preview-link {
+    stroke: var(--text-muted);
+    stroke-width: 1.5;
+}
+
+.preview-link-trunk {
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-dasharray: none;
+}
+
+.preview-link-access {
+    stroke: var(--success);
+    stroke-width: 2;
+    stroke-dasharray: 6 3;
+}
+
+.preview-node {
+    circle {
+        stroke: rgba(255, 255, 255, 0.2);
+        stroke-width: 1.5;
+    }
+}
+
+.preview-node-label {
+    fill: var(--text-muted);
+    font-size: 10px;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.preview-endpoint {
+    fill: var(--bg-hover);
+    stroke: var(--text-muted);
+    stroke-width: 1;
+}
+
+.preview-endpoint-label {
+    fill: var(--text-muted);
+    font-size: 8px;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.preview-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+
+    .preview-stat {
+        padding: 0;
+
+        .preview-value {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+    }
+}
+
+.role-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+// ─── Service preview panel ──────────────────────────────────────────────────
+
+.svc-preview-panel {
+    background: var(--bg-palette);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+}
+
+.svc-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .svc-preview-icon { font-size: 16px; }
+
+    .svc-preview-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+    }
+}
+
+.svc-preview-section {
+    margin-bottom: 10px;
+}
+
+.svc-preview-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+}
+
+.svc-preview-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.svc-vlan-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--accent-10);
+    border: 1px solid var(--accent-25);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text);
+    font-family: monospace;
+}
+
+.svc-preview-rule {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    padding-left: 8px;
+    border-left: 2px solid var(--border);
+    margin-bottom: 4px;
+}
+
+.svc-preview-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.svc-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.svc-legend-line {
+    width: 20px;
+    height: 2px;
+    display: inline-block;
+    border-radius: 1px;
+
+    &.svc-legend-trunk  { background: var(--accent); }
+    &.svc-legend-access { background: var(--success); background: repeating-linear-gradient(90deg, var(--success) 0, var(--success) 6px, transparent 6px, transparent 9px); }
+    &.svc-legend-default { background: var(--text-muted); }
+}
+
+.svc-legend-endpoint {
+    width: 14px;
+    height: 9px;
+    display: inline-block;
+    background: var(--bg-hover);
+    border: 1px solid var(--text-muted);
+    border-radius: 2px;
+}
+
+// ─── Telemetry Options ────────────────────────────────────────────────────────
+
+.telemetry-options {
+    margin-top: 8px;
+    padding: 8px 0;
+    border-top: 1px dashed var(--border);
+}
+
+// ─── Advanced Overlay & VLAN Scaling ──────────────────────────────────────────
+
+.overlay-advanced {
+    margin-top: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+
+    .form-hint {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+}
+
+.vlan-bulk {
+    margin-top: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+}
+
+.vlan-bulk-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 10px;
+}
+
+.role-checks {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+}
+
+.role-check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.vlan-bulk-preview {
+    font-size: 11px;
+    color: var(--accent);
+    margin: 6px 0 8px 120px;
+}
+
+.btn-apply-vlans {
+    margin-left: 120px;
+    padding: 5px 14px;
+    font-size: 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    &:hover { opacity: 0.9; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+}

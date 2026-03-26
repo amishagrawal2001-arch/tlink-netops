@@ -1,0 +1,130 @@
+@import '~@xterm/xterm/css/xterm.css';
+
+.terminal-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+  border-top: 2px solid #45475a;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.terminal-resize-handle {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #181825;
+  border-bottom: 1px solid #313244;
+  padding: 0 4px;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
+.terminal-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  color: #a6adc8;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  white-space: nowrap;
+  max-width: 200px;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: #313244;
+    color: #cdd6f4;
+  }
+
+  &.active {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-bottom: 2px solid #89b4fa;
+  }
+
+  &.ended {
+    color: #6c7086;
+    font-style: italic;
+  }
+}
+
+.terminal-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminal-tab-close {
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0 2px;
+
+  &:hover {
+    opacity: 1;
+    color: #f38ba8;
+  }
+}
+
+.terminal-header-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.terminal-minimize {
+  background: transparent;
+  border: none;
+  color: #a6adc8;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 3px;
+
+  &:hover {
+    background: #313244;
+    color: #cdd6f4;
+  }
+}
+
+.terminal-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px;
+  min-height: 0;
+
+  // xterm.js container fills the body
+  ::ng-deep .xterm {
+    height: 100%;
+  }
+
+  ::ng-deep .xterm-viewport {
+    overflow-y: auto !important;
+  }
+}

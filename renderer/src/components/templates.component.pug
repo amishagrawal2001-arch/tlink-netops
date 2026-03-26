@@ -1,0 +1,59 @@
+.tpl-overlay((click)='close()')
+  .tpl-modal((click)='$event.stopPropagation()')
+    .tpl-header
+      .tpl-title
+        span.tpl-title-icon ▤
+        span Topology Templates
+      button.tpl-close-btn(type='button', title='Close', (click)='close()') ✕
+
+    .tpl-subtitle
+      span Choose a preset to instantly populate the canvas.
+      span.tpl-or  or
+      button.tpl-builder-link(type='button', (click)='openBuilder()') Build Custom
+
+    .tpl-search
+      input.tpl-search-input(
+        type='text',
+        placeholder='Search templates by name, vendor, description...',
+        [(ngModel)]='searchQuery',
+        (input)='onSearchChange()'
+      )
+      button.tpl-search-clear(
+        type='button',
+        *ngIf='searchQuery',
+        (click)='clearSearch()'
+      ) ✕
+
+    .tpl-filters
+      button.tpl-filter-btn(
+        type='button',
+        *ngFor='let tab of filterTabs',
+        [class.active]='activeFilter === tab.id',
+        (click)='setFilter(tab.id)'
+      )
+        span {{ tab.label }}
+        span.tpl-filter-count {{ countFor(tab.id) }}
+
+    .tpl-no-results(*ngIf='templates.length === 0')
+      span No templates found for "{{ searchQuery }}"
+
+    .tpl-grid
+      .tpl-card(
+        *ngFor='let tpl of templates',
+        [class.tpl-hovered]='hovered === tpl.id',
+        (mouseenter)='hovered = tpl.id',
+        (mouseleave)='hovered = null',
+        (click)='load(tpl)'
+      )
+        .tpl-card-icon {{ tpl.icon }}
+        .tpl-card-name {{ tpl.name }}
+        .tpl-card-desc {{ tpl.description }}
+        .tpl-card-meta
+          span.tpl-badge {{ tpl.nodes.length }} nodes
+          span.tpl-badge {{ tpl.links.length }} links
+          button.tpl-download-btn(
+            *ngIf='hasVendorNodes(tpl)',
+            type='button',
+            title='Download startup configs',
+            (click)='downloadConfig(tpl, $event)'
+          ) ⬇ Config

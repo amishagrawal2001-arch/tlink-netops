@@ -1,0 +1,9 @@
+node_modules/
+app/dist/
+renderer/dist/
+coverage/
+*.log
+*.topo.json
+*-inv.json
+.DS_Store
+.claude/

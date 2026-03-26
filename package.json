@@ -1,0 +1,95 @@
+{
+  "name": "tlink-netops",
+  "version": "1.0.0",
+  "description": "GNS3-like network topology designer built on Electron + Angular",
+  "main": "app/dist/main.js",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "webpack --config webpack.renderer.config.mjs --progress",
+    "build": "npm run build:main && npm run build:renderer",
+    "watch:renderer": "webpack --config webpack.renderer.config.mjs --watch --progress",
+    "watch:main": "tsc -p tsconfig.main.json --watch",
+    "start": "electron app/dist/main.js",
+    "dev": "concurrently \"npm run watch:main\" \"npm run watch:renderer\" \"wait-on renderer/dist/index.js && electron app/dist/main.js\"",
+    "test": "jest --verbose",
+    "test:watch": "jest --watch --verbose"
+  },
+  "devDependencies": {
+    "@angular/animations": "15.2.9",
+    "@angular/common": "15.2.9",
+    "@angular/compiler": "15.2.9",
+    "@angular/compiler-cli": "15.2.9",
+    "@angular/core": "15.2.9",
+    "@angular/forms": "15.2.9",
+    "@angular/platform-browser": "15.2.9",
+    "@angular/platform-browser-dynamic": "15.2.9",
+    "@babel/core": "^7.20.0",
+    "@ng-bootstrap/ng-bootstrap": "14.1.0",
+    "@ngtools/webpack": "^15.2.5",
+    "@popperjs/core": "^2.11.6",
+    "@tabby-gang/to-string-loader": "^1.1.7-beta.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "20.3.1",
+    "@types/ssh2": "^1.15.5",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "apply-loader": "2.0.0",
+    "babel-loader": "^9.1.2",
+    "bootstrap": "^5.3.8",
+    "concurrently": "^8.0.0",
+    "css-loader": "^6.7.3",
+    "electron": "38",
+    "electron-builder": "^26.0",
+    "file-loader": "^6.2.0",
+    "html-loader": "4.2.0",
+    "jest": "^30.2.0",
+    "ngx-toastr": "^16.0.2",
+    "pug": "^2.0.4",
+    "pug-html-loader": "1.1.5",
+    "pug-loader": "^2.4.0",
+    "raw-loader": "4.0.2",
+    "rxjs": "^7.5.7",
+    "sass": "^1.63.4",
+    "sass-loader": "^13.2.0",
+    "source-map-loader": "^4.0.1",
+    "ssh2": "^1.17.0",
+    "style-loader": "^3.3.1",
+    "svg-inline-loader": "^0.8.2",
+    "ts-jest": "^29.4.6",
+    "ts-loader": "^9.4.2",
+    "tslib": "^2.5.0",
+    "typescript": "^4.9.5",
+    "wait-on": "^7.0.0",
+    "webpack": "^5.86.0",
+    "webpack-cli": "^5.0.1",
+    "zone.js": "^0.13.0"
+  },
+  "build": {
+    "appId": "com.tlink.netops",
+    "productName": "Tlink NetOps",
+    "directories": {
+      "app": "."
+    },
+    "files": [
+      "app/dist/**",
+      "renderer/dist/**",
+      "index.html"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "category": "Utility"
+    }
+  },
+  "dependencies": {
+    "net-snmp": "^3.26.1",
+    "node-pty": "^1.1.0"
+  }
+}

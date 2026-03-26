@@ -1,0 +1,265 @@
+$radius:      6px;
+
+// ─── Reuse base layout from node-properties ───────────────────────────────────
+
+.props-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-palette);
+    color: var(--text);
+    font-size: 13px;
+    overflow: hidden;
+}
+
+.props-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-secondary);
+
+    .empty-icon { font-size: 32px; opacity: 0.2 }
+    .empty-msg  { font-size: 12px; text-align: center; max-width: 160px; line-height: 1.5 }
+}
+
+.props-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--accent);
+    background: var(--bg-card);
+    flex-shrink: 0;
+
+    &.link-header { border-bottom-color: var(--info) }
+}
+
+.props-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.link-header-badge {
+    font-size: 18px;
+    color: var(--info);
+}
+
+.props-node-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.props-close-btn {
+    background: none;
+    border: 1px solid var(--border-panel);
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: background 0.12s, color 0.12s;
+
+    &:hover { background: #2a1010; color: var(--danger); border-color: var(--danger) }
+}
+
+// ─── Connection summary ───────────────────────────────────────────────────────
+
+.link-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-panel);
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.link-endpoint {
+    flex: 1;
+    min-width: 0;
+}
+
+.endpoint-node {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.endpoint-port {
+    font-size: 11px;
+    color: var(--accent);
+    font-family: 'Courier New', monospace;
+}
+
+.link-icon {
+    font-size: 16px;
+    color: var(--info);
+    flex-shrink: 0;
+}
+
+// ─── Body ─────────────────────────────────────────────────────────────────────
+
+.props-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-track { background: transparent }
+    &::-webkit-scrollbar-thumb { background: var(--border-panel); border-radius: 2px }
+}
+
+.form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.form-input {
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    border-radius: $radius;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 9px;
+    outline: none;
+    transition: border-color 0.12s;
+    width: 100%;
+    box-sizing: border-box;
+
+    &:focus { border-color: var(--accent) }
+}
+
+.form-textarea {
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    border-radius: $radius;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 9px;
+    outline: none;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+
+    &:focus { border-color: var(--accent) }
+    &::placeholder { color: var(--text-secondary); opacity: 0.6 }
+}
+
+.form-divider {
+    height: 1px;
+    background: var(--border-panel);
+}
+
+// ─── Type / duplex toggle buttons ─────────────────────────────────────────────
+
+.type-btns {
+    display: flex;
+    gap: 6px;
+}
+
+.type-btn {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    color: var(--text-secondary);
+    border-radius: $radius;
+    padding: 6px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+
+    &:hover { border-color: var(--accent); color: var(--text) }
+    &.active { background: var(--accent-15); border-color: var(--accent); color: var(--accent) }
+}
+
+// ─── Bandwidth ────────────────────────────────────────────────────────────────
+
+.bw-current {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.bw-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.bw-btn {
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    color: var(--text-secondary);
+    border-radius: 5px;
+    padding: 3px 9px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+
+    &:hover { border-color: var(--accent); color: var(--text) }
+    &.active { background: var(--accent-15); border-color: var(--accent); color: var(--accent) }
+}
+
+// ─── Range slider ─────────────────────────────────────────────────────────────
+
+.range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.range-input {
+    flex: 1;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.range-val {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 600;
+    min-width: 36px;
+    text-align: right;
+}
+
+// ─── Delete button ────────────────────────────────────────────────────────────
+
+.btn-danger {
+    background: var(--danger-10);
+    border: 1px solid var(--danger-40);
+    color: var(--danger);
+    border-radius: $radius;
+    padding: 7px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.12s;
+
+    &:hover { background: var(--danger-20) }
+}

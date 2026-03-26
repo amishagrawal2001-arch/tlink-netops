@@ -1,0 +1,105 @@
+.props-panel(*ngIf='link')
+  //- ── Header ──────────────────────────────────────────────────────────────
+  .props-header.link-header
+    .props-header-left
+      .link-header-badge ⇄
+      .props-node-name Link
+    .props-header-right
+      button.props-close-btn(type='button', title='Close panel', (click)='close()') ✕
+
+  //- ── Connection summary card ─────────────────────────────────────────────
+  .link-summary
+    .link-endpoint
+      .endpoint-node {{ sourceNode?.label }}
+      .endpoint-port {{ sourcePortLabel }}
+    .link-icon ⇄
+    .link-endpoint
+      .endpoint-node {{ targetNode?.label }}
+      .endpoint-port {{ targetPortLabel }}
+
+  //- ── Body ────────────────────────────────────────────────────────────────
+  .props-body
+    //- Link type
+    .form-row
+      label.form-label Link Type
+      .type-btns
+        button.type-btn(
+          type='button',
+          [class.active]='draft.type === "ethernet"',
+          (click)='applyType("ethernet")'
+        ) Ethernet
+        button.type-btn(
+          type='button',
+          [class.active]='draft.type === "serial"',
+          (click)='applyType("serial")'
+        ) Serial
+
+    //- Bandwidth presets
+    .form-row
+      label.form-label Bandwidth
+      .bw-current {{ bandwidthLabel }}
+      .bw-presets
+        button.bw-btn(
+          type='button',
+          *ngFor='let p of bwPresets',
+          [class.active]='draft.bandwidth === p.value',
+          (click)='applyBandwidth(p.value)'
+        ) {{ p.label }}
+
+    //- Latency
+    .form-row
+      label.form-label Latency (ms)
+      input.form-input(
+        type='number',
+        min='0',
+        max='10000',
+        [(ngModel)]='draft.latency',
+        (blur)='applyLatency()'
+      )
+
+    //- Packet loss
+    .form-row
+      label.form-label Packet Loss (%)
+      .range-row
+        input.range-input(
+          type='range',
+          min='0', max='100', step='1',
+          [(ngModel)]='draft.packetLoss',
+          (change)='applyPacketLoss()'
+        )
+        span.range-val {{ draft.packetLoss ?? 0 }}%
+
+    //- Duplex
+    .form-row
+      label.form-label Duplex
+      .type-btns
+        button.type-btn(
+          type='button',
+          [class.active]='draft.duplex === "full"',
+          (click)='applyDuplex("full")'
+        ) Full
+        button.type-btn(
+          type='button',
+          [class.active]='draft.duplex === "half"',
+          (click)='applyDuplex("half")'
+        ) Half
+
+    .form-divider
+
+    //- Notes
+    .form-row
+      label.form-label Notes
+      textarea.form-textarea(
+        rows='4',
+        [(ngModel)]='draft.notes',
+        placeholder='Optional notes about this link',
+        (blur)='applyNotes()'
+      )
+
+    .form-divider
+
+    button.btn-danger(type='button', (click)='deleteLink()') Delete Link
+
+.props-empty(*ngIf='!link')
+  .empty-icon ⇄
+  .empty-msg Select a link on the canvas to view its properties

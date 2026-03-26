@@ -1,0 +1,13 @@
+.app-shell
+  tab-bar(
+    *ngIf='!isHelpMode',
+    [tabs]='tabMgr.tabs$ | async',
+    [activeId]='tabMgr.activeTabId$ | async',
+    (tabActivate)='onTabActivate($event)',
+    (tabClose)='onTabClose($event)',
+    (tabNew)='onTabNew()',
+    (tabRename)='onTabRename($event)',
+    (tabTearOut)='onTabTearOut($event)'
+  )
+  .tab-canvas-host(#tabHost='', [hidden]='isHelpMode')
+  help-view(*ngIf='isHelpMode')

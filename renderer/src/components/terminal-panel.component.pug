@@ -1,0 +1,17 @@
+.terminal-panel([hidden]='!visible', [style.height.px]='panelHeight')
+  .terminal-resize-handle((mousedown)='onResizeStart($event)')
+  .terminal-header
+    .terminal-tabs
+      button.terminal-tab(
+        *ngFor='let s of sessions',
+        type='button',
+        [class.active]='s.id === activeSessionId',
+        [class.ended]='s.ended',
+        (click)='activateSession(s.id)'
+      )
+        span.terminal-tab-label {{ s.label }}
+        span.terminal-tab-close((click)='$event.stopPropagation(); removeSession(s.id)') &times;
+    .terminal-header-actions
+      button.terminal-minimize(type='button', (click)='hidePanel()', title='Minimize terminal')
+        | &#9660;
+  .terminal-body(#terminalBody='')

@@ -1,0 +1,504 @@
+.builder-overlay((click)='close()')
+  .builder-modal((click)='$event.stopPropagation()')
+    //- ── Header ───────────────────────────────────────────────────────────
+    .builder-header
+      .builder-title
+        span.builder-title-icon ⬡
+        span Topology Builder
+      button.builder-close-btn(type='button', title='Close', (click)='close()') ✕
+
+    .builder-subtitle Build a custom topology with roles, links, and auto-addressing.
+
+    //- ── Step tabs ────────────────────────────────────────────────────────
+    .builder-steps
+      button.step-tab(
+        type='button',
+        [class.active]='step === 1',
+        [class.completed]='step > 1',
+        (click)='goStep(1)'
+      )
+        span.step-num 1
+        span Nodes
+      button.step-tab(
+        type='button',
+        [class.active]='step === 2',
+        [class.completed]='step > 2',
+        (click)='goStep(2)'
+      )
+        span.step-num 2
+        span Links
+      button.step-tab(
+        type='button',
+        [class.active]='step === 3',
+        [class.completed]='step > 3',
+        (click)='goStep(3)'
+      )
+        span.step-num 3
+        span Addressing
+      button.step-tab(
+        type='button',
+        [class.active]='step === 4',
+        (click)='goStep(4)'
+      )
+        span.step-num 4
+        span Preview
+
+    //- ── Step content ─────────────────────────────────────────────────────
+    .builder-body
+
+      //- ─── Step 1: Nodes ─────────────────────────────────────────────
+      .step-panel(*ngIf='step === 1')
+        .step-main
+          .groups-list
+            .group-card(
+              *ngFor='let g of groups; trackBy: trackById',
+            )
+              .group-header((click)='toggleGroup(g)')
+                span.group-icon {{ roleMeta[g.role].icon }}
+                span.group-role {{ roleMeta[g.role].label }}
+                span.group-count {{ g.count }} node{{ g.count === 1 ? '' : 's' }}
+                span.group-expand {{ g.expanded ? '▾' : '▸' }}
+                button.group-remove(
+                  type='button',
+                  title='Remove group',
+                  (click)='$event.stopPropagation(); removeGroup(g)'
+                ) ✕
+
+              .group-body(*ngIf='g.expanded')
+                .form-row
+                  label Role
+                  select([(ngModel)]='g.role', (ngModelChange)='onRoleChange(g)')
+                    option(*ngFor='let r of roles', [value]='r') {{ roleMeta[r].label }}
+                .form-row
+                  label Count
+                  input(type='number', min='1', max='64', [(ngModel)]='g.count')
+                .form-row
+                  label Vendor
+                  select([(ngModel)]='g.vendor', (ngModelChange)='onVendorChange(g)')
+                    option(*ngFor='let v of vendorOptions', [value]='v') {{ v || '— None —' }}
+                .form-row
+                  label Model
+                  select(*ngIf='getModelOptions(g).length', [(ngModel)]='g.model', (ngModelChange)='onModelChange(g)')
+                    option(*ngFor='let m of getModelOptions(g)', [value]='m.model') {{ m.model }} — {{ m.speed }}, {{ m.portCount }}p
+                  input(*ngIf='!getModelOptions(g).length', type='text', [(ngModel)]='g.model', placeholder='e.g. SN5600')
+                .form-row
+                  label Speed
+                  select([(ngModel)]='g.speed')
+                    option(*ngFor='let s of speedOptions', [value]='s') {{ s }}
+                .form-row
+                  label Ports
+                  input(type='number', min='2', max='128', [(ngModel)]='g.portCount')
+
+          button.btn-add-group(type='button', (click)='addGroup()') + Add Role Group
+
+        .step-preview
+          .preview-title Preview
+          .preview-stat
+            span.preview-label Total Nodes
+            span.preview-value {{ totalNodes }}
+          .preview-stat(*ngFor='let g of groups')
+            span.preview-label {{ roleMeta[g.role].label }}
+            span.preview-value {{ g.count }}
+
+      //- ─── Step 2: Links ─────────────────────────────────────────────
+      .step-panel(*ngIf='step === 2')
+        .step-main
+          .rules-list
+            .rule-card(*ngFor='let r of linkRules; trackBy: trackById')
+              .rule-header
+                span.rule-label Link Rule
+                button.rule-remove(
+                  type='button',
+                  title='Remove rule',
+                  (click)='removeLinkRule(r)'
+                ) ✕
+              .rule-body
+                .form-row
+                  label From
+                  select([(ngModel)]='r.sourceRole')
+                    option(*ngFor='let role of activeRoles', [value]='role') {{ roleMeta[role].label }}
+                .form-row
+                  label To
+                  select([(ngModel)]='r.targetRole')
+                    option(*ngFor='let role of activeRoles', [value]='role') {{ roleMeta[role].label }}
+                .form-row
+                  label Pattern
+                  select([(ngModel)]='r.pattern')
+                    option(*ngFor='let p of patternOptions', [value]='p.value') {{ p.label }}
+                .form-row
+                  label Links/Pair
+                  select([(ngModel)]='r.linksPerPair')
+                    option(*ngFor='let n of linksPerPairOptions', [ngValue]='n') {{ n }}
+              .rule-warning(*ngIf='getDualHomedWarning(r)') {{ getDualHomedWarning(r) }}
+
+          button.btn-add-group(type='button', (click)='addLinkRule()') + Add Link Rule
+
+        .step-preview
+          .preview-title Preview
+          .preview-stat
+            span.preview-label Est. Links
+            span.preview-value {{ estimatedLinks }}
+          .preview-stat
+            span.preview-label Est. Ports Used
+            span.preview-value {{ estimatedPorts }}
+          .preview-stat
+            span.preview-label Nodes
+            span.preview-value {{ totalNodes }}
+          .preview-stat
+            span.preview-label Available Ports
+            span.preview-value {{ totalAvailablePorts }}
+          .builder-warning(*ngIf='portCapacityWarning') {{ portCapacityWarning }}
+
+      //- ─── Step 3: Addressing ────────────────────────────────────────
+      .step-panel(*ngIf='step === 3')
+        .step-main
+          .addr-section
+            .form-row
+              label Topology Name
+              input(type='text', [(ngModel)]='topoName', placeholder='My Custom Topology')
+
+            .form-row
+              label IP Mode
+              select([(ngModel)]='ipConfig.mode')
+                option(*ngFor='let m of ipModes', [value]='m.value') {{ m.label }}
+
+            ng-container(*ngIf='ipConfig.mode === "ipv4" || ipConfig.mode === "dual"')
+              .form-row
+                label IPv4 Link Base
+                input(type='text', [(ngModel)]='ipConfig.ipv4Base', placeholder='10.0.0.0/16')
+              .form-row
+                label IPv4 Loopback Base
+                input(type='text', [(ngModel)]='ipConfig.loopbackV4', placeholder='172.16.0.0/24')
+
+            ng-container(*ngIf='ipConfig.mode === "ipv6" || ipConfig.mode === "dual"')
+              .form-row
+                label IPv6 Link Base
+                input(type='text', [(ngModel)]='ipConfig.ipv6Base', placeholder='2001:db8::/32')
+              .form-row
+                label IPv6 Loopback Base
+                input(type='text', [(ngModel)]='ipConfig.loopbackV6', placeholder='fd00::/64')
+
+            .form-row
+              label Service Profile
+              select([(ngModel)]='selectedServiceProfile', (ngModelChange)='onServiceProfileChange()')
+                option(value='') — None —
+                option(*ngFor='let sp of serviceProfiles', [value]='sp.id') {{ sp.icon }} {{ sp.name }}
+            .svc-profile-desc(*ngIf='selectedServiceProfile') {{ getServiceProfileDescription() }}
+
+            .form-row
+              label VLAN Template
+              select(
+                [(ngModel)]='selectedVlanTemplate',
+                [disabled]='!!selectedServiceProfile'
+              )
+                option(value='') — None —
+                option(*ngFor='let vt of vlanTemplates', [value]='vt.id') {{ vt.name }}
+            .svc-profile-desc(*ngIf='selectedServiceProfile && selectedVlanTemplate') Linked by service profile
+
+            .form-row.form-check
+              label
+                input(type='checkbox', [(ngModel)]='ipConfig.autoAssign')
+                span  Auto-assign IPs to link interfaces
+            .form-row.form-check
+              label
+                input(type='checkbox', [(ngModel)]='generateConfigs')
+                span  Generate vendor startup configs
+            .form-row.form-check
+              label
+                input(type='checkbox', [(ngModel)]='telemetryEnabled')
+                span  Enable gRPC/gNMI telemetry
+            .telemetry-options(*ngIf='telemetryEnabled')
+              .form-row
+                label Collector IP
+                input(type='text', [(ngModel)]='telCollectorIp', placeholder='10.0.0.100')
+              .form-row
+                label Collector Port
+                input(type='number', min='1', max='65535', [(ngModel)]='telCollectorPort')
+              .form-row
+                label Encoding
+                select([(ngModel)]='telEncoding')
+                  option(value='gpb') GPB (Protobuf)
+                  option(value='json') JSON
+                  option(value='json-ietf') JSON-IETF
+              .form-row
+                label Sample Interval
+                select([(ngModel)]='telSampleInterval')
+                  option([ngValue]='5') 5 seconds (real-time)
+                  option([ngValue]='10') 10 seconds
+                  option([ngValue]='30') 30 seconds (default)
+                  option([ngValue]='60') 60 seconds (low overhead)
+              .form-row.form-check
+                label
+                  input(type='checkbox', [(ngModel)]='telTls')
+                  span  Enable TLS
+
+            .form-row
+              label Underlay Protocol
+              select([(ngModel)]='underlayProtocol')
+                option(value='none') — None —
+                option(value='ebgp') eBGP Clos (unique ASN/node)
+                option(value='ibgp-rr') iBGP with Route Reflector
+                option(value='ospf') OSPF
+                option(value='ospfv3') OSPFv3 (IPv6)
+                option(value='isis') IS-IS
+            ng-container(*ngIf='underlayProtocol === "ebgp" || underlayProtocol === "ibgp-rr"')
+              .form-row
+                label Spine ASN Start
+                input(type='number', min='1', max='4294967295', [(ngModel)]='spineAsnStart')
+              .form-row(*ngIf='underlayProtocol === "ebgp"')
+                label Leaf ASN Start
+                input(type='number', min='1', max='4294967295', [(ngModel)]='leafAsnStart')
+            .form-row.form-check
+              label
+                input(
+                  type='checkbox',
+                  [(ngModel)]='overlayEnabled',
+                  [disabled]='underlayProtocol === "none" || underlayProtocol === "ospf" || underlayProtocol === "ospfv3" || underlayProtocol === "isis"'
+                )
+                span  Enable EVPN-VXLAN Overlay
+            .form-row(*ngIf='overlayEnabled && (underlayProtocol === "ebgp" || underlayProtocol === "ibgp-rr")')
+              label VNI Base
+              input(type='number', min='1', max='16777215', [(ngModel)]='vniBase')
+
+            //- Advanced VXLAN overlay options
+            .overlay-advanced(*ngIf='overlayEnabled && (underlayProtocol === "ebgp" || underlayProtocol === "ibgp-rr")')
+              .form-row
+                label IRB Mode
+                select([(ngModel)]='irbMode')
+                  option(value='none') None (L2 only)
+                  option(value='symmetric') Symmetric IRB (L3 VNI + Type-5 VRF)
+                  option(value='asymmetric') Asymmetric IRB (all VLANs on all leaves)
+              .form-row(*ngIf='irbMode !== "none"')
+                label Gateway Base
+                input(type='text', [(ngModel)]='irbGatewayBase', placeholder='192.168')
+                .form-hint Gateway IP: {{ irbGatewayBase }}.&lt;vlanId&gt;.1/24
+              //- Juniper-specific: MAC-VRF instances
+              .form-row.form-check(*ngIf='irbMode !== "none" && hasVendor("Juniper")')
+                label
+                  input(type='checkbox', [(ngModel)]='macVrfEnabled')
+                  span  MAC-VRF instances (Juniper — vlan-based/vlan-aware service types)
+              //- Cisco-specific: VRF tenant hint
+              .form-row.form-check(*ngIf='irbMode !== "none" && hasVendor("Cisco")')
+                label
+                  span  ℹ️ Cisco NX-OS: VRF TENANT-1 with L3 VNI auto-generated for symmetric IRB
+              //- Multicast optimization (vendor-independent)
+              .form-row.form-check(*ngIf='irbMode !== "none"')
+                label
+                  input(type='checkbox', [(ngModel)]='oismEnabled')
+                  span  OISM (multicast optimization)
+
+            //- Bulk VLAN generator
+            .vlan-bulk(*ngIf='overlayEnabled')
+              .vlan-bulk-title Bulk VLAN Generator
+              .form-row
+                label VLAN Range
+                input(type='text', [(ngModel)]='bulkVlanInput', placeholder='100-110 or 100,200,300', (input)='updateBulkVlanPreview()')
+              .form-row
+                label Name Prefix
+                input(type='text', [(ngModel)]='bulkVlanPrefix', placeholder='VLAN', (input)='updateBulkVlanPreview()')
+              .form-row(*ngIf='macVrfEnabled && hasVendor("Juniper")')
+                label MAC-VRF Type
+                select([(ngModel)]='bulkVlanMacVrfType')
+                  option(value='shared') VLAN-Aware (shared MAC-VRF)
+                  option(value='isolated') VLAN-Based (isolated per-VLAN MAC-VRF)
+              .form-row(*ngIf='macVrfEnabled && hasVendor("Juniper")')
+                .form-hint.macvrf-hint(style='margin-left: 120px')
+                  span(*ngIf='bulkVlanMacVrfType === "shared"') All VLANs grouped under one MAC-VRF with IRB gateway
+                  span(*ngIf='bulkVlanMacVrfType === "isolated"') Each VLAN gets a dedicated MAC-VRF (no IRB, firewall as gateway)
+              .form-row
+                label Apply to Roles
+                .role-checks
+                  label.role-check
+                    input(type='checkbox', [checked]='bulkVlanRoles.includes("leaf")', (change)='toggleBulkVlanRole("leaf")')
+                    span  Leaf
+                  label.role-check
+                    input(type='checkbox', [checked]='bulkVlanRoles.includes("border-leaf")', (change)='toggleBulkVlanRole("border-leaf")')
+                    span  Border-Leaf
+                  label.role-check
+                    input(type='checkbox', [checked]='bulkVlanRoles.includes("tor")', (change)='toggleBulkVlanRole("tor")')
+                    span  ToR
+              .vlan-bulk-preview(*ngIf='bulkVlanPreview')
+                span Will create {{ bulkVlanPreview.count }} VLANs ({{ bulkVlanPreview.range }})
+                span(*ngIf='macVrfEnabled')  — {{ bulkVlanMacVrfType === 'isolated' ? bulkVlanPreview.count + ' MAC-VRF instances' : '1 MAC-VRF instance' }}
+              button.btn-apply-vlans(type='button', (click)='applyBulkVlans()', [disabled]='!bulkVlanInput') Apply VLANs to Groups
+
+        .step-preview
+          .preview-title Summary
+          .preview-stat
+            span.preview-label Name
+            span.preview-value {{ topoName }}
+          .preview-stat
+            span.preview-label Nodes
+            span.preview-value {{ totalNodes }}
+          .preview-stat
+            span.preview-label Est. Links
+            span.preview-value {{ estimatedLinks }}
+          .preview-stat
+            span.preview-label IP Mode
+            span.preview-value {{ ipConfig.mode | uppercase }}
+          .preview-stat(*ngIf='ipConfig.mode === "ipv6" || ipConfig.mode === "dual"')
+            span.preview-label IPv6 Links
+            span.preview-value {{ ipConfig.ipv6Base }}
+          .preview-stat(*ngIf='ipConfig.mode === "ipv6" || ipConfig.mode === "dual"')
+            span.preview-label IPv6 Loopback
+            span.preview-value {{ ipConfig.loopbackV6 }}
+          .preview-stat
+            span.preview-label Auto IP
+            span.preview-value {{ ipConfig.autoAssign ? 'Yes' : 'No' }}
+          .preview-stat
+            span.preview-label Configs
+            span.preview-value {{ generateConfigs ? 'Yes' : 'No' }}
+          .preview-stat(*ngIf='telemetryEnabled')
+            span.preview-label Telemetry
+            span.preview-value gRPC/gNMI
+          .preview-stat(*ngIf='underlayProtocol !== "none"')
+            span.preview-label Underlay
+            span.preview-value {{ underlayProtocol === 'ebgp' ? 'eBGP' : underlayProtocol === 'ibgp-rr' ? 'iBGP-RR' : underlayProtocol === 'ospf' ? 'OSPF' : underlayProtocol === 'ospfv3' ? 'OSPFv3' : underlayProtocol === 'isis' ? 'IS-IS' : underlayProtocol }}
+          .preview-stat(*ngIf='overlayEnabled')
+            span.preview-label EVPN Overlay
+            span.preview-value VNI {{ vniBase }}+
+          .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
+            span.preview-label IRB Mode
+            span.preview-value {{ irbMode === 'symmetric' ? 'Symmetric (L3 VNI)' : 'Asymmetric' }}
+          .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
+            span.preview-label Gateway
+            span.preview-value {{ irbGatewayBase }}.&lt;vlan&gt;.1/24
+          .preview-stat(*ngIf='macVrfEnabled && overlayEnabled')
+            span.preview-label MAC-VRF
+            span.preview-value Enabled
+          .preview-stat(*ngIf='oismEnabled && overlayEnabled')
+            span.preview-label OISM
+            span.preview-value Enabled
+          .preview-stat(*ngIf='bulkVlanPreview && overlayEnabled')
+            span.preview-label VLANs
+            span.preview-value {{ bulkVlanPreview.count }} ({{ bulkVlanPreview.range }})
+
+      //- ─── Step 4: Preview ──────────────────────────────────────────
+      .step-panel.step-panel-preview(*ngIf='step === 4 && preview')
+        .preview-canvas
+          svg.preview-svg(
+            [attr.viewBox]='previewViewBox',
+            preserveAspectRatio='xMidYMid meet',
+            xmlns='http://www.w3.org/2000/svg'
+          )
+            //- Links — color-coded when service profile active, with port tooltips
+            svg:g.preview-links
+              ng-container(*ngIf='!servicePreview')
+                svg:g(*ngFor='let l of preview.links')
+                  svg:line.preview-link(
+                    [attr.x1]='preview.nodes[l.srcIdx].x',
+                    [attr.y1]='preview.nodes[l.srcIdx].y',
+                    [attr.x2]='preview.nodes[l.tgtIdx].x',
+                    [attr.y2]='preview.nodes[l.tgtIdx].y'
+                  )
+                  svg:title {{ preview.nodes[l.srcIdx].label }}:{{ l.srcPort || '?' }} \u2192 {{ preview.nodes[l.tgtIdx].label }}:{{ l.tgtPort || '?' }}
+              ng-container(*ngIf='servicePreview')
+                svg:g(*ngFor='let l of preview.links; let i = index')
+                  svg:line(
+                    [class.preview-link]='servicePreview.linkTypes[i] === "default"',
+                    [class.preview-link-trunk]='servicePreview.linkTypes[i] === "trunk"',
+                    [class.preview-link-access]='servicePreview.linkTypes[i] === "access"',
+                    [attr.x1]='preview.nodes[l.srcIdx].x',
+                    [attr.y1]='preview.nodes[l.srcIdx].y',
+                    [attr.x2]='preview.nodes[l.tgtIdx].x',
+                    [attr.y2]='preview.nodes[l.tgtIdx].y'
+                  )
+                  svg:title {{ preview.nodes[l.srcIdx].label }}:{{ l.srcPort || '?' }} \u2192 {{ preview.nodes[l.tgtIdx].label }}:{{ l.tgtPort || '?' }}
+            //- Free-port stubs (server/endpoint connections)
+            svg:g.preview-stubs(*ngIf='servicePreview?.freePortStubs?.length')
+              svg:g.preview-stub(*ngFor='let stub of servicePreview.freePortStubs')
+                svg:line(
+                  [attr.x1]='stub.x',
+                  [attr.y1]='stub.y + 18',
+                  [attr.x2]='stub.x',
+                  [attr.y2]='stub.endY',
+                  [class.preview-link-access]='stub.vlanMode === "access"',
+                  [class.preview-link-trunk]='stub.vlanMode === "trunk"'
+                )
+                svg:rect.preview-endpoint(
+                  [attr.x]='stub.x - 10',
+                  [attr.y]='stub.endY',
+                  width='20',
+                  height='12',
+                  rx='2'
+                )
+                svg:text.preview-endpoint-label(
+                  [attr.x]='stub.x',
+                  [attr.y]='stub.endY + 24'
+                ) {{ stub.label }}
+            //- Nodes as circles with labels and tooltips
+            svg:g.preview-node(*ngFor='let n of preview.nodes')
+              svg:circle(
+                [attr.cx]='n.x',
+                [attr.cy]='n.y',
+                r='18',
+                [attr.fill]='roleMeta[n.role].color'
+              )
+              svg:title {{ n.label }} \u2014 {{ roleMeta[n.role].label }}, Ports: {{ n.usedPorts ?? 0 }}/{{ n.portCount ?? '?' }}
+              svg:text.preview-node-label(
+                [attr.x]='n.x',
+                [attr.y]='n.y + 32'
+              ) {{ n.label }}
+
+        .preview-stats
+          .preview-stat
+            span.preview-label Nodes
+            span.preview-value {{ preview.nodes.length }}
+          .preview-stat
+            span.preview-label Links
+            span.preview-value {{ preview.links.length }}
+          .preview-stat
+            span.preview-label Ports Used
+            span.preview-value {{ preview.links.length * 2 }} / {{ totalAvailablePorts }}
+          .preview-stat(*ngFor='let r of activeRoles')
+            span.preview-label {{ roleMeta[r].label }}
+            span.preview-value
+              span.role-dot([style]='"background:" + roleMeta[r].color')
+              span {{ groupCountForRole(r) }}
+          .preview-stat(*ngIf='overlayEnabled')
+            span.preview-label Overlay
+            span.preview-value EVPN-VXLAN
+          .preview-stat(*ngIf='bulkVlanPreview')
+            span.preview-label VLANs
+            span.preview-value {{ bulkVlanPreview.count }}
+          .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
+            span.preview-label IRB
+            span.preview-value {{ irbMode === 'symmetric' ? 'Sym' : 'Asym' }}
+
+        //- Service profile details
+        .svc-preview-panel(*ngIf='servicePreview')
+          .svc-preview-header
+            span.svc-preview-icon {{ servicePreview.profileIcon }}
+            span.svc-preview-name {{ servicePreview.profileName }}
+          .svc-preview-section
+            .svc-preview-section-title VLANs
+            .svc-preview-tags
+              span.svc-vlan-tag(*ngFor='let v of servicePreview.vlanNames') {{ v }}
+          .svc-preview-section
+            .svc-preview-section-title Port Rules
+            .svc-preview-rule(*ngFor='let r of servicePreview.ruleSummaries') {{ r }}
+          .svc-preview-legend
+            .svc-legend-item
+              span.svc-legend-line.svc-legend-trunk
+              span Trunk
+            .svc-legend-item
+              span.svc-legend-line.svc-legend-access
+              span Access
+            .svc-legend-item
+              span.svc-legend-line.svc-legend-default
+              span Default
+            .svc-legend-item(*ngIf='servicePreview.freePortStubs.length')
+              span.svc-legend-endpoint
+              span Endpoints
+
+    //- ── Error bar ────────────────────────────────────────────────────────
+    .builder-error(*ngIf='buildError') {{ buildError }}
+
+    //- ── Footer ───────────────────────────────────────────────────────────
+    .builder-footer
+      button.btn-secondary(type='button', (click)='close()') Cancel
+      .footer-spacer
+      button.btn-secondary(type='button', *ngIf='step > 1', (click)='back()') Back
+      button.btn-primary(type='button', *ngIf='step < 3', [disabled]='step === 1 && groups.length === 0', (click)='next()') Next
+      button.btn-primary(type='button', *ngIf='step === 3', [disabled]='!topoName.trim()', (click)='generatePreview()') Preview
+      button.btn-primary.btn-build(type='button', *ngIf='step === 4', (click)='build()') Confirm Build

@@ -1,0 +1,275 @@
+$radius:    10px;
+
+// ─── Overlay ──────────────────────────────────────────────────────────────────
+
+.tpl-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(3px);
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+.tpl-modal {
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: $radius;
+    width: 680px;
+    max-width: 95vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+.tpl-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.tpl-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+
+    .tpl-title-icon {
+        font-size: 18px;
+        color: var(--accent);
+    }
+}
+
+.tpl-close-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+
+    &:hover { background: #2a1010; color: var(--danger); border-color: var(--danger) }
+}
+
+.tpl-subtitle {
+    padding: 10px 20px 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.tpl-or {
+    margin: 0 6px;
+    color: var(--text-muted);
+}
+
+.tpl-builder-link {
+    background: var(--accent-12);
+    border: 1px solid var(--accent-40);
+    color: var(--accent);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+
+    &:hover {
+        background: var(--accent-24);
+        border-color: var(--accent);
+    }
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+.tpl-search {
+    display: flex;
+    align-items: center;
+    padding: 8px 20px;
+    gap: 8px;
+}
+
+.tpl-search-input {
+    flex: 1;
+    background: var(--bg-input, #2a2a3a);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    &::placeholder { color: var(--text-muted, #888); }
+    &:focus { border-color: var(--accent, #4a9eff); }
+}
+
+.tpl-search-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted, #888);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    &:hover { color: var(--text); background: var(--bg-hover, #333); }
+}
+
+.tpl-no-results {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted, #888);
+    font-size: 14px;
+}
+
+// ─── Filters ──────────────────────────────────────────────────────────────────
+
+.tpl-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 20px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-app);
+    flex-shrink: 0;
+}
+
+.tpl-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+
+    &:hover {
+        color: var(--text);
+        border-color: var(--accent);
+    }
+
+    &.active {
+        color: var(--accent);
+        border-color: var(--accent-50);
+        background: var(--accent-12);
+    }
+}
+
+.tpl-filter-count {
+    font-size: 10px;
+    color: inherit;
+    opacity: 0.8;
+}
+
+// ─── Grid ─────────────────────────────────────────────────────────────────────
+
+.tpl-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 12px 20px 20px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-track { background: transparent }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
+.tpl-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: $radius;
+    padding: 16px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s, transform 0.12s;
+
+    &.tpl-hovered {
+        background: var(--bg-card);
+        border-color: var(--accent);
+        transform: translateY(-2px);
+    }
+}
+
+.tpl-card-icon {
+    font-size: 28px;
+    line-height: 1;
+    margin-bottom: 2px;
+}
+
+.tpl-card-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.tpl-card-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    flex: 1;
+}
+
+.tpl-card-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.tpl-badge {
+    font-size: 10px;
+    background: var(--accent-12);
+    color: var(--accent);
+    border: 1px solid var(--accent-30);
+    border-radius: 4px;
+    padding: 1px 7px;
+}
+
+// ─── Download button ─────────────────────────────────────────────────────────
+
+.tpl-download-btn {
+    margin-left: auto;
+    font-size: 10px;
+    background: var(--success-12);
+    color: var(--success);
+    border: 1px solid var(--success-30);
+    border-radius: 4px;
+    padding: 1px 8px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+
+    &:hover {
+        background: var(--success-20);
+        border-color: var(--success);
+        color: var(--success);
+    }
+}

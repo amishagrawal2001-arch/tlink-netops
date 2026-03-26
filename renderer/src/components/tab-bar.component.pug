@@ -1,0 +1,28 @@
+.tab-bar
+  .tab-item(
+    *ngFor='let tab of tabs; trackBy: trackById',
+    [class.active]='tab.id === activeId',
+    [class.dirty]='tab.isDirty',
+    (click)='tabActivate.emit(tab.id)',
+    (dblclick)='onDblClick(tab)',
+    (mousedown)='onMiddleClick($event, tab.id)',
+    (contextmenu)='onContextMenu($event, tab.id)'
+  )
+    ng-container(*ngIf='renamingId !== tab.id')
+      span.tab-label {{ tab.label }}
+      span.tab-dirty-dot(*ngIf='tab.isDirty') •
+    input.tab-rename-input(
+      *ngIf='renamingId === tab.id',
+      [(ngModel)]='renameValue',
+      (blur)='commitRename()',
+      (keydown.enter)='commitRename()',
+      (keydown.escape)='cancelRename()',
+      (click)='$event.stopPropagation()'
+    )
+    button.tab-close-btn(
+      type='button',
+      title='Close tab',
+      (click)='onCloseClick($event, tab.id)'
+    ) ×
+
+  button.tab-new-btn(type='button', title='New topology tab', (click)='tabNew.emit()') +

@@ -1,0 +1,1114 @@
+.props-panel(*ngIf='node')
+  //- ── Header ──────────────────────────────────────────────────────────────
+  .props-header([style.border-color]='typeMeta?.borderColor')
+    .props-header-left
+      .props-type-badge(
+        [style.background]='typeMeta?.color',
+        [style.border-color]='typeMeta?.borderColor',
+        [style.color]='typeMeta?.textColor'
+      ) {{ typeMeta?.label }}
+      .props-node-name {{ node.label }}
+    .props-header-right
+      .props-status-pill([class.running]='node.status === "running"', [class.suspended]='node.status === "suspended"')
+        span.status-dot
+        span {{ node.status }}
+      button.props-close-btn(type='button', title='Close panel', (click)='close()') ✕
+
+  //- ── Tabs ─────────────────────────────────────────────────────────────────
+  .props-tabs
+    button.props-tab(type='button', [class.active]='activeTab === "info"',   (click)='setTab("info")')   Info
+    button.props-tab(type='button', [class.active]='activeTab === "ports"',  (click)='setTab("ports")')
+      | Ports
+      span.tab-badge(*ngIf='connectedLinkCount > 0') {{ connectedLinkCount }}
+    button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "vlans"',  (click)='setTab("vlans")')
+      | VLANs
+      span.tab-badge(*ngIf='vlanDrafts.length > 0') {{ vlanDrafts.length }}
+    button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "config"', (click)='setTab("config")') Config
+    button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "notes"',  (click)='setTab("notes")')  Notes
+    button.props-tab(type='button', [class.active]='activeTab === "links"',  (click)='setTab("links")')
+      | Links
+      span.tab-badge(*ngIf='peerConnections.length > 0') {{ peerConnections.length }}
+    button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "inv"',  (click)='setTab("inv")')
+      | Inventory
+      span.tab-badge.tab-badge-alarm(*ngIf='invAlarms.length > 0') {{ invAlarms.length }}
+
+  //- ── Tab: Info ────────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "info"')
+    .form-row
+      label.form-label Name
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.label',
+        (blur)='applyLabel()',
+        (keydown)='onInfoKeydown($event, "label")'
+      )
+
+    .form-row
+      label.form-label Description
+      textarea.form-textarea(
+        rows='2',
+        [(ngModel)]='draft.description',
+        placeholder='Optional device description',
+        (blur)='applyDescription()'
+      )
+
+    .form-divider(*ngIf='!isHostNode && !isBridgeNode')
+
+    .form-label(*ngIf='!isHostNode && !isBridgeNode') Physical Device (SSH)
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Mgmt IP / Host
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.mgmtIp',
+        placeholder='e.g. 10.10.10.15',
+        (blur)='applyMgmtIp()',
+        (keydown)='onInfoKeydown($event, "mgmtIp")'
+      )
+
+    .ssh-grid(*ngIf='!isHostNode && !isBridgeNode')
+      .form-row
+        label.form-label SSH Username
+        input.form-input(
+          type='text',
+          [(ngModel)]='draft.sshUsername',
+          placeholder='e.g. admin',
+          (blur)='applySshUsername()',
+          (keydown)='onInfoKeydown($event, "sshUsername")'
+        )
+      .form-row
+        label.form-label SSH Port
+        input.form-input(
+          type='number',
+          min='1',
+          max='65535',
+          [ngModel]='draft.sshPort',
+          (ngModelChange)='draft.sshPort = $event',
+          (blur)='applySshPort()',
+          (keydown)='onInfoKeydown($event, "sshPort")'
+        )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label SSH Password
+      input.form-input(
+        type='password',
+        [(ngModel)]='sshPassword',
+        autocomplete='off',
+        placeholder='Saved with node config',
+        (blur)='applySshPassword()',
+        (keydown)='onInfoKeydown($event, "sshPassword")'
+      )
+
+    .ssh-actions(*ngIf='!isHostNode && !isBridgeNode')
+      button.btn-secondary(
+        type='button',
+        [disabled]='sshBusy || !hasSshPassword',
+        (click)='testSshConnection()'
+      ) Test SSH
+      button.btn-ghost(
+        type='button',
+        [disabled]='sshBusy || !hasSshPassword',
+        (click)='runShowVersion()'
+      ) Show Version
+
+    .ssh-status(*ngIf='sshStatusMsg && !isHostNode && !isBridgeNode', [class.ok]='sshStatusOk', [class.err]='!sshStatusOk')
+      | {{ sshStatusMsg }}
+
+    textarea.ssh-output(
+      *ngIf='sshOutput && !isHostNode && !isBridgeNode',
+      readonly='',
+      spellcheck='false',
+      rows='8'
+    ) {{ sshOutput }}
+
+    //- Bridge node: show assigned bridges (assigned via link creation)
+    .form-row(*ngIf='isBridgeNode')
+      label.form-label Assigned Bridges
+      .host-port-list(*ngIf='node?.ports?.length')
+        .host-port-item(*ngFor='let port of node?.ports; let i = index')
+          span.host-port-idx {{ i + 1 }}.
+          span.host-port-label {{ port.label }}
+      .vendor-msg(*ngIf='!node?.ports?.length') No bridges assigned yet. Draw a link to this node to select a bridge.
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Image / Template
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.image',
+        [placeholder]='showServerImagePresets ? "e.g. ubuntu:22.04" : "e.g. cisco-iosv-15.8"',
+        (blur)='applyImage()',
+        (keydown)='onInfoKeydown($event, "image")'
+      )
+
+    .form-row(*ngIf='showServerImagePresets && !isHostNode && !isBridgeNode')
+      label.form-label Container Image
+      select.form-input(
+        [ngModel]='selectedServerImage',
+        (change)='onServerImageSelect($any($event.target).value)'
+      )
+        option(value='') Custom (use text field above)
+        optgroup(*ngFor='let cat of serverImageCategories', [label]='cat')
+          option(*ngFor='let p of serverImagesByCategory(cat)', [value]='p.image', [title]='p.description || ""') {{ p.label }}
+      .vendor-msg(*ngIf='selectedServerImageDesc') {{ selectedServerImageDesc }}
+
+    .form-row(*ngIf='showVendorSelector && !isHostNode && !isBridgeNode')
+      label.form-label Vendor
+      select.form-input(
+        [ngModel]='draft.vendor || ""',
+        (change)='onVendorChange($any($event.target).value)'
+      )
+        option(value='') Select vendor
+        option(*ngFor='let v of vendorOptionsForNode', [value]='v') {{ v }}
+
+    .form-row(*ngIf='showDeviceFamilySelector')
+      label.form-label Device Type
+      select.form-input(
+        [ngModel]='draft.switchFamily || ""',
+        (change)='onSwitchFamilyChange($any($event.target).value)'
+      )
+        option(value='') {{ deviceFamilyPlaceholder }}
+        option(*ngFor='let family of deviceFamilyOptions', [value]='family') {{ family }}
+
+    .form-row(*ngIf='showVendorModelDropdown')
+      label.form-label Model
+      select.form-input(
+        [ngModel]='draft.model || ""',
+        (change)='onModelChange($any($event.target).value)'
+      )
+        option(value='') Select model
+        option(*ngFor='let profile of vendorModelProfiles', [value]='profile.model') {{ profile.label }}
+
+    .form-row(*ngIf='showVendorModelDropdown && selectedVendorModelDescription')
+      .vendor-msg {{ selectedVendorModelDescription }}
+
+    .form-row(*ngIf='showVendorModelTextInput')
+      label.form-label Model
+      input.form-input(
+        type='text',
+        [ngModel]='draft.model || ""',
+        (ngModelChange)='draft.model = $event',
+        [placeholder]='vendorModelTextPlaceholder',
+        (blur)='applyModel()',
+        (keydown)='onInfoKeydown($event, "model")'
+      )
+
+    .form-row(*ngIf='clabKindHint')
+      .vendor-msg.clab-kind-hint 🐳 {{ clabKindHint }}
+
+    .form-row(*ngIf='clabServers.length > 0')
+      label.form-label Compute Host
+      select.form-input(
+        [ngModel]='draft.serverId || ""',
+        (change)='applyServerId($any($event.target).value)'
+      )
+        option(value='') Select compute host…
+        option(*ngFor='let s of clabServers', [value]='s.id') {{ s.name }}{{ s.host ? " (" + s.host + ")" : "" }}
+
+    .form-row(*ngIf='showVendorSelector')
+      label.form-label Port Count
+      input.form-input(
+        type='number',
+        min='1',
+        max='256',
+        [ngModel]='draft.desiredPortCount',
+        (ngModelChange)='draft.desiredPortCount = $event',
+        placeholder='e.g. 24',
+        (blur)='applyDesiredPortCount()',
+        (keydown)='onInfoKeydown($event, "desiredPortCount")'
+      )
+
+    .form-row(*ngIf='showVendorSelector')
+      label.form-label
+        | Port Suffix (Type)
+        span.suffix-speed(*ngIf='portSuffixOperatingSpeedText') · Operating Speed: {{ portSuffixOperatingSpeedText }}
+      .suffix-operating-row
+        input.form-input(
+          type='text',
+          [(ngModel)]='draft.portSuffix',
+          placeholder='e.g. ge, xe, et, Gi, Eth',
+          (blur)='applyPortSuffix()',
+          (keydown)='onInfoKeydown($event, "portSuffix")'
+        )
+        select.form-input(
+          [ngModel]='draft.operatingSpeed || ""',
+          (change)='applyOperatingSpeed($any($event.target).value || undefined)'
+        )
+          option(*ngFor='let s of operatingSpeedOptionsForSuffix', [value]='s.value || ""') {{ s.label }}
+
+    .form-row(*ngIf='showVendorSelector')
+      .vendor-msg(*ngIf='portGenMsg') {{ portGenMsg }}
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label ASN
+      input.form-input(
+        type='number',
+        min='1',
+        max='4294967295',
+        [(ngModel)]='draft.asn',
+        placeholder='e.g. 65001 (2-byte) or 131072 (4-byte)',
+        (blur)='applyAsn()',
+        (keydown)='onInfoKeydown($event, "asn")'
+      )
+    .vendor-msg(*ngIf='asnAsdotHint && !isHostNode && !isBridgeNode') 4-byte ASN — {{ asnAsdotHint }}
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label OSPF Area
+      input.form-input(
+        type='number',
+        min='0',
+        [(ngModel)]='draft.ospfArea',
+        placeholder='e.g. 0 (backbone)',
+        (blur)='applyOspfArea()',
+        (keydown)='onInfoKeydown($event, "ospfArea")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label IS-IS Level
+      select.form-input(
+        [(ngModel)]='draft.isisLevel',
+        (change)='applyIsisLevel()'
+      )
+        option([ngValue]='undefined') —
+        option([ngValue]='1') Level 1
+        option([ngValue]='2') Level 2
+        option([ngValue]='12') L1/L2
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Node SID
+      input.form-input(
+        type='number', min='0',
+        [(ngModel)]='draft.nodeSid',
+        placeholder='e.g. 1 (SR-MPLS index)',
+        (blur)='applyNodeSid()',
+        (keydown)='onInfoKeydown($event, "nodeSid")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label SRv6 Locator
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.srv6Locator',
+        placeholder='e.g. fc00:0:1::/48',
+        (blur)='applySrv6Locator()',
+        (keydown)='onInfoKeydown($event, "srv6Locator")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label MPLS LDP
+      select.form-input(
+        [(ngModel)]='draft.mplsLdp',
+        (change)='applyMplsLdp()'
+      )
+        option([ngValue]='undefined') —
+        option([ngValue]='true') Enabled
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label gRPC Telemetry
+      select.form-input(
+        [(ngModel)]='draft.telemetryEnabled',
+        (change)='applyTelemetry()'
+      )
+        option([ngValue]='undefined') —
+        option([ngValue]='true') Enabled
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Loopback IP
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.loopbackIp',
+        placeholder='e.g. 172.16.0.1/32',
+        (blur)='applyLoopbackIp()',
+        (keydown)='onInfoKeydown($event, "loopbackIp")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Loopback IPv6
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.loopbackIpv6',
+        placeholder='e.g. fd00::1/128',
+        (blur)='applyLoopbackIpv6()',
+        (keydown)='onInfoKeydown($event, "loopbackIpv6")'
+      )
+
+    //- ── Poll Method (SSH / SNMP) ──────────────────────────────────────────
+    .form-divider(*ngIf='!isHostNode && !isBridgeNode')
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Poll Method
+      select.form-input([(ngModel)]='draft.pollMethod', (change)='applyPollMethod()')
+        option(value='') SSH (default)
+        option(value='ssh') SSH
+        option(value='snmp') SNMP
+
+    ng-container(*ngIf='draft.pollMethod === "snmp" && !isHostNode && !isBridgeNode')
+      .form-row
+        label.form-label SNMP Version
+        select.form-input([(ngModel)]='draft.snmpVersion', (change)='applySnmpVersion()')
+          option(value='2c') v2c
+          option(value='3') v3
+      .form-row(*ngIf='draft.snmpVersion !== "3"')
+        label.form-label Community
+        input.form-input(
+          type='text',
+          [(ngModel)]='draft.snmpCommunity',
+          placeholder='public',
+          (blur)='applySnmpCommunity()'
+        )
+      .form-row
+        label.form-label SNMP Port
+        input.form-input(
+          type='number',
+          min='1',
+          max='65535',
+          [(ngModel)]='draft.snmpPort',
+          placeholder='161',
+          (blur)='applySnmpPort()'
+        )
+      ng-container(*ngIf='draft.snmpVersion === "3"')
+        .form-row
+          label.form-label Username
+          input.form-input(type='text', [(ngModel)]='draft.snmpAuthPassword', placeholder='SNMPv3 username')
+        .form-row
+          label.form-label Auth Protocol
+          select.form-input([(ngModel)]='draft.snmpAuthProtocol')
+            option(value='') None
+            option(value='md5') MD5
+            option(value='sha') SHA
+        .form-row
+          label.form-label Priv Protocol
+          select.form-input([(ngModel)]='draft.snmpPrivProtocol')
+            option(value='') None
+            option(value='des') DES
+            option(value='aes') AES
+      .ssh-actions
+        button.btn-secondary(
+          type='button',
+          [disabled]='snmpTestBusy',
+          (click)='testSnmpConnection()'
+        ) Test SNMP
+      .ssh-status(*ngIf='snmpTestMsg', [class.ok]='snmpTestOk', [class.err]='!snmpTestOk')
+        | {{ snmpTestMsg }}
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label RAM (MB)
+      .ram-presets
+        button.ram-btn(
+          type='button',
+          *ngFor='let r of ramPresets',
+          [class.active]='draft.ram === r',
+          (click)='applyRam(r)'
+        ) {{ r }}
+
+    .form-divider(*ngIf='!isHostNode && !isBridgeNode')
+
+    //- ── Node size slider ─────────────────────────────────────────────────
+    .form-row
+      label.form-label Node Size
+      .node-size-row
+        input.node-size-slider(
+          type='range',
+          min='40', max='200', step='5',
+          [value]='draft.width || defaultNodeSize',
+          (input)='onNodeSizeChange($any($event.target).value)'
+        )
+        span.node-size-value {{ draft.width || defaultNodeSize }}px
+    .form-divider
+
+    //- ── Status controls ────────────────────────────────────────────────────
+    .form-label(*ngIf='!isHostNode && !isBridgeNode') Simulation
+    .node-status-controls(*ngIf='!isHostNode && !isBridgeNode')
+      button.status-btn.status-start(
+        type='button',
+        [class.active]='node.status === "running"',
+        [disabled]='node.status === "running"',
+        (click)='startNode()'
+      )
+        span.status-btn-dot.dot-start
+        | Start
+      button.status-btn.status-suspend(
+        type='button',
+        [class.active]='node.status === "suspended"',
+        [disabled]='node.status !== "running"',
+        (click)='suspendNode()'
+      )
+        span.status-btn-dot.dot-suspend
+        | Suspend
+      button.status-btn.status-stop(
+        type='button',
+        [class.active]='node.status === "stopped"',
+        [disabled]='node.status === "stopped"',
+        (click)='stopNode()'
+      )
+        span.status-btn-dot.dot-stop
+        | Stop
+
+    .form-divider
+
+    .props-meta-grid
+      .meta-item
+        .meta-key Type
+        .meta-val {{ typeMeta?.label }}
+      .meta-item
+        .meta-key Ports
+        .meta-val {{ node.ports.length }}
+      .meta-item
+        .meta-key Links
+        .meta-val {{ connectedLinkCount }}
+      .meta-item
+        .meta-key Status
+        .meta-val([class.val-running]='node.status === "running"', [class.val-suspended]='node.status === "suspended"') {{ node.status }}
+      .meta-item
+        .meta-key Mapping
+        .meta-val {{ node.mapped ? ('Mapped (' + (node.mappedBy || 'inventory') + ')') : 'Unmapped' }}
+
+    .form-row
+      label.form-label Serial Number
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.serialNumber',
+        placeholder='e.g. ABC123456',
+        (blur)='applySerialNumber()',
+        (keydown)='onInfoKeydown($event, "serialNumber")'
+      )
+
+    .form-row
+      label.form-label Source / Asset ID
+      input.form-input(
+        type='text',
+        [(ngModel)]='draft.sourceId',
+        placeholder='e.g. ASSET-001',
+        (blur)='applySourceId()',
+        (keydown)='onInfoKeydown($event, "sourceId")'
+      )
+
+    .form-divider
+
+    button.btn-danger(type='button', (click)='deleteNode()') Delete Node
+
+  //- ── Tab: Ports ────────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "ports"')
+
+    //- Service profile detection
+    .svc-status-section(*ngIf='detectedProfile')
+      .svc-status-header((click)='toggleServiceSection()')
+        span.svc-status-icon {{ detectedProfile.profileIcon }}
+        span.svc-status-name {{ detectedProfile.profileName }}
+        span.svc-status-match {{ detectedProfile.matchedPorts }}/{{ detectedProfile.totalRulePorts }} ports
+        span.svc-status-expand {{ showServiceSection ? '▾' : '▸' }}
+      .svc-status-body(*ngIf='showServiceSection')
+        .svc-status-bar
+          .svc-status-bar-fill([style.width.%]='detectedProfile.totalRulePorts ? (detectedProfile.matchedPorts / detectedProfile.totalRulePorts * 100) : 0')
+
+    //- Visual port diagram
+    .port-diagram(*ngIf='portDiagram.length > 0 && portDiagram.length <= 128')
+      .port-diagram-title Front Panel
+      .port-diagram-grid
+        .port-cell(
+          *ngFor='let cell of portDiagram',
+          [style.background]='cell.color',
+          [style.border-color]='cell.borderColor',
+          [class.port-cell-linked]='cell.linked',
+          [class.port-cell-disabled]='!cell.enabled',
+          [title]='cell.tooltip',
+          (click)='scrollToPort(cell.portId)'
+        )
+          span.port-cell-label {{ cell.label }}
+      .port-diagram-legend
+        span.pd-legend-item
+          span.pd-legend-dot([style.background]="'#22c55e'")
+          | Connected
+        span.pd-legend-item
+          span.pd-legend-dot([style.background]="'#374151'")
+          | Free
+        span.pd-legend-item
+          span.pd-legend-dot([style.background]="'#1a1a2e'")
+          | Disabled
+        span.pd-legend-item
+          span.pd-legend-dot.pd-legend-trunk
+          | Trunk
+
+    .port-list
+      .port-row(*ngFor='let port of node.ports', [id]='"port-" + port.id')
+        .port-row-header
+          .port-row-left
+            button.port-enable-btn(
+              type='button',
+              [class.disabled]='!portDrafts[port.id]?.enabled',
+              [title]='portDrafts[port.id]?.enabled ? "Click to disable" : "Click to enable"',
+              (click)='togglePortEnabled(port.id)'
+            )
+              span(*ngIf='portDrafts[port.id]?.enabled') ●
+              span(*ngIf='!portDrafts[port.id]?.enabled') ○
+            .port-label {{ port.label }}
+          .port-row-right
+            .port-link-badge(*ngIf='portIsLinked(port.id)', [title]='"Connected to: " + portLinkMap[port.id]')
+              | ⇄ {{ portLinkMap[port.id] }}
+            .port-unlinked(*ngIf='!portIsLinked(port.id)') unlinked
+            button.port-remove-btn(
+              type='button',
+              title='Remove this interface',
+              (click)='removePort(port.id)'
+            ) ✕
+
+        .port-row-fields
+          .port-field
+            label.field-label IP / CIDR
+            input.form-input.input-sm(
+              type='text',
+              [ngModel]='portDrafts[port.id]?.ipAddress',
+              (ngModelChange)='portDrafts[port.id].ipAddress = $event',
+              placeholder='e.g. 10.0.0.1/24',
+              (blur)='applyPortIp(port.id)'
+            )
+          .port-field
+            label.field-label IPv6 / Prefix
+            input.form-input.input-sm(
+              type='text',
+              [ngModel]='portDrafts[port.id]?.ipv6Address',
+              (ngModelChange)='portDrafts[port.id].ipv6Address = $event',
+              placeholder='e.g. 2001:db8::1/127',
+              (blur)='applyPortIpv6(port.id)'
+            )
+          .port-field
+            label.field-label Description
+            input.form-input.input-sm(
+              type='text',
+              [ngModel]='portDrafts[port.id]?.description',
+              (ngModelChange)='portDrafts[port.id].description = $event',
+              placeholder='Optional',
+              (blur)='applyPortDesc(port.id)'
+            )
+          .port-field-row
+            .port-field.port-field-half
+              label.field-label Speed
+              select.form-input.input-sm(
+                [ngModel]='portDrafts[port.id]?.speed || ""',
+                (change)='applyPortSpeed(port.id, $any($event.target).value || undefined)'
+              )
+                option(value='') Auto
+                ng-container(*ngFor='let s of portSpeedPresetsForPort(port)')
+                  option(*ngIf='s.value', [value]='s.value') {{ s.label }}
+            .port-field.port-field-half
+              label.field-label VLAN Mode
+              select.form-input.input-sm(
+                [ngModel]='portDrafts[port.id]?.vlanMode || "access"',
+                (change)='applyPortVlanMode(port.id, $any($event.target).value)'
+              )
+                option(value='access') Access
+                option(value='trunk') Trunk
+          //- Access VLAN field
+          .port-field(*ngIf='!isPortTrunk(port.id)')
+            label.field-label Access VLAN
+            input.form-input.input-sm(
+              type='number',
+              min='1',
+              max='4094',
+              [ngModel]='portDrafts[port.id]?.vlan',
+              (ngModelChange)='portDrafts[port.id].vlan = $event',
+              placeholder='—',
+              (blur)='applyPortVlan(port.id)'
+            )
+          //- Trunk VLAN fields
+          .port-trunk-fields(*ngIf='isPortTrunk(port.id)')
+            .port-field-row
+              .port-field.port-field-half
+                label.field-label Native VLAN
+                input.form-input.input-sm(
+                  type='number',
+                  min='1',
+                  max='4094',
+                  [ngModel]='portDrafts[port.id]?.trunkNativeVlan',
+                  (ngModelChange)='portDrafts[port.id].trunkNativeVlan = $event',
+                  placeholder='1',
+                  (blur)='applyTrunkNativeVlan(port.id)'
+                )
+              .port-field.port-field-half
+                label.field-label Allowed VLANs
+                .trunk-allowed-row
+                  input.form-input.input-sm.trunk-allowed-input(
+                    type='text',
+                    [ngModel]='portDrafts[port.id]?.trunkAllowedVlans',
+                    (ngModelChange)='portDrafts[port.id].trunkAllowedVlans = $event',
+                    [placeholder]='isTrunkAllowAll(port.id) ? "All VLANs" : "e.g. 100,200,300-400"',
+                    [disabled]='isTrunkAllowAll(port.id)',
+                    (blur)='applyTrunkAllowedVlans(port.id)'
+                  )
+                  label.trunk-allow-all-label
+                    input.trunk-allow-all-cb(
+                      type='checkbox',
+                      [checked]='isTrunkAllowAll(port.id)',
+                      (change)='toggleTrunkAllowAll(port.id, $any($event.target).checked)'
+                    )
+                    | All
+          .port-channelize(*ngIf='canChannelizePort(port)')
+            label.field-label Breakout Channels
+            .port-channelize-controls
+              input.form-input.input-sm(
+                type='number',
+                min='0',
+                max='64',
+                [ngModel]='portChannelDrafts[port.id]',
+                (ngModelChange)='portChannelDrafts[port.id] = $event',
+                placeholder='0'
+              )
+              button.btn-ghost.btn-channelize(type='button', (click)='channelizePort(port.id)') Apply
+              button.btn-ghost.btn-channelize(type='button', *ngIf='hasChannelizedGroup(port)', (click)='resetChannelizedPort(port.id)') Reset
+
+    .vendor-msg(*ngIf='portGenMsg') {{ portGenMsg }}
+
+    //- ── Add interface row ──────────────────────────────────────────────────
+    .add-port-row(*ngIf='!isBridgeNode')
+      input.form-input.input-sm.add-port-input(
+        type='text',
+        [(ngModel)]='newPortLabel',
+        placeholder='Interface name, e.g. Gi0/7',
+        (keydown.enter)='addPort()'
+      )
+      button.btn-add-port(type='button', [disabled]='!newPortLabel.trim()', (click)='addPort()') + Add
+
+    //- ── Bridge: add bridge from server ───────────────────────────────────
+    .add-port-row(*ngIf='isBridgeNode')
+      select.form-input.input-sm.add-port-input(
+        [(ngModel)]='newPortLabel'
+      )
+        option(value='') {{ bridgeListLoading ? 'Loading bridges…' : 'Select bridge…' }}
+        option(*ngFor='let br of bridgeListForNode', [value]='br.name', [disabled]='isBridgeAlreadyAdded(br.name)') {{ br.name }} ({{ br.type }}{{ br.state ? ", " + br.state : "" }})
+      button.btn-add-port(type='button', [disabled]='!newPortLabel.trim()', (click)='addPort()') + Add
+      button.btn-add-port(type='button', (click)='fetchBridgeList()', title='Refresh bridge list') ↻
+
+  //- ── Tab: VLANs ─────────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "vlans"')
+    .vlan-hint Define VLANs for this device. These will be included in the startup config.
+
+    .vlan-table(*ngIf='vlanDrafts.length > 0')
+      .vlan-table-header
+        .vlan-col-id ID
+        .vlan-col-name Name
+        .vlan-col-actions
+      .vlan-table-row(*ngFor='let v of vlanDrafts')
+        .vlan-col-id {{ v.id }}
+        .vlan-col-name
+          input.form-input.input-sm(
+            type='text',
+            [value]='v.name',
+            (blur)='applyVlanName(v.id, $any($event.target).value)'
+          )
+        .vlan-col-actions
+          button.vlan-remove-btn(type='button', title='Remove VLAN', (click)='removeVlan(v.id)') ✕
+
+    .vlan-empty(*ngIf='vlanDrafts.length === 0')
+      | No VLANs defined. Add one below.
+
+    .add-vlan-row
+      input.form-input.input-sm.add-vlan-id(
+        type='number',
+        min='1',
+        max='4094',
+        [(ngModel)]='newVlanId',
+        placeholder='ID'
+      )
+      input.form-input.input-sm.add-vlan-name(
+        type='text',
+        [(ngModel)]='newVlanName',
+        placeholder='Name, e.g. MGMT',
+        (keydown.enter)='addVlan()'
+      )
+      button.btn-add-port(type='button', [disabled]='!newVlanId || !newVlanName?.trim()', (click)='addVlan()') + Add
+
+    .form-divider
+
+    .vlan-gen-section
+      .vlan-gen-label Auto-Generate VLANs
+      .vlan-gen-row
+        input.form-input.input-sm.vlan-gen-input(
+          type='number',
+          min='1',
+          max='4094',
+          [(ngModel)]='vlanGenStart',
+          placeholder='Start'
+        )
+        span.vlan-gen-sep –
+        input.form-input.input-sm.vlan-gen-input(
+          type='number',
+          min='1',
+          max='4094',
+          [(ngModel)]='vlanGenEnd',
+          placeholder='End'
+        )
+        input.form-input.input-sm.vlan-gen-prefix(
+          type='text',
+          [(ngModel)]='vlanGenPrefix',
+          placeholder='Prefix'
+        )
+        input.form-input.input-sm.vlan-gen-step(
+          type='number',
+          min='1',
+          max='100',
+          [(ngModel)]='vlanGenStep',
+          placeholder='Step'
+        )
+      .vlan-gen-actions
+        button.btn-add-port(
+          type='button',
+          [disabled]='!vlanGenStart || !vlanGenEnd || vlanGenStart > vlanGenEnd',
+          (click)='generateVlans()'
+        ) Generate
+        button.btn-ghost.btn-sm(
+          type='button',
+          *ngIf='vlanDrafts.length > 0',
+          (click)='clearAllVlans()'
+        ) Clear All
+
+    .form-divider
+
+    .vlan-tpl-section
+      button.vlan-tpl-toggle(type='button', (click)='toggleVlanTemplates()')
+        span.vlan-tpl-arrow {{ showVlanTemplates ? '▾' : '▸' }}
+        |  Load from Template
+      .vlan-tpl-picker(*ngIf='showVlanTemplates')
+        .vlan-tpl-filters
+          button.vlan-tpl-filter(
+            type='button',
+            *ngFor='let cat of vlanTemplateCategories',
+            [class.active]='vlanTemplateFilter === cat.id',
+            (click)='setVlanTemplateFilter(cat.id)'
+          ) {{ cat.label }}
+        .vlan-tpl-list
+          .vlan-tpl-card(
+            *ngFor='let tpl of filteredVlanTemplates',
+            (click)='loadVlanTemplate(tpl)'
+          )
+            .vlan-tpl-card-header
+              span.vlan-tpl-icon {{ tpl.icon }}
+              span.vlan-tpl-name {{ tpl.name }}
+              span.vlan-tpl-badge {{ tpl.vlans.length }} VLANs
+            .vlan-tpl-desc {{ tpl.description }}
+
+  //- ── Tab: Startup Config ───────────────────────────────────────────────────
+  .props-body.config-body(*ngIf='activeTab === "config"')
+    .config-hint
+      | Paste device startup config (IOS, Junos, etc.)
+      | &nbsp;— saved with the topology JSON.
+    textarea.config-textarea(
+      [(ngModel)]='draft.startupConfig',
+      placeholder='! Cisco IOS startup config\nhostname Router-1\n!\ninterface e0/0\n ip address 10.0.0.1 255.255.255.0\n no shutdown\n!',
+      spellcheck='false',
+      (blur)='applyStartupConfig()'
+    )
+    .config-actions
+      button.btn-secondary(type='button', (click)='applyStartupConfig()') Apply
+      button.btn-ghost(type='button', (click)='clearStartupConfig()') Clear
+      button.btn-ghost(type='button', [disabled]='!draft.startupConfig?.trim()', (click)='copyStartupConfig()') Copy
+      button.btn-ghost(type='button', [disabled]='!draft.startupConfig?.trim()', (click)='downloadStartupConfig()') Download
+      button.btn-ghost(type='button', (click)='openConfigWindow()', title='Open in new window') ⤢ Expand
+      button.btn-secondary(type='button', *ngIf='showVendorSelector && draft.vendor', (click)='generateVendorPorts()') Regenerate Config
+      button.btn-ghost(type='button', (click)='toggleSnippetLibrary()') {{ showSnippetLibrary ? '✕ Close' : '📋 Snippets' }}
+
+    //- Snippet Library Panel
+    .snippet-library(*ngIf='showSnippetLibrary')
+      .snippet-header
+        span.snippet-title Snippet Library
+        .snippet-filters
+          select.snippet-category-filter([(ngModel)]='snippetFilter')
+            option(value='all') All categories
+            option(value='routing') Routing
+            option(value='switching') Switching
+            option(value='security') Security
+            option(value='management') Management
+            option(value='custom') Custom
+          input.snippet-search(
+            type='text',
+            placeholder='Search snippets…',
+            [(ngModel)]='snippetSearch'
+          )
+      .snippet-list
+        .snippet-empty(*ngIf='filteredSnippets.length === 0') No snippets found
+        .snippet-item(*ngFor='let s of filteredSnippets', (click)='insertSnippet(s)')
+          .snippet-item-header
+            span.snippet-name {{ s.name }}
+            span.snippet-cat {{ s.category }}
+            button.snippet-delete-btn(type='button', (click)='deleteSnippet(s.id); $event.stopPropagation()', title='Delete snippet') ✕
+          .snippet-preview {{ s.content | slice:0:120 }}{{ s.content.length > 120 ? '…' : '' }}
+      .snippet-save-row
+        input.snippet-save-name(
+          type='text',
+          placeholder='Snippet name…',
+          [(ngModel)]='savingSnippetName'
+        )
+        select.snippet-save-cat([(ngModel)]='savingSnippetCategory')
+          option(value='routing') Routing
+          option(value='switching') Switching
+          option(value='security') Security
+          option(value='management') Management
+          option(value='custom') Custom
+        button.btn-secondary(
+          type='button',
+          [disabled]='!savingSnippetName.trim() || !draft.startupConfig?.trim()',
+          (click)='saveCurrentAsSnippet()'
+        ) Save as Snippet
+
+    //- Push to Device / Container
+    .config-push-section(*ngIf='canPushSsh || canPushContainer')
+      button.btn-push(
+        type='button',
+        [disabled]='configPushing',
+        (click)='confirmPushConfig()'
+      ) {{ configPushing ? 'Pushing\u2026' : pushTargetLabel }}
+
+    .config-push-confirm(*ngIf='configPushConfirm')
+      .config-push-msg
+        | Push startup config to {{ canPushContainer ? 'container' : 'device' }}
+        |  "{{ node?.label }}"? This will apply the configuration shown above.
+      .config-push-actions
+        button.btn-ghost(type='button', (click)='cancelPushConfig()') Cancel
+        button.btn-push-go(type='button', [disabled]='configPushing', (click)='executePushConfig()') {{ configPushing ? 'Pushing\u2026' : 'Confirm Push' }}
+
+    .config-push-output(*ngIf='configPushOutput != null')
+      .config-push-output-header
+        span Push Output
+        button.config-push-close(type='button', (click)='closePushOutput()') ✕
+      pre.config-push-pre {{ configPushOutput }}
+
+    //- ── Config Diff ──────────────────────────────────────────────────────────
+    .config-diff-section
+      .config-diff-actions
+        button.btn-secondary(
+          type='button',
+          [disabled]='!canFetchDiff || configDiffFetching',
+          (click)='fetchAndDiffConfig()'
+        ) {{ configDiffFetching ? 'Fetching...' : 'Fetch & Compare Running' }}
+        button.btn-secondary.btn-expand(
+          type='button',
+          *ngIf='configDiffOutput != null && configDiffOutput.length > 0',
+          (click)='expandDiffWindow()',
+          title='Open diff in full window'
+        ) ⛶ Expand
+      .config-diff-error(*ngIf='configDiffError') {{ configDiffError }}
+      .config-diff-output(*ngIf='configDiffOutput != null')
+        .config-push-output-header
+          span Config Diff (Running vs Startup)
+          span.diff-stats
+            span.diff-stat-add + {{ configDiffAddCount }}
+            span.diff-stat-remove &nbsp;- {{ configDiffRemoveCount }}
+          button.config-push-close(type='button', (click)='closeDiffOutput()') ✕
+        pre.config-diff-pre
+          ng-container(*ngFor='let d of configDiffOutput')
+            span.diff-add(*ngIf='d.type === "add"') + {{ d.line }}
+            span.diff-remove(*ngIf='d.type === "remove"') - {{ d.line }}
+            span.diff-same(*ngIf='d.type === "same"')   {{ d.line }}
+
+  //- ── Tab: Notes ────────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "notes"')
+    textarea.form-textarea.notes-textarea(
+      [(ngModel)]='draft.notes',
+      placeholder='Free-form notes about this device...',
+      rows='12',
+      (blur)='applyNotes()'
+    )
+    .notes-hint Last updated: {{ node ? (node.label) : "" }}
+
+  //- ── Tab: Links ──────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "links"')
+    .links-empty(*ngIf='peerConnections.length === 0')
+      | No connections. Link this node to others on the canvas.
+
+    .peer-group(*ngFor='let peer of peerConnections')
+      .peer-header
+        .peer-role-dot([style.background]='peer.peerRoleColor')
+        .peer-label {{ peer.peerLabel }}
+        .peer-role {{ peer.peerRole }}
+        .peer-link-count {{ peer.links.length }} link{{ peer.links.length === 1 ? '' : 's' }}
+        button.btn-ghost.btn-sm(type='button', (click)='navigateToPeer(peer.peerId)') Go →
+      .peer-links
+        .peer-link-row(*ngFor='let lnk of peer.links')
+          .peer-link-status([class.link-up]='lnk.linkStatus === "up"', [class.link-down]='lnk.linkStatus === "down"')
+          .peer-link-local {{ lnk.localPortLabel }}
+          span.peer-link-arrow ⇄
+          .peer-link-remote {{ lnk.remotePortLabel }}
+          .peer-link-mode(*ngIf='lnk.vlanMode')
+            span.mode-tag([class.mode-trunk]='lnk.vlanMode === "trunk"', [class.mode-access]='lnk.vlanMode === "access"') {{ lnk.vlanMode }}
+
+  //- ── Tab: Inventory ────────────────────────────────────────────────────────
+  .props-body(*ngIf='activeTab === "inv"')
+    //- Poll actions
+    .inv-tab-actions
+      button.inv-tab-btn(
+        type='button',
+        [disabled]='!invCanPoll || invPolling',
+        (click)='invPollDevice()'
+      ) {{ invPolling ? 'Polling…' : '↻ Poll Device' }}
+      button.inv-tab-btn(
+        type='button',
+        [disabled]='!invCanPoll || invPolling',
+        (click)='invBackupConfig()'
+      ) {{ invPolling ? 'Working…' : '⎘ Backup Config' }}
+
+    .inv-tab-hint(*ngIf='!invCanPoll')
+      | Set a management IP, SSH username, and password on the Info tab to enable polling.
+
+    .inv-poll-error(*ngIf='invPollError')
+      | {{ invPollError }}
+
+    //- Poll Sync Proposal — review polled changes before applying
+    .poll-sync-card(*ngIf='pollSyncProposal')
+      .poll-sync-header
+        span.poll-sync-title Poll Results — Review Changes
+        button.poll-sync-dismiss(type='button', (click)='dismissSyncProposal()', title='Dismiss') ✕
+
+      //- Read-only info fields
+      .poll-sync-info(*ngIf='pollSyncProposal.infoFields.length > 0')
+        .poll-sync-info-row(*ngFor='let f of pollSyncProposal.infoFields')
+          span.poll-sync-info-label {{ f.label }}
+          span.poll-sync-info-value {{ f.value }}
+
+      //- Actionable changes
+      .poll-sync-changes(*ngIf='hasProposalChanges')
+        .poll-sync-section-title
+          | Changes ({{ checkedProposalCount }} selected)
+          button.poll-sync-select-all(type='button', (click)='toggleAllProposalChecks(true)') All
+          button.poll-sync-select-none(type='button', (click)='toggleAllProposalChecks(false)') None
+
+        //- Model change
+        .poll-sync-change(*ngIf='pollSyncProposal.modelChange')
+          label.poll-sync-check
+            input(
+              type='checkbox',
+              [checked]='proposalChecked["model"]',
+              (change)='toggleProposalCheck("model")'
+            )
+            span.poll-sync-field Model
+          span.poll-sync-from {{ pollSyncProposal.modelChange.from }}
+          span.poll-sync-arrow →
+          span.poll-sync-to {{ pollSyncProposal.modelChange.to }}
+
+        //- Port changes
+        .poll-sync-change(*ngFor='let pc of pollSyncProposal.portChanges')
+          label.poll-sync-check
+            input(
+              type='checkbox',
+              [checked]='proposalChecked["port:" + pc.portId]',
+              (change)='toggleProposalCheck("port:" + pc.portId)'
+            )
+            span.poll-sync-field {{ pc.portLabel }}
+          span.poll-sync-from {{ pc.from }}
+          span.poll-sync-arrow →
+          span.poll-sync-to {{ pc.to }}
+
+      .poll-sync-no-changes(*ngIf='!hasProposalChanges')
+        | No topology changes detected — device matches current state.
+
+      .poll-sync-actions(*ngIf='hasProposalChanges')
+        button.poll-sync-apply(
+          type='button',
+          [disabled]='checkedProposalCount === 0',
+          (click)='applySyncProposal()'
+        ) Apply Selected ({{ checkedProposalCount }})
+        button.poll-sync-dismiss-btn(type='button', (click)='dismissSyncProposal()') Dismiss
+
+    //- Version info
+    .inv-section-title Version Info
+    .inv-tab-grid(*ngIf='invVersion')
+      .inv-grid-row
+        span.inv-grid-label OS
+        span.inv-grid-value {{ invVersion.osVersion || '—' }}
+      .inv-grid-row
+        span.inv-grid-label Model
+        span.inv-grid-value {{ invVersion.hardwareModel || '—' }}
+      .inv-grid-row(*ngIf='invVersion.hardwareRevision')
+        span.inv-grid-label HW Rev
+        span.inv-grid-value {{ invVersion.hardwareRevision }}
+      .inv-grid-row(*ngIf='invVersion.firmwareVersion')
+        span.inv-grid-label Firmware
+        span.inv-grid-value {{ invVersion.firmwareVersion }}
+      .inv-grid-row(*ngIf='invVersion.uptime')
+        span.inv-grid-label Uptime
+        span.inv-grid-value {{ invVersion.uptime }}
+      .inv-grid-row(*ngIf='invVersion.cpuPercent != null')
+        span.inv-grid-label CPU
+        span.inv-grid-value([class.inv-metric-warn]='invVersion.cpuPercent > 80') {{ invVersion.cpuPercent }}%
+      .inv-grid-row(*ngIf='invVersion.memoryUsedPercent != null')
+        span.inv-grid-label Memory
+        span.inv-grid-value([class.inv-metric-warn]='invVersion.memoryUsedPercent > 85') {{ invVersion.memoryUsedPercent }}%
+      .inv-grid-row
+        span.inv-grid-label Last Polled
+        span.inv-grid-value {{ invVersion.lastPolled ? invRelativeTime(invVersion.lastPolled) : 'Never' }}
+      .inv-grid-row(*ngIf='invVersion.pollError')
+        span.inv-grid-label Status
+        span.inv-grid-value(
+          [class.inv-error]='!invVersion.pollError.startsWith("⚠")',
+          [class.inv-warning]='invVersion.pollError.startsWith("⚠")'
+        ) {{ invVersion.pollError }}
+    .inv-tab-empty(*ngIf='!invVersion') Not polled yet.
+
+    //- Active alarms
+    .inv-section-title(*ngIf='invAlarms.length > 0') Active Alarms ({{ invAlarms.length }})
+    .inv-alarm-list(*ngIf='invAlarms.length > 0')
+      .inv-alarm-item(
+        *ngFor='let a of invAlarms',
+        [class.inv-alarm-critical]='a.severity === "critical"',
+        [class.inv-alarm-major]='a.severity === "major"'
+      )
+        span.inv-alarm-sev {{ a.severity }}
+        span.inv-alarm-msg {{ a.message }}
+        span.inv-alarm-time {{ invRelativeTime(a.raisedAt) }}
+
+    //- Config backups
+    .inv-section-title
+      | Config Backups ({{ invBackups.length }})
+      button.inv-diff-toggle(
+        type='button',
+        *ngIf='invBackups.length >= 2',
+        [class.active]='backupDiffMode',
+        (click)='toggleDiffMode()'
+      ) {{ backupDiffMode ? 'Cancel Diff' : 'Compare' }}
+    .inv-tab-empty(*ngIf='invBackups.length === 0') No backups yet.
+    .inv-diff-hint(*ngIf='backupDiffMode && !diffingBackupA') Select first backup to compare…
+    .inv-diff-hint(*ngIf='backupDiffMode && diffingBackupA && !diffingBackupB') Select second backup to compare…
+    .inv-backup-list(*ngIf='invBackups.length > 0')
+      .inv-backup-item(
+        *ngFor='let b of invBackups',
+        [class.inv-backup-selected]='isDiffSelected(b)',
+        (click)='backupDiffMode ? selectDiffBackup(b) : null'
+      )
+        span.inv-backup-type {{ b.configType }}
+        span.inv-backup-trigger {{ b.trigger }}
+        span.inv-backup-time {{ invRelativeTime(b.timestamp) }}
+        .inv-backup-actions(*ngIf='!backupDiffMode')
+          button.inv-backup-action(type='button', title='View', (click)='viewBackup(b)') {{ viewingBackup?.id === b.id ? '▾' : '▸' }}
+          button.inv-backup-action(type='button', title='Export', (click)='exportBackup(b)') ↓
+          button.inv-backup-action.inv-restore-btn(type='button', title='Restore to device', (click)='confirmLoadConfig(b)') ⟳
+    //- Inline config viewer
+    pre.inv-backup-content(*ngIf='viewingBackup') {{ viewingBackup.content }}
+    //- Inline diff viewer
+    .inv-diff-viewer(*ngIf='backupDiffResult')
+      .inv-diff-header
+        span Diff: {{ invRelativeTime(diffingBackupA!.timestamp) }} vs {{ invRelativeTime(diffingBackupB!.timestamp) }}
+        button.inv-diff-close(type='button', (click)='closeDiffViewer()') ✕
+      pre.inv-diff-content
+        ng-container(*ngFor='let line of backupDiffResult!.split("\\n")')
+          span.diff-add(*ngIf='line.startsWith("+")') {{ line }}\n
+          span.diff-remove(*ngIf='line.startsWith("-")') {{ line }}\n
+          span.diff-context(*ngIf='!line.startsWith("+") && !line.startsWith("-")') {{ line }}\n
+    //- Config restore confirmation
+    .inv-restore-confirm(*ngIf='loadConfigTarget')
+      .inv-restore-msg Load this {{ loadConfigTarget.configType }} config ({{ invRelativeTime(loadConfigTarget.timestamp) }}) onto {{ node?.label }}? This will overwrite the device's running configuration.
+      .inv-restore-actions
+        button.inv-restore-btn-cancel(type='button', (click)='cancelLoadConfig()') Cancel
+        button.inv-restore-btn-confirm(type='button', [disabled]='loadingConfig', (click)='executeLoadConfig()') {{ loadingConfig ? 'Loading…' : 'Confirm Load' }}
+    //- Config restore output
+    .inv-restore-output(*ngIf='loadConfigOutput')
+      .inv-restore-output-header
+        span Session Output
+        button.inv-diff-close(type='button', (click)='closeLoadOutput()') ✕
+      pre.inv-restore-output-content {{ loadConfigOutput }}
+
+    //- Upgrade plans
+    .inv-section-title(*ngIf='invUpgradePlans.length > 0') Upgrade Plans
+    .inv-upgrade-list(*ngIf='invUpgradePlans.length > 0')
+      .inv-upgrade-item(*ngFor='let u of invUpgradePlans')
+        span.inv-upgrade-stage {{ u.stage }}
+        span.inv-upgrade-ver {{ u.currentVersion }} → {{ u.targetVersion }}
+
+.props-empty(*ngIf='!node')
+  .empty-icon ⬡
+  .empty-msg Select a node on the canvas to view its properties

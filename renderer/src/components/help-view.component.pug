@@ -1,0 +1,2745 @@
+.help-view
+
+  .help-view-header
+    .help-view-title-row
+      .help-view-title Tlink NetOps — Help & Usage Guide
+      button.help-theme-toggle(type='button', title='Toggle light/dark theme', (click)='toggleTheme()') {{ helpTheme === 'dark' ? '☀' : '☾' }}
+    .help-search-bar
+      span.help-search-icon 🔍
+      input.help-search-input(type='text', placeholder='Search help… (Enter = next, Shift+Enter = prev)', [value]='helpSearchQuery', (input)='onSearchInput($event)', (keydown)='onSearchKeydown($event)', autocomplete='off', spellcheck='false')
+      span.help-search-count(*ngIf='matchCount > 0') {{ matchIndex + 1 }} / {{ matchCount }}
+      button.help-search-nav(*ngIf='matchCount > 0', type='button', title='Previous (Shift+Enter)', (click)='prevMatch()') ▲
+      button.help-search-nav(*ngIf='matchCount > 0', type='button', title='Next (Enter)', (click)='nextMatch()') ▼
+      span.help-search-no-results(*ngIf='helpSearchQuery && matchCount === 0') No results
+      button.help-search-clear(*ngIf='helpSearchQuery', type='button', (click)='clearSearch()') ✕
+
+  .help-toc
+    .help-toc-title Contents
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("getting-started")', (click)='scrollToSection("getting-started")') Getting Started
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("templates")', (click)='scrollToSection("templates")') Templates
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("topology")', (click)='scrollToSection("topology")') Topology & Canvas
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("containerlab")', (click)='scrollToSection("containerlab")') Containerlab
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("kvm")', (click)='scrollToSection("kvm")') KVM & VMs
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("monitoring")', (click)='scrollToSection("monitoring")') Monitoring
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("snmp")', (click)='scrollToSection("snmp")') SNMP Polling
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("syslog")', (click)='scrollToSection("syslog")') Syslog
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("snippets")', (click)='scrollToSection("snippets")') Config Snippets
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("workspace")', (click)='scrollToSection("workspace")') Workspace
+  .help-view-scroll
+
+    //- ── Getting Started ──────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("getting-started")')
+        span.help-chevron {{ isSectionOpen('getting-started') ? '▾' : '▸' }}
+        | Getting Started & Shortcuts
+      .help-section-body(*ngIf='isSectionOpen("getting-started")')
+        p
+          strong Adding devices:
+          |  Drag a device type (Router, Switch, Firewall, Server, Cloud, PC, Host Port, Bridge) from the left palette onto the canvas. Click a node to select it and edit properties in the right panel.
+        p
+          strong Creating links:
+          |  Press
+          |
+          span.help-kbd L
+          |  to enter Link Mode, then click source → target node. Or drag from one node to another. A port picker appears to select specific interfaces.
+        p
+          strong Canvas navigation:
+          |  Drag the canvas background to pan. Mouse wheel to zoom. Use Fit / Reset View (View menu or toolbar) to re-center.
+        p
+          strong Toolbar:
+          |  The top bar includes quick-access buttons — Save (↓), Undo (↺), Redo (↻), Link Mode (⤢), Fit View (⊕), Theme Toggle (☀/☾), Start All (green dot), Stop All (gray dot). Buttons disable when not applicable.
+        p
+          strong Selection:
+          |  Click a node or link to select. Shift+Click or Ctrl+Click to add/remove from multi-selection.
+        p
+          strong Annotations:
+          |  Double-click empty canvas space to create a text annotation. Double-click to edit, drag to move, click ✕ to delete.
+        p
+          strong Topology description:
+          |  Click the description area in the top bar (next to the topology name) to add or edit a text description for the current topology.
+        p
+          strong Search:
+          |  Press
+          |
+          span.help-kbd Ctrl+F
+          |  to search nodes by name, type, or management IP. Click a result to center the viewport on that node.
+        p
+          strong Right-click:
+          |  Node → Start / Stop / Suspend / Add Link / Rename / SSH Terminal / Delete. Link → Mark Link Down (toggles up/down) / Properties / Reset Bend / Delete.
+        table.help-table
+          thead: tr
+            th Shortcut
+            th Action
+          tbody
+            tr
+              td: span.help-kbd Ctrl+S / Ctrl+O
+              td Save / Open topology
+            tr
+              td: span.help-kbd Ctrl+Shift+S
+              td Save workspace (all tabs)
+            tr
+              td: span.help-kbd Ctrl+Z / Ctrl+Shift+Z
+              td Undo / Redo (Ctrl+Y also redoes)
+            tr
+              td: span.help-kbd Ctrl+C / Ctrl+V
+              td Copy / Paste nodes
+            tr
+              td: span.help-kbd Ctrl+A
+              td Select all
+            tr
+              td: span.help-kbd Ctrl+F
+              td Search nodes
+            tr
+              td: span.help-kbd L
+              td Toggle Link Mode
+            tr
+              td: span.help-kbd Delete
+              td Delete selected items
+            tr
+              td: span.help-kbd Escape
+              td Cancel / close dialogs
+            tr
+              td: span.help-kbd F1
+              td Toggle this Help window
+
+    //- ── Templates & Build Custom ─────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("templates")')
+        span.help-chevron {{ isSectionOpen('templates') ? '▾' : '▸' }}
+        | Templates & Build Custom
+      .help-section-body(*ngIf='isSectionOpen("templates")')
+        p
+          strong Templates
+          |  (File → Templates): 121 preconfigured topologies across multiple categories. Click a card to load it (replaces the current topology). Filter by category:
+        ul
+          li
+            span.help-tag General
+            |  — Point-to-Point, Hub-Spoke, Ring, Full Mesh, 3-Tier
+          li
+            span.help-tag Datacenter
+            |  — Spine-Leaf, Clos, Dual-ToR, K8s Fabric, HA Cluster, Primary + DR
+          li
+            span.help-tag Enterprise
+            |  — Campus, Branch Office, SD-WAN
+          li
+            span.help-tag Service Provider
+            |  — MPLS Core, Metro Ring, Mobile Backhaul
+          li
+            span.help-tag DCI
+            |  — Back-to-Back, Over WAN, EVPN Multi-site
+          li
+            span.help-tag Security
+            |  — DMZ, Dual Firewall
+          li
+            span.help-tag WAN
+            |  — Hub-Spoke, Dual ISP Failover
+          li
+            span.help-tag IPv6 / Segment Routing / Routing
+            |  — Protocol-focused topologies (BGP, OSPF, IS-IS, SR-MPLS, SRv6)
+          li
+            span.help-tag Juniper / SONiC / AI-ML
+            |  — Vendor-specific templates with preconfigured models, VLANs, and protocols
+        p Templates with vendor nodes include a "Download Config" button to export startup configurations.
+
+        p
+          strong Build Custom
+          |  (File → Build Custom): A 4-step wizard to design a custom topology from scratch.
+        p
+          strong Step 1 — Nodes:
+          |  Add role groups (spine, leaf, border-leaf, super-spine, tor, gateway, core, aggregation, access, custom). Set count (1–64), vendor, model, speed (10M–800G), and port count (2–128) per group.
+        p
+          strong Step 2 — Links:
+          |  Define connectivity rules between roles. Patterns:
+        ul
+          li
+            span.help-tag Full-Mesh
+            |  — every source connects to every target
+          li
+            span.help-tag Ring
+            |  — circular topology
+          li
+            span.help-tag Dual-Homed
+            |  — each target connects to ≥2 sources for redundancy
+        p Set links per pair (1, 2, or 4) for LAG/ECMP.
+        p
+          strong Step 3 — Addressing:
+          |  Topology name, IP mode (IPv4 / IPv6 / Dual Stack), base CIDRs for link and loopback subnets. Select underlay protocol:
+        ul
+          li
+            span.help-tag eBGP Clos
+            |  — unique ASN per node (configurable spine/leaf ASN start)
+          li
+            span.help-tag iBGP with Route Reflector
+            |  — shared ASN, spines as reflectors
+          li
+            span.help-tag OSPF / OSPFv3 / IS-IS
+            |  — area and level auto-assigned
+        p Optional EVPN-VXLAN overlay (VNI base configurable). Service profile and VLAN template selection. Toggle auto-assign IPs and generate vendor startup configs.
+        p
+          strong Step 4 — Preview:
+          |  Interactive canvas showing node layout by tier, links, and service profile details. Click "Confirm Build" to create the topology (replaces current).
+
+    //- ── Topology Design ──────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("topology")')
+        span.help-chevron {{ isSectionOpen('topology') ? '▾' : '▸' }}
+        | Topology Design
+      .help-section-body(*ngIf='isSectionOpen("topology")')
+        p
+          strong Node types:
+          |  Router, Switch, Firewall, Server, Cloud, PC, Host Port (teal — maps to a physical NIC on the server), Bridge (purple — maps to a Linux/libvirt/OVS bridge).
+        p
+          strong Node properties panel
+          |  — click a node to open the right panel with 7 tabs:
+        ul
+          li
+            span.help-tag Info
+            |  — Name, description, vendor, model, serial, ASN, OSPF area, IS-IS level, SR-MPLS SID, SRv6 locator, MPLS LDP, management IP, SSH credentials, node role, RAM, image/template, port count, source/asset ID. Vendor-specific options (e.g. Juniper switch type, QFX/EX model).
+          li
+            span.help-tag Ports
+            |  — IP address (CIDR), description, speed, VLAN mode (access/trunk), VLAN ID, trunk allowed VLANs, trunk native VLAN, enable/disable per port, breakout/channelization. Front-panel diagram: green = linked, gray = free, dark = disabled.
+          li
+            span.help-tag VLANs
+            |  — Create and manage VLAN entries for the node. Badge shows VLAN count.
+          li
+            span.help-tag Config
+            |  — View and edit the startup configuration. Action buttons:
+            |
+            span.help-code Apply
+            |  (save edits) ·
+            span.help-code Clear
+            |  ·
+            span.help-code Copy
+            |  ·
+            span.help-code Download
+            |  (save as .cfg file) ·
+            span.help-code Expand
+            |  (open in a full-size editor window with Ctrl+S to save back) ·
+            span.help-code Snippets
+            |  (open the Config Snippet Library) ·
+            span.help-code Push to Device
+            |  (SSH push to physical device or container — requires mgmt IP + SSH credentials and vendor set).
+          li
+            span.help-tag Notes
+            |  — Free-text notes for the node (operational comments, change history, etc.).
+          li
+            span.help-tag Links
+            |  — Lists all peer connections for this node. Badge shows link count.
+          li
+            span.help-tag Inventory
+            |  — Polled data (OS version, model, uptime). Poll Sync: review and selectively apply polled changes. Config Backups: view history, compare any two versions with inline diff. Shows alarm badge when the node has active alarms.
+        p
+          strong Links:
+          |  Type (Ethernet/Serial), bandwidth (1G–100G), latency, packet loss, duplex. Drag midpoint to curve; right-click → Reset Bend to straighten.
+        p
+          strong Auto-assign IPs
+          |  (Devices menu): /30 IPv4, loopbacks, /127 IPv6, ULA loopbacks. Dialog offers CIDR base and "overwrite existing" toggle.
+        p
+          strong IPAM Panel
+          |  (View menu): Table of all assigned IPs sorted by address — Node / Port / IP.
+        p
+          strong Config generation:
+          |  Vendor-specific startup configs (Cisco, Junos, Arista, Huawei, Nokia, SONiC, HPE, Dell, MikroTik, Extreme). Protocols: OSPF, BGP, IS-IS, SR-MPLS, SRv6, MPLS LDP, EVPN-VXLAN.
+        p
+          strong Service profiles
+          |  (Devices → Apply Service Profile): Preconfigured templates with overwrite and regenerate options.
+        p
+          strong Visualization modes
+          |  (View menu):
+        ul
+          li
+            span.help-tag VLAN View
+            |  — blue = trunk, green = access, gray = none. Nodes show VLAN count badge.
+          li
+            span.help-tag BGP View
+            |  — orange = eBGP, purple = iBGP, gray = no ASN. Nodes show ASN badge.
+          li
+            span.help-tag Default (Link Quality)
+            |  — When neither VLAN nor BGP view is active, links color by status: blue = good, orange = degraded, red = down.
+        p
+          strong Dark / Light Theme:
+          |  Click the ☀ / ☾ button in the toolbar (next to Fit View) to toggle between dark and light themes. Your preference is saved to localStorage and persisted across sessions. The app also respects the system
+          |
+          span.help-code prefers-color-scheme
+          |  on first launch.
+        p
+          strong View toggles
+          |  (View menu):
+          |
+          span.help-tag Show IP Labels
+          |  ·
+          span.help-tag Show Interface Labels
+          |  — overlay port IPs or interface names on links.
+          |
+          span.help-tag IPv6 Labels
+          |  — show IPv6 addresses on links (in addition to IPv4).
+          |
+          span.help-tag Straight Links
+          |  — switch between curved and straight link rendering.
+        p
+          strong Canvas View Bar:
+          |  A floating toolbar at the bottom center of the canvas provides quick one-click toggles for the most used view options:
+          strong  IP
+          |  ·
+          strong  Intf
+          |  ·
+          strong  IPv6
+          |  ·
+          strong  VLAN
+          |  ·
+          strong  BGP
+          |  ·
+          strong  Flows
+          |  ·
+          strong  Routes
+          |  ·
+          strong  Counters
+          |  ·
+          strong  Map
+          | . Active views are highlighted. VLAN, BGP, and Flows are mutually exclusive. The bar only appears when the topology has nodes.
+        p
+          strong Auto-Layout
+          |  (View menu) — four layout algorithms:
+        ul
+          li
+            span.help-tag Force-Directed
+            |  — Fruchterman-Reingold physics simulation. Nodes repel, links attract. Good for general-purpose organic layouts.
+          li
+            span.help-tag Hierarchical
+            |  — Sugiyama-style layered layout. Multi-source BFS assigns nodes to layers by role (super-spine → spine → leaf → access). Barycenter heuristic minimizes link crossings. Best for datacenter spine-leaf fabrics.
+          li
+            span.help-tag Radial
+            |  — Places the highest-degree node at center, BFS rings radiate outward. Ideal for hub-spoke or star topologies.
+          li
+            span.help-tag Grid
+            |  — Sorts nodes by type and label, arranges in a uniform grid. Useful for inventory-style views.
+        p
+          strong Traffic Flow Visualization
+          |  (View menu →
+          |
+          span.help-tag Traffic Flows
+          | ):
+        ul
+          li Toggle
+            |
+            span.help-tag Traffic Flow View
+            |  to color links by defined flows (animated dashed paths show direction).
+          li Open the
+            |
+            span.help-tag Traffic Flows Panel
+            |  (side panel) to add, edit, or remove flows.
+          li Each flow has: name, source node, destination node, path (list of links), color, and bandwidth.
+          li Flows render as animated dash overlays on top of regular link lines.
+        p
+          strong Interface Counters
+          |  (View menu →
+          |
+          span.help-tag Interface Counters
+          | ): Opens a side panel showing real-time interface counter data (packets in/out, errors, discards) for all polled devices. Counters are fetched via SSH using vendor-specific commands. Live polling refreshes automatically.
+        p
+          strong Validate Topology
+          |  (Export menu): Checks for isolated nodes (no links), duplicate port IPs, duplicate management IPs, and empty topology. Results shown in the status bar.
+        p
+          strong Simulate
+          |  (Simulate menu or right-click): Start / Suspend / Stop nodes. Suspend pauses the node without fully stopping it — useful for simulating maintenance windows. Status dots: green = running, yellow = suspended, gray = stopped.
+        p
+          strong Canvas indicators:
+          |  "M" badge = device mapped via CSV import. Red badge = node has critical alarms. VLAN count badge appears in VLAN View. ASN badge appears in BGP View.
+
+    //- ── Containerlab ───────────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("containerlab")')
+        span.help-chevron {{ isSectionOpen('containerlab') ? '▾' : '▸' }}
+        | Containerlab
+      .help-section-body(*ngIf='isSectionOpen("containerlab")')
+        h3 Lab Deployment
+        p
+          strong Deploy:
+          |  Simulate menu → Deploy Containerlab, or Export menu → Containerlab Topology → Deploy button. Checks Docker and containerlab CLI prerequisites, saves .clab.yml to disk (default ~/containerlab-labs/), then opens a terminal with
+          code  sudo clab deploy
+          | .
+        p
+          strong Destroy:
+          |  Simulate menu → Destroy Lab. Opens a terminal with
+          code  sudo clab destroy
+          |  to tear down all containers and virtual links.
+        p
+          strong Inspect:
+          |  Simulate menu → Inspect Lab Status. Runs
+          code  clab inspect
+          |  to show container states, management IPs, and kinds. Automatically updates node status on the canvas.
+        p
+          strong Prerequisites:
+          |  Docker daemon running and containerlab CLI installed (https://containerlab.dev). Deploy/destroy require sudo.
+
+        h3 Installing Prerequisites
+        p Two components are required before you can deploy a lab: Docker and containerlab.
+        h4 1. Install Docker
+        p
+          strong macOS:
+        ul
+          li Install Docker Desktop via Homebrew:
+          .help-example
+            span.help-code brew install --cask docker
+          li Or download from
+            |
+            span.help-code  https://www.docker.com/products/docker-desktop
+          li After install, launch Docker Desktop from Applications — wait for the whale icon in the menu bar to show "Docker Desktop is running"
+          li Docker Desktop must be running before deploying a lab
+        p
+          strong Linux (Ubuntu / Debian / CentOS):
+        ul
+          li Install Docker Engine via the convenience script:
+          .help-example
+            span.help-code curl -fsSL https://get.docker.com | sh
+          li Add your user to the docker group (avoids sudo for docker commands):
+          .help-example
+            span.help-code sudo usermod -aG docker $USER
+          li Log out and back in for group changes to take effect
+          li Start and enable Docker:
+          .help-example
+            span.help-code sudo systemctl start docker && sudo systemctl enable docker
+        p
+          strong Verify Docker:
+          |  Run
+          |
+          span.help-code  docker info
+          |  — the Deploy dialog also checks this automatically (✓ green = running)
+
+        h4 2. Install Containerlab
+        p
+          strong Linux (recommended — native binary):
+        ul
+          li One-line install:
+          .help-example
+            span.help-code bash -c "$(curl -sL https://get.containerlab.dev)"
+          li This installs the
+            |
+            span.help-code  containerlab
+            |  binary to
+            |
+            span.help-code  /usr/bin/containerlab
+          li Verify:
+            |
+            span.help-code  containerlab version
+        p
+          strong macOS (Docker wrapper — no native binary):
+        ul
+          li Containerlab does not install natively on macOS. Use the official Docker container wrapper instead.
+          li Add these aliases to your
+            |
+            span.help-code  ~/.zshrc
+            | :
+          .help-example
+            span.help-code alias containerlab='docker run --rm -it --privileged --network host -v /var/run/docker.sock:/var/run/docker.sock -v /var/run/netns:/var/run/netns -v $(pwd):/lab --pid host ghcr.io/srl-labs/clab containerlab'
+            br
+            span.help-code alias clab='containerlab'
+          li Reload your shell:
+            |
+            span.help-code  source ~/.zshrc
+          li Verify:
+            |
+            span.help-code  containerlab version
+          li The app auto-detects the Docker wrapper — no additional configuration needed
+        p
+          strong Auto-install from the app:
+          |  If containerlab is not found, the Deploy dialog shows a ✗ red status with an "Install" button. Clicking it runs the install script automatically.
+        p
+          strong Deploy/destroy require sudo:
+          |  The terminal window opened by the app will prompt for your password. On macOS with the Docker wrapper, sudo is also needed for container network namespace operations.
+
+        p
+          strong SSH to virtual nodes:
+          |  After deploy, use Inspect Lab Status to see management IPs. Then right-click a node → Open SSH Terminal (default SONiC-VS credentials: admin / YourPaSsWoRd).
+
+        h3 User Workflow
+        p The end-to-end workflow for building, deploying, and managing a containerlab topology:
+        p
+          strong Step 1 — Design Topology:
+        ul
+          li Drag-and-drop Router, Switch, or Host nodes onto the canvas
+          li Set
+            |
+            span.help-code Vendor
+            |  (Juniper, SONiC, Arista, Nokia, etc.) and optionally
+            |
+            span.help-code Device Type
+            |  /
+            |
+            span.help-code Model
+            |  in node properties
+          li The 🐳 containerlab kind hint below the model field shows the mapped kind, Docker image, and boot time
+          li Connect nodes with links — each link auto-assigns interface pairs
+        p
+          strong Step 2 — Assign IPs:
+        ul
+          li Use
+            |
+            span.help-code Design → Auto-address Links
+            |  to assign /30 pairs from a base CIDR (e.g. 10.20.0.0/16)
+          li Or manually set IPs on individual interfaces via link properties
+          li Optionally set a management subnet in the deploy dialog
+        p
+          strong Step 3 — Choose Server:
+        ul
+          li Open
+            |
+            span.help-code Simulate → Deploy Containerlab
+          li The
+            strong  Server
+            |  selector at the top defaults to
+            strong  Local
+          li To deploy on a remote Linux host, click
+            strong  Manage
+            |  → "+ Add Server" → enter SSH details → Save
+          li Select the desired server from the dropdown — prereqs re-check automatically
+        p
+          strong Step 4 — Check Prerequisites & Images:
+        ul
+          li The dialog verifies Docker and containerlab on the active server (local or remote)
+          li Fix any issues: Start Docker, Install containerlab
+          li
+            strong Docker Images
+            |  section shows required images with status:
+          li ✓ green = available and correct architecture
+          li ⚠ amber = wrong architecture (e.g. amd64 on Apple Silicon) — Deploy is blocked
+          li ✗ red = not found locally
+          li To load an image: click
+            strong  Import Image File
+            |  → select your
+            span.help-code  .tgz
+            |  /
+            span.help-code  .tar
+            |  file — the app auto-fixes Juniper symlink issues and auto-tags to the expected name (e.g.
+            span.help-code  crpd:latest
+            | )
+          li Or click
+            strong  Pull
+            |  to download from Docker Hub / registry
+          li For remote: ensure SSH agent has your key loaded (
+            span.help-code ssh-add
+            | )
+        p
+          strong Step 5 — Select Docker Image:
+        ul
+          li The
+            strong  Docker image for SONiC-VS nodes
+            |  dropdown lets you pick from available local Docker images
+          li The default is
+            code  netreplica/docker-sonic-vs:latest
+            |  but you can select any compatible image (e.g. a custom build like
+            code  docker-sonic-vs:latest
+            | )
+          li Images with architecture mismatches (e.g. amd64 on Apple Silicon) show a warning but can still run via Docker Desktop's Rosetta emulation
+        p
+          strong Step 6 — Deploy:
+        ul
+          li Click
+            strong  Deploy
+            |  — the app generates
+            |
+            span.help-code .clab.yml
+            |  plus any startup configs
+          li
+            strong Local:
+            |  saves files to disk, opens terminal with
+            |
+            span.help-code sudo clab deploy
+          li
+            strong Remote:
+            |  uploads files via SFTP, opens terminal with
+            |
+            span.help-code ssh -t user@host 'sudo clab deploy ...'
+          li A
+            strong  progress banner
+            |  appears centered on the canvas showing deployment status with a countdown timer until container inspection
+          li Wait for containers to boot (crpd ~30s, SONiC-VS ~3min, vrnetlab VMs ~7-15min)
+        p
+          strong Step 7 — Inspect & Monitor:
+        ul
+          li
+            span.help-code Simulate → Inspect Lab Status
+            |  — shows container states, management IPs, updates canvas node status
+          li
+            span.help-code Simulate → Start Live Monitor
+            |  — polls container health + BGP neighbor states every 10s
+          li
+            span.help-code Simulate → Detect Running Lab
+            |  — finds existing labs to reconnect or import
+        p
+          strong Step 8 — Interact with Nodes:
+        ul
+          li
+            strong Open Console:
+            |  right-click node → Open Console — opens vendor CLI (vtysh, cli, sr_cli, Cli, sh)
+          li
+            strong Fetch Config:
+            |  right-click node → Fetch Config — retrieves running config
+          li
+            strong Push Config:
+            |  right-click node → Push Config — pushes config commands into the container
+          li For remote servers, console opens via
+            |
+            span.help-code ssh -t user@host 'docker exec -it ...'
+        p
+          strong Step 9 — Destroy:
+        ul
+          li
+            span.help-code Simulate → Destroy Lab
+            |  — tears down all containers and virtual links
+          li For remote:
+            |
+            span.help-code ssh -t user@host 'sudo clab destroy ...'
+
+        h3 Remote Server Management
+        p
+          | By default, all containerlab operations run on the
+          strong  Local
+          |  machine. You can add remote Linux servers to deploy labs on dedicated hardware with more resources or KVM support (required for vrnetlab VMs). The remote server workflow is modelled after GNS3-style server management.
+
+        h4 Step 1 — Open Server Manager
+        p Open
+          strong  Simulate → Server Manager…
+          |  from the menu, or click the server indicator in the toolbar (shows current server name with a colored status dot).
+
+        h4 Step 2 — Add a Remote Server
+        p Click
+          strong  + Add Server
+          |  and fill in the connection details:
+        table.help-table
+          thead: tr
+            th Field
+            th Description
+          tbody
+            tr
+              td Name
+              td Friendly label, e.g. "Lab Server 01"
+            tr
+              td SSH Host
+              td IP address or hostname of the remote Linux server
+            tr
+              td SSH Username
+              td Login user on the remote server (e.g.
+                code  admin
+                | )
+            tr
+              td SSH Password
+              td Enter password for password-based auth. Leave empty to use SSH key via ssh-agent
+            tr
+              td SSH Port
+              td Default
+                code  22
+            tr
+              td Remote Lab Directory
+              td Where topology files are uploaded (default
+                code  /tmp/containerlab-labs
+                | )
+        p Click
+          strong  Save
+          |  to store the server profile.
+
+        h4 Step 3 — Authentication
+        p Two authentication methods are supported:
+        ul
+          li
+            strong Password auth:
+            |  Enter the SSH password in the server profile. The password is used for all SSH, SFTP, and Docker SSH transport operations.
+          li
+            strong SSH key auth (ssh-agent):
+            |  Leave the password field empty. Ensure your key is loaded:
+            code  ssh-add ~/.ssh/id_rsa
+        p If both password and ssh-agent are available, password takes priority.
+
+        h4 Step 4 — Test the Connection
+        p In the Server Manager table, click
+          strong  Test
+          |  next to your server. The test verifies three things:
+        ul
+          li
+            strong SSH connectivity
+            |  — Can the app connect to the remote host?
+          li
+            strong Docker
+            |  — Is Docker Engine running on the remote server?
+          li
+            strong Containerlab
+            |  — Is containerlab available (binary or Docker image)?
+        p All three checks must pass before you can deploy labs. Fix any issues on the remote host first (install Docker, install containerlab).
+
+        h4 Step 5 — Server Connectivity
+        p All servers are automatically tested and connected when added. The Server Manager shows live status (CPU, memory, disk, Docker, KVM) for each server. You can select which server to deploy to in the Deploy dialog's
+          strong  Compute Host
+          |  dropdown.
+
+        h4 Step 6 — Build & Deploy
+        ol
+          li Design your topology on the canvas as usual — drag nodes, create links, configure properties
+          li Open
+            strong  Simulate → Deploy Containerlab
+          li The app will:
+        ul
+          li Generate the
+            code  .clab.yml
+            |  topology file from your canvas
+          li Upload the YAML and any startup configs to the remote server via SFTP
+          li Run
+            code  sudo clab deploy
+            |  on the remote server
+          li Show deploy output in the terminal panel
+
+        h4 Step 7 — Monitor & Interact
+        ul
+          li The
+            strong  toolbar indicator
+            |  shows real-time connection status — green (connected), red (disconnected). The app polls the server every 30 seconds
+          li The
+            strong  Server Manager
+            |  shows live resource usage: CPU cores, memory, disk, and running container count per server
+          li Right-click a deployed node →
+            strong  SSH Terminal
+            |  to open a console session to the container on the remote server
+          li
+            strong  Docker Image Manager
+            |  (Simulate → Docker Image Manager) includes a server selector — pull, delete, and manage images on whichever server is active
+
+        h4 Step 8 — Detect & Reconnect
+        p If you close and reopen the app:
+        ul
+          li Go to
+            strong  Simulate → Detect Running Labs
+            |  — it scans the active remote server for running containerlab topologies
+          li Select a lab to reconnect and resume your session
+          li The app also
+            strong  auto-reconnects
+            |  to the last active lab and server on startup (stored in browser localStorage)
+
+        h4 Step 9 — Teardown
+        p Go to
+          strong  Simulate → Destroy Containerlab
+          |  to stop and remove all containers for the current topology on the remote server.
+
+        h4 How It Works Internally
+        ul
+          li Docker commands run transparently on the remote host via
+            code  DOCKER_HOST=ssh://user@host
+          li For password auth, an SSH_ASKPASS helper supplies credentials to the Docker SSH transport automatically
+          li Topology files are uploaded via SFTP (ssh2) to the remote lab directory
+          li Deploy/destroy execute via
+            code  ssh -t user@host 'sudo clab deploy ...'
+          li Container console opens via
+            code  ssh -t user@host 'docker exec -it ...'
+        p
+          strong Switching servers:
+          |  Use the toolbar indicator or Server Manager to switch the active server at any time. Switching to "Local" routes all operations back to your local machine.
+
+        h3 Physical Port Connections (Host Interfaces)
+        p Connect physical network devices to your virtual containerlab topology by mapping server NICs directly into containers. This is useful for testing virtual switches (e.g. SONiC) with real hardware.
+
+        h4 How It Works
+        p Containerlab supports
+          code  host:INTERFACE_NAME
+          |  link endpoints that bind a physical NIC on the server directly into a container's network namespace. The app provides a dedicated
+          strong  Host Port
+          |  node type for this.
+
+        h4 Step 1 — Place a Host Port
+        p In the device palette (left sidebar), click
+          strong  Host Port
+          |  (teal node). Click on the canvas to place it. It appears as "Host-Port-1".
+
+        h4 Step 2 — Select Compute Host
+        ol
+          li Click the Host Port node to open the Properties Panel
+          li In the
+            strong  Info
+            |  tab, select the
+            strong  Compute Host
+            |  — this determines which server's physical NICs are available
+          li Changing the compute host clears all existing ports and links (old server's interfaces are invalid on the new server) and auto-populates with the new server's interfaces
+        h4 Step 3 — Configure Ports
+        ol
+          li Switch to the
+            strong  Ports
+            |  tab — interfaces from the selected compute host are auto-populated
+          li Port status dots reflect the actual interface state:
+            strong  green ●
+            |  = up,
+            strong  grey ○
+            |  = down
+          li Draw links from the Host Port to your virtual devices — a port picker shows available interfaces from the selected compute host
+          li Interfaces already used by other links are disabled in the picker to prevent duplicates
+        p
+          strong Note:
+          |  Virtual and management interfaces (lo, docker0, veth*, br-*, clab*) are automatically filtered out. Only real physical NICs are shown. On macOS, interfaces like utun, awdl, llw, and anpi are also excluded.
+        p
+          strong Important:
+          |  Host interface binding (
+          code host:INTERFACE
+          | ) only works on
+          strong  native Linux
+          |  servers. On macOS with Docker Desktop, the containers run inside a Linux VM that cannot access Mac's physical NICs.
+
+        h4 Step 4 — Connect to a Virtual Device
+        p Draw a link from the Host Port node to your virtual device (e.g. SONiC switch). The connection works just like any other link on the canvas.
+
+        h4 Step 5 — Deploy
+        p Open
+          strong  Simulate → Deploy Containerlab
+          | . The YAML preview shows the correct format:
+        .help-example
+          .help-example-title Generated YAML with host and bridge endpoints
+          | topology:
+          |   kinds:
+          |     sonic-vs:
+          |       image: netreplica/docker-sonic-vs:latest
+          |   nodes:
+          |     sonic-1:
+          |       kind: sonic-vs
+          |   links:
+          |     - endpoints: ["sonic-1:eth1", "host:enp3s0"]
+          |     - endpoints: ["sonic-1:eth2", "host:enp4s0"]
+          |     - endpoints: ["sonic-1:eth3", "bridge:br-fabric"]
+        p Host Port and Bridge nodes do
+          strong  NOT
+          |  appear in the nodes: section — they only affect link endpoints.
+
+        h4 Validation Warnings
+        ul
+          li
+            strong No interface selected
+            |  — "1 host port(s) without interface assigned: Host-Port-1"
+          li
+            strong Duplicate interface
+            |  — "Duplicate host interface enp3s0 used by: Host-Port-1, Host-Port-2"
+
+        h4 Requirements
+        ul
+          li The physical NIC must be
+            strong  unused
+            |  (not the server's management interface)
+          li The physical device must be
+            strong  cabled
+            |  to that NIC on the server
+          li The server needs multiple NICs — management + lab-facing ports
+
+        h3 Bridge Connections
+        p Connect virtual containerlab nodes to Linux bridges, libvirt virtual networks, or OVS bridges on the server. This is useful for connecting containers to VMs or external networks.
+
+        h4 How It Works
+        p Containerlab supports
+          code  bridge:BRIDGE_NAME
+          |  link endpoints that attach a container interface to an existing bridge on the host. The app provides a dedicated
+          strong  Bridge
+          |  node type (purple) for this.
+
+        h4 Step 1 — Place a Bridge Node
+        p In the device palette (left sidebar), click
+          strong  Bridge
+          |  (purple node). Click on the canvas to place it. It appears as "Bridge-1".
+
+        h4 Step 2 — Select Compute Host & Bridge
+        ol
+          li Click the Bridge node to open the Properties Panel
+          li In the
+            strong  Info
+            |  tab, select the
+            strong  Compute Host
+            |  — this determines which server's bridges are discovered
+          li The
+            strong  Bridge
+            |  dropdown auto-fetches available bridges from the selected compute host (Linux bridges, libvirt networks, and OVS bridges)
+          li Select the bridge you want to connect to (e.g.
+            code  virbr0
+            | ,
+            code  br-fabric
+            | )
+          li Click ↻ to refresh the bridge list
+          li Changing the compute host re-fetches bridges from the new server
+
+        h4 Step 3 — Connect to a Virtual Device
+        p Draw a link from the Bridge node to your virtual device (e.g. SONiC switch). Each Bridge node has 4 ports (br0–br3) for multiple connections.
+
+        h4 Step 4 — Deploy
+        p The generated YAML uses
+          code  bridge:BRIDGE_NAME
+          |  as the link endpoint. Bridge nodes do not appear in the
+          code  nodes:
+          |  section.
+
+        h4 Validation Warnings
+        ul
+          li
+            strong No bridge selected
+            |  — warns if a Bridge node has no bridge name assigned
+          li
+            strong Bridge does not exist
+            |  — pre-deploy validation checks that the bridge actually exists on the target server
+
+        h3 Bridge Manager
+        p
+          strong Simulate → Bridge Manager…
+          |  opens a dialog to discover and manage Linux bridges, libvirt virtual networks, and OVS bridges on the active server.
+
+        h4 Features
+        ul
+          li
+            strong Bridge list:
+            |  Shows all bridges with name, type badge (libvirt/linux/ovs), state, subnet, and member interfaces
+          li
+            strong Create bridge:
+            |  Click "+ Create Bridge" to open the creation form. Select bridge type:
+            ul
+              li
+                span.help-tag Libvirt
+                |  — creates a libvirt virtual network with optional NAT/isolated/bridge mode, DHCP subnet, and autostart
+              li
+                span.help-tag Linux
+                |  — creates a plain Linux bridge via
+                span.help-code  ip link
+              li
+                span.help-tag OVS
+                |  — creates an Open vSwitch bridge via
+                span.help-code  ovs-vsctl
+          li
+            strong Start / Stop:
+            |  Start or stop libvirt networks
+          li
+            strong Delete:
+            |  Remove bridges (libvirt, Linux, or OVS)
+          li
+            strong Refresh:
+            |  Reload bridge list from the server
+
+        h3 VXLAN Tunnel Setup
+        p
+          strong Simulate → VXLAN Tunnel…
+          |  opens a dialog for setting up VXLAN tunnels between servers. This is useful for multi-server topologies where cross-server links need Layer 2 connectivity.
+        h4 Fields
+        table.help-table
+          thead: tr
+            th Field
+            th Description
+          tbody
+            tr
+              td Bridge Name
+              td The bridge to attach the VXLAN interface to
+            tr
+              td Remote IP
+              td IP address of the remote server endpoint
+            tr
+              td VNI
+              td VXLAN Network Identifier (unique per tunnel)
+            tr
+              td Method
+              td Choose between
+                span.help-code  ip link
+                |  (standard Linux) or
+                span.help-code  ovs-vsctl
+                |  (OVS)
+
+        h3 Pre-deploy Validation
+        p When you open the Deploy Containerlab dialog, the app automatically runs pre-deploy validation to verify that host interfaces and bridges referenced in the topology actually exist on the target servers.
+        h4 What It Checks
+        ul
+          li
+            strong Host interfaces:
+            |  Verifies each assigned physical NIC exists on the target server. Reports interface state (up/down), IP assignment warnings, and bridge membership conflicts.
+          li
+            strong Bridges:
+            |  Verifies each assigned bridge exists on the target server.
+        h4 Validation Results
+        ul
+          li
+            span(style='color:#ef4444') ✖ Errors
+            |  (red) — block deployment. Fix the issue before deploying.
+          li
+            span(style='color:#f59e0b') ⚠ Warnings
+            |  (yellow) — informational but allow deployment.
+          li
+            span(style='color:#22c55e') ✔ All OK
+            |  (green) — all interfaces and bridges validated.
+        p Click
+          strong  Re-validate
+          |  to re-run the checks after making changes. The Deploy button is disabled while validation errors exist.
+
+        h3 Platform Setup (macOS vs Linux)
+        table.help-table
+          thead: tr
+            th Component
+            th macOS (Apple Silicon / Intel)
+            th Linux (x86_64)
+          tbody
+            tr
+              td Docker
+              td Docker Desktop (
+                span.help-code brew install --cask docker
+                | )
+              td Docker Engine (
+                span.help-code curl -fsSL https://get.docker.com | sh
+                | )
+            tr
+              td Containerlab
+              td Docker wrapper — run via container (see below)
+              td Native install:
+                span.help-code bash -c "$(curl -sL https://get.containerlab.dev)"
+            tr
+              td crpd
+              td ✅ Supported
+              td ✅ Supported
+            tr
+              td cEOS / SRL
+              td ✅ Supported
+              td ✅ Supported
+            tr
+              td SONiC-VS
+              td ✅ Supported
+              td ✅ Supported
+            tr
+              td vrnetlab VMs (vQFX, vJunos)
+              td ❌ Requires KVM — not available on Mac
+              td ✅ Requires nested virtualization (KVM)
+        h4 Image Architecture
+        p
+          strong Important:
+          |  Docker images must match your host CPU architecture. Apple Silicon Macs (M1/M2/M3/M4) use
+          strong  arm64
+          | , while Intel Macs and most Linux servers use
+          strong  amd64
+          | . Loading an amd64 image on Apple Silicon causes Docker Desktop to crash.
+        p
+          | The Deploy dialog will detect and warn you if an image has the wrong architecture. Download the correct variant:
+        ul
+          li
+            strong Apple Silicon Mac:
+            |  Download the
+            span.help-code  arm64
+            |  or
+            span.help-code  aarch64
+            |  variant (e.g.
+            span.help-code  junos-routing-crpd-arm64-25.4R1.12.tgz
+            | )
+          li
+            strong Intel Mac / Linux:
+            |  Download the
+            span.help-code  amd64
+            |  or
+            span.help-code  x86_64
+            |  variant
+        p
+          strong macOS containerlab setup:
+          |  Since containerlab does not install natively on macOS, run it via the official Docker wrapper. Add this alias to your
+          |
+          span.help-code ~/.zshrc
+          | :
+        .help-example
+          .help-example-title containerlab Docker wrapper alias
+          span.help-code alias containerlab='docker run --rm -it --privileged --network host -v /var/run/docker.sock:/var/run/docker.sock -v /var/run/netns:/var/run/netns -v $(pwd):/lab --pid host ghcr.io/srl-labs/clab containerlab'
+          br
+          span.help-code alias clab='containerlab'
+
+        h3 cRPD Lab (Recommended for macOS)
+        p
+          |  cRPD (Containerized Routing Protocol Daemon) is the recommended Juniper kind for macOS. It runs as a lightweight Docker container — no KVM/nested virtualization needed. Boots in ~30 seconds with full Junos CLI.
+        p
+          strong cRPD capabilities:
+        ul
+          li Full Junos CLI (
+            span.help-code show route
+            | ,
+            |
+            span.help-code show bgp summary
+            | ,
+            |
+            span.help-code show configuration
+            | )
+          li BGP, OSPF, IS-IS, MPLS LDP, SR-MPLS, EVPN-VXLAN control plane
+          li Route policies, prefix lists, community filters
+          li SNMP and Syslog support
+          li Not supported: data plane forwarding (control plane only)
+        p
+          strong Step 1 — Get the cRPD image:
+        p
+          strong Important:
+          |  Download the correct architecture for your platform —
+          strong  arm64
+          |  for Apple Silicon Mac,
+          strong  amd64
+          |  for Intel Mac / Linux. Loading the wrong architecture will crash Docker Desktop.
+        p
+          |  Option A — Import from the app (recommended):
+        ul
+          li Download the cRPD
+            span.help-code  .tgz
+            |  file from
+            |
+            a(href='https://www.juniper.net/us/en/products/routers/containerized-routing-protocol-daemon-crpd.html' target='_blank') juniper.net/crpd
+          li Open
+            strong  Simulate → Deploy Containerlab
+          li In the Docker Images section, click
+            strong  Import Image File
+          li Select your
+            span.help-code  .tgz
+            |  file — the app automatically:
+          ul
+            li Fixes Juniper's broken symlink issue in the archive
+            li Loads the image via
+              span.help-code  docker load
+            li Auto-tags it as
+              span.help-code  crpd:latest
+          li The image appears with ✓ in the Docker Images list
+        p
+          |  Option B — Pull from Juniper container registry:
+        .help-example
+          .help-example-title Pull from registry
+          span.help-code docker login enterprise-hub.juniper.net
+          br
+          span.help-code docker pull enterprise-hub.juniper.net/crpd:latest
+          br
+          span.help-code docker tag enterprise-hub.juniper.net/crpd:latest crpd:latest
+        p
+          |  Option C — Manual terminal load (if the app import fails):
+        .help-example
+          .help-example-title Fix symlink and load manually
+          span.help-code mkdir -p /tmp/crpd-fix && cd /tmp/crpd-fix
+          br
+          span.help-code tar xzf ~/Downloads/junos-routing-crpd-arm64-25.4R1.12.tgz
+          br
+          span.help-code LAYER_DIR=$(ls -d */ | head -1) && LAYER_TAR=$(ls *.tar | head -1)
+          br
+          span.help-code rm "$LAYER_DIR/layer.tar" && cp "$LAYER_TAR" "$LAYER_DIR/layer.tar"
+          br
+          span.help-code tar cf /tmp/crpd-fixed.tar . && docker load -i /tmp/crpd-fixed.tar
+          br
+          span.help-code docker tag crpd:25.4R1.12 crpd:latest
+        p
+          strong Step 2 — Set up topology in the app:
+        ul
+          li Add Router or Switch nodes to the canvas
+          li Set
+            |
+            span.help-code Vendor = Juniper
+          li Leave
+            |
+            span.help-code Device Type
+            |  and
+            |
+            span.help-code Model
+            |  empty — this auto-maps to
+            |
+            span.help-code crpd
+          li The containerlab kind hint shows:
+            |
+            span.help-code Containerlab: crpd · Image: crpd:latest · Boot: ~30 sec
+          li Create links between nodes and optionally auto-assign IPs
+        p
+          strong Step 3 — Deploy:
+          |  Simulate → Deploy Containerlab. The app generates
+          |
+          span.help-code .clab.yml
+          |  with
+          |
+          span.help-code kind: crpd
+          |  for all Juniper nodes. Nodes boot in ~30 seconds.
+        p
+          strong Step 4 — Interact:
+        ul
+          li
+            span.help-code Inspect Lab Status
+            |  — verify containers are running (green status dots)
+          li
+            span.help-code Right-click → Open Console
+            |  — opens Junos CLI (
+            span.help-code cli
+            | )
+          li
+            span.help-code Fetch Config
+            |  — retrieves running config via
+            |
+            span.help-code show configuration | display set
+          li
+            span.help-code Push Config
+            |  — pushes Junos set commands into the running container
+          li
+            span.help-code BGP Polling
+            |  — live status via
+            |
+            span.help-code show bgp summary
+          li
+            span.help-code Syslog
+            |  — configure with
+            |
+            span.help-code set system syslog host &lt;ip&gt; port 1514 any info
+
+        h3 Juniper VM Support (vrnetlab) — Linux Only
+        p
+          |  On Linux hosts with KVM, Juniper nodes are automatically mapped to vrnetlab VM kinds based on the Device Type selected in node properties:
+        table.help-table
+          thead: tr
+            th Device Type
+            th Model Examples
+            th Containerlab Kind
+            th Default Image
+            th Boot Time
+          tbody
+            tr
+              td QFX
+              td QFX5120-48Y, QFX5230-64CD
+              td juniper_vqfx
+              td vrnetlab/vr-vqfx:latest
+              td ~7 min
+            tr
+              td EX
+              td EX4400-48T, EX9200
+              td juniper_vjunosswitch
+              td vrnetlab/vr-vjunosswitch:latest
+              td ~15 min
+            tr
+              td MX
+              td MX204, MX960
+              td juniper_vjunosrouter
+              td vrnetlab/vr-vjunosrouter:latest
+              td ~15 min
+            tr
+              td PTX
+              td PTX10001, PTX10008
+              td juniper_vjunosrouter
+              td vrnetlab/vr-vjunosrouter:latest
+              td ~15 min
+            tr
+              td ACX
+              td ACX7100, ACX7509
+              td juniper_vjunosrouter
+              td vrnetlab/vr-vjunosrouter:latest
+              td ~15 min
+            tr
+              td (none selected)
+              td (model blank)
+              td crpd
+              td crpd:latest
+              td ~30 sec
+        p
+          strong Containerlab kind hint:
+          |  When you select a Juniper Device Type, a hint box appears below the model field showing the mapped containerlab kind, Docker image, and expected boot time. If you set a custom Image / Template field, the hint updates to reflect your override.
+        p
+          strong Per-node image override:
+          |  Set the Image / Template field in node properties to use a specific version (e.g., vrnetlab/vr-vjunosswitch:23.2R1.15) instead of the default.
+        p
+          strong vrnetlab image building:
+          |  vrnetlab images are not on Docker Hub. Build them locally from vendor qcow2 VM images:
+        .help-example
+          .help-example-title Build vrnetlab image (example: vQFX)
+          span.help-code git clone https://github.com/srl-labs/vrnetlab.git
+          br
+          span.help-code cd vrnetlab/juniper/vqfx
+          br
+          span.help-code # Copy vqfx qcow2 files into this directory
+          br
+          span.help-code make
+        p
+          |  See
+          |
+          a(href='https://containerlab.dev/manual/vrnetlab/' target='_blank') containerlab vrnetlab docs
+          |  for full instructions.
+        p
+          strong Requirements:
+          |  Linux x86_64 with nested virtualization (KVM) enabled. Allocate at least 4 GB RAM per vrnetlab VM node. Not available on macOS (no KVM support). Use crpd on Mac for Juniper labs.
+
+        h3 Cisco IOS-XR Lab (XRd — Recommended)
+        p
+          |  XRd (IOS-XR Container) is the recommended Cisco kind for containerlab. It runs as a lightweight Docker container with full IOS-XR CLI. Boots in ~2 minutes.
+        p
+          strong XRd capabilities:
+        ul
+          li Full IOS-XR CLI (
+            span.help-code show ip route
+            | ,
+            |
+            span.help-code show bgp summary
+            | ,
+            |
+            span.help-code show running-config
+            | )
+          li BGP, OSPF, IS-IS, MPLS LDP, SR-MPLS, Segment Routing, EVPN
+          li Route policies, prefix sets, community sets
+          li SNMP, Syslog, gRPC/gNMI telemetry
+          li Not supported: full data plane forwarding (control plane only)
+        p
+          strong Step 1 — Get the XRd image:
+        p
+          |  Option A — Pull from Cisco container registry:
+        .help-example
+          .help-example-title Pull XRd from registry
+          span.help-code docker login &lt;cisco-registry&gt;
+          br
+          span.help-code docker pull ios-xr/xrd-control-plane:latest
+        p
+          |  Option B — Use the Docker Image Manager:
+        ul
+          li Open
+            strong  Simulate → Docker Image Manager
+          li Type
+            |
+            span.help-code  ios-xr/xrd-control-plane:latest
+            |  in the pull input and click
+            strong  Pull Image
+          li Or click
+            strong  Import Image File
+            |  to load from a
+            |
+            span.help-code .tar
+            |  /
+            |
+            span.help-code .tgz
+            |  file
+        p
+          |  Option C — Download from Cisco Software Center:
+        ul
+          li Visit
+            |
+            a(href='https://software.cisco.com' target='_blank')  software.cisco.com
+            |  (requires valid Cisco CCO account)
+          li Download the XRd Control Plane container image
+          li Load via terminal:
+        .help-example
+          span.help-code docker load -i xrd-control-plane-container-x64.tgz
+          br
+          span.help-code docker tag ios-xr/xrd-control-plane:7.11.1 ios-xr/xrd-control-plane:latest
+        p
+          strong Step 2 — Set up topology in the app:
+        ul
+          li Drag Router nodes onto the canvas
+          li Set
+            |
+            span.help-code  Vendor = Cisco
+          li Set
+            |
+            span.help-code  Model = XRD
+            |  (or leave blank — Cisco defaults to XRd)
+          li The containerlab kind hint shows:
+            |
+            span.help-code  Containerlab: cisco_xrd · Image: ios-xr/xrd-control-plane:latest · Boot: ~2 min
+          li Create links between nodes and optionally auto-assign IPs
+        p
+          strong Step 3 — Deploy:
+          |  Simulate → Deploy Containerlab. The app generates
+          |
+          span.help-code .clab.yml
+          |  with
+          |
+          span.help-code kind: cisco_xrd
+          |  for all Cisco XRd nodes. Nodes boot in ~2 minutes.
+        p
+          strong Step 4 — Interact:
+        ul
+          li
+            span.help-code Inspect Lab Status
+            |  — verify containers are running (green status dots)
+          li
+            span.help-code Right-click → Open Console
+            |  — opens IOS-XR CLI
+          li
+            span.help-code Fetch Config
+            |  — retrieves running config via
+            |
+            span.help-code  show running-config
+          li
+            span.help-code Push Config
+            |  — pushes IOS-XR configuration commands into the running container
+
+        h3 Cisco VM Support (vrnetlab) — Linux Only
+        p
+          |  On Linux hosts with KVM, Cisco nodes can run as full VM-based containers via vrnetlab. These require qcow2 images built into Docker containers.
+        table.help-table
+          thead: tr
+            th Model Prefix
+            th Containerlab Kind
+            th Default Image
+            th Boot Time
+            th Platform
+          tbody
+            tr
+              td XRD / XR / IOS-XR
+              td cisco_xrd
+              td ios-xr/xrd-control-plane:latest
+              td ~2 min
+              td IOS-XR (container)
+            tr
+              td XRV
+              td cisco_xrv9k
+              td vrnetlab/vr-xrv9k:latest
+              td ~10 min
+              td IOS-XR (VM)
+            tr
+              td CSR / IOS-XE / C8000
+              td cisco_csr1000v
+              td vrnetlab/vr-csr:latest
+              td ~7 min
+              td IOS-XE (VM)
+            tr
+              td N9K / NEXUS
+              td cisco_n9kv
+              td vrnetlab/vr-n9kv:latest
+              td ~10 min
+              td NX-OS (VM)
+        p
+          strong vrnetlab image building:
+          |  vrnetlab images are not on Docker Hub. Build them locally from Cisco qcow2 VM images:
+        .help-example
+          .help-example-title Build vrnetlab image (example: XRv9k)
+          span.help-code git clone https://github.com/srl-labs/vrnetlab.git
+          br
+          span.help-code cd vrnetlab/cisco/xrv9k
+          br
+          span.help-code # Copy xrv9k qcow2 file into this directory
+          br
+          span.help-code make
+        p
+          |  See
+          |
+          a(href='https://containerlab.dev/manual/vrnetlab/' target='_blank') containerlab vrnetlab docs
+          |  for full instructions.
+        p
+          strong Requirements:
+          |  Linux x86_64 with nested virtualization (KVM) enabled. Allocate at least 8 GB RAM for XRv9k, 4 GB for CSR/N9Kv. Not available on macOS (no KVM support). Use XRd container on Mac for Cisco IOS-XR labs.
+
+        h3 SONiC-VS Lab
+        p
+          |  SONiC (Software for Open Networking in the Cloud) is an open-source network OS. The
+          strong  SONiC-VS
+          |  (Virtual Switch) image runs as a lightweight container — ideal for simulating data-centre leaf/spine fabrics with BGP, ECMP, and VXLAN.
+        table.help-table
+          thead: tr
+            th Property
+            th Value
+          tbody
+            tr
+              td Containerlab kind
+              td
+                code sonic-vs
+            tr
+              td Default image
+              td
+                code netreplica/docker-sonic-vs:latest
+            tr
+              td Boot time
+              td ~3 minutes
+            tr
+              td Platform
+              td macOS (ARM/Intel) and Linux (x86_64)
+            tr
+              td Default credentials
+              td admin / YourPaSsWoRd
+        p
+          strong Capabilities:
+        ul
+          li BGP (eBGP/iBGP), OSPF, static routes
+          li ECMP, VXLAN, EVPN
+          li Port channels, VLANs, ACLs
+          li SNMP, Syslog, gNMI telemetry
+          li config_db.json configuration model
+          li FRR-based routing stack
+
+        p
+          strong Step 1 — Get the SONiC-VS image:
+        p
+          |  Option A — Pull from Docker Hub (recommended):
+        .help-example
+          .help-example-title Pull SONiC-VS
+          span.help-code docker pull netreplica/docker-sonic-vs:latest
+        p
+          |  Option B — Use the Docker Image Manager:
+        ul
+          li Open
+            strong  Simulate → Docker Image Manager
+          li Type
+            |
+            span.help-code  netreplica/docker-sonic-vs:latest
+            |  in the pull input and click
+            strong  Pull Image
+          li Real-time progress is displayed as the image downloads
+          li Or click
+            strong  Import Image File
+            |  to load from a
+            |
+            span.help-code .tar
+            | /
+            span.help-code .tgz
+            |  file
+        p
+          |  Option C — Pull during Deploy:
+        ul
+          li Open
+            strong  Simulate → Deploy Containerlab
+          li The app auto-detects SONiC nodes and checks for the required image
+          li If the image is missing, click
+            strong  Pull
+            |  next to the image name in the image checklist
+          li Download progress is shown in real-time
+
+        p
+          strong Step 2 — Set up topology in the app:
+        ul
+          li Drag Router or Switch nodes onto the canvas
+          li Set
+            |
+            span.help-code  Vendor = SONiC
+            |  (or
+            span.help-code  Edgecore
+            | )
+          li The containerlab kind hint shows:
+            |
+            span.help-code  Containerlab: sonic-vs · Image: netreplica/docker-sonic-vs:latest · Boot: ~3 min
+          li Create links between nodes and assign IPs (Auto-Assign IP recommended)
+          li Set
+            strong  ASN
+            |  on each node for BGP — nodes without ASN will not have BGP configured
+
+        p
+          strong Step 3 — Deploy:
+        ul
+          li Open
+            strong  Simulate → Deploy Containerlab
+          li The app generates config_db.json for each SONiC node with:
+        ul
+          li Port configuration (Ethernet0, Ethernet4, Ethernet8… in 4-lane steps)
+          li Interface IP addresses from the canvas
+          li BGP configuration with ASN and neighbor peering
+          li Loopback interface with router-id
+        ul
+          li Click
+            strong  Deploy
+            |  — topology YAML and configs are uploaded and containers are started
+          li Wait ~3 minutes for SONiC services to fully boot
+
+        p
+          strong Step 4 — Post-deploy:
+        ul
+          li The app automatically enables interfaces on SONiC containers after boot (~2 min timer)
+          li Use
+            strong  Inspect Lab Status
+            |  to see management IPs
+          li Right-click a node →
+            strong  Open SSH Terminal
+            |  (credentials: admin / YourPaSsWoRd)
+          li Verify BGP:
+        .help-example
+          .help-example-title SONiC CLI commands
+          span.help-code show ip bgp summary
+          br
+          span.help-code show ip route
+          br
+          span.help-code show interfaces status
+          br
+          span.help-code show runningconfiguration all
+
+        h3 Docker Image Manager
+        p
+          |  The Docker Image Manager (
+          strong Simulate → Docker Image Manager
+          | ) provides a central interface to manage container images on local or remote servers.
+        p
+          strong Features:
+        ul
+          li
+            strong Server selector:
+            |  Switch between Local and any configured remote server to manage images on that host
+          li
+            strong Image list:
+            |  Shows all Docker images with name, tag, size, architecture, and age
+          li
+            strong Pull:
+            |  Type any image name (e.g.
+            span.help-code  netreplica/docker-sonic-vs:latest
+            | ) and click Pull Image — real-time download progress is streamed from Docker
+          li
+            strong Import:
+            |  Click Import Image File to load a
+            span.help-code  .tar
+            | /
+            span.help-code .tgz
+            | /
+            span.help-code .gz
+            |  file — progress is shown during loading
+          li
+            strong Tag:
+            |  Retag an existing image (e.g. add a
+            span.help-code :latest
+            |  alias)
+          li
+            strong Delete:
+            |  Remove images you no longer need. If an image is in use by a container, the app automatically retries with force-delete
+          li
+            strong Refresh:
+            |  Reload the image list from Docker
+        p
+          strong Pull progress:
+          |  When pulling or loading images, Docker progress is streamed in real-time — you can see each layer downloading with size and speed. This replaces the previous static "Loading…" message.
+
+    //- ── KVM & Virtual Machines ───────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("kvm")')
+        span.help-chevron {{ isSectionOpen('kvm') ? '▾' : '▸' }}
+        | KVM & Virtual Machines
+      .help-section-body(*ngIf='isSectionOpen("kvm")')
+        h3 Overview
+        p
+          | Many network OS images (Cisco XRv9k, Juniper vQFX/vMX, Nokia SR OS) run as full virtual machines inside Docker containers via
+          strong  vrnetlab
+          | . These require KVM (hardware virtualization) on the host server. This section covers checking KVM readiness, building vrnetlab images, and managing VMs directly via libvirt.
+
+        h3 KVM Readiness Check
+        p
+          | The Server Manager automatically detects KVM support on each server. Open
+          strong  Simulate → Server Manager
+          |  and look at the
+          strong  KVM
+          |  column:
+        ul
+          li
+            strong ✓ (green):
+            |  KVM is available —
+            span.help-code /dev/kvm
+            |  exists on the server. This server can run vrnetlab VM-backed nodes.
+          li
+            strong ✗ (red):
+            |  KVM is not available. Container-only images work fine (SRL, cEOS, crpd, SONiC, Alpine), but vrnetlab VMs will not boot.
+          li
+            strong VMs column:
+            |  Shows the count of running libvirt VMs on the server, polled every 10 seconds.
+        p
+          strong How KVM is detected:
+        ul
+          li
+            strong Linux:
+            |  Checks for
+            span.help-code  /dev/kvm
+            |  device file (KVM kernel module loaded)
+          li
+            strong macOS:
+            |  Checks
+            span.help-code  sysctl kern.hv_support
+            |  (Hypervisor.framework — note: containerlab vrnetlab VMs still require Linux KVM)
+          li
+            strong Remote servers:
+            |  Checks via SSH during the server test and during resource polling
+        p
+          strong Tip:
+          |  If KVM shows ✗ on a Linux server, ensure the KVM kernel module is loaded:
+        .help-example
+          span.help-code sudo modprobe kvm_intel   # Intel CPUs
+          br
+          span.help-code sudo modprobe kvm_amd     # AMD CPUs
+          br
+          span.help-code ls -la /dev/kvm           # Verify device exists
+
+        h3 Building vrnetlab Images
+        p
+          | vrnetlab converts vendor VM disk images (qcow2, vmdk) into Docker containers that containerlab can deploy. This is required for VM-based NOS platforms.
+        h4 Supported Vendors
+        table.help-table
+          thead: tr
+            th Vendor
+            th Kind
+            th Disk Format
+            th Typical Boot Time
+          tbody
+            tr
+              td Cisco XRv9000
+              td
+                span.help-code cisco_xrv9k
+              td qcow2
+              td ~10-15 min
+            tr
+              td Cisco XRd
+              td
+                span.help-code cisco_xrd
+              td qcow2
+              td ~5-8 min
+            tr
+              td Cisco CSR1000v
+              td
+                span.help-code cisco_csr1000v
+              td qcow2
+              td ~5-8 min
+            tr
+              td Cisco Nexus 9000v
+              td
+                span.help-code cisco_n9kv
+              td qcow2
+              td ~10-15 min
+            tr
+              td Juniper vQFX
+              td
+                span.help-code juniper_vqfx
+              td qcow2 / vmdk
+              td ~7-10 min
+            tr
+              td Juniper vJunos Router
+              td
+                span.help-code juniper_vjunosrouter
+              td qcow2
+              td ~7-10 min
+            tr
+              td Juniper vJunos Switch
+              td
+                span.help-code juniper_vjunosswitch
+              td qcow2
+              td ~7-10 min
+            tr
+              td Nokia SR OS
+              td
+                span.help-code nokia_sros
+              td qcow2
+              td ~5-8 min
+            tr
+              td Arista vEOS
+              td
+                span.help-code arista_veos
+              td vmdk / iso
+              td ~5-8 min
+
+        h4 Build Workflow
+        p
+          strong Step 1 — Open the Builder:
+        ul
+          li Go to
+            strong  Simulate → Docker Image Manager
+          li Click the
+            strong  Build vrnetlab Image
+            |  button (next to Import Image File)
+        p
+          strong Step 2 — Select Vendor:
+        ul
+          li Choose the vendor/platform from the dropdown (e.g. "Cisco XRv9000")
+          li The builder knows which vrnetlab subdirectory and Makefile to use
+        p
+          strong Step 3 — Select VM Image File:
+        ul
+          li Click
+            strong  Browse…
+            |  and select your vendor VM disk file
+          li Common file types:
+            span.help-code  .qcow2
+            | ,
+            span.help-code  .vmdk
+            | ,
+            span.help-code  .iso
+          li
+            strong Important:
+            |  vrnetlab's launch.py only searches for
+            span.help-code  .qcow2
+            |  files at boot. If you have an ISO image, the Docker build may succeed but the VM will not start. Always use the qcow2 format when available
+        p
+          strong Step 4 — Build:
+        ul
+          li Click
+            strong  Build Image
+          li A terminal window opens showing real-time build progress:
+        .help-example
+          span.help-code === vrnetlab Image Builder ===
+          br
+          span.help-code Vendor: Cisco XRv9000
+          br
+          span.help-code Image: xrv9k-fullk9-x-7.9.1.qcow2
+          br
+          span.help-code
+          br
+          span.help-code Cloning vrnetlab repository...
+          br
+          span.help-code Copying VM image to xrv9k/...
+          br
+          span.help-code Building Docker image (this may take several minutes)...
+        ul
+          li First build clones the vrnetlab repository to
+            span.help-code  ~/.tlink-netops/vrnetlab/
+            |  (subsequent builds reuse it)
+          li The build copies your VM image into the vendor subdirectory and runs
+            span.help-code  make docker-image
+          li Build time varies by vendor — typically 5-20 minutes depending on image size
+        p
+          strong Step 5 — Verify:
+        ul
+          li After the build completes, close the terminal
+          li The new Docker image appears in the Docker Image Manager (e.g.
+            span.help-code  vrnetlab/vr-xrv9k:7.9.1
+            | )
+          li When you add a matching node type on the canvas, it will use this image automatically
+
+        h3 VM Manager (libvirt/virsh)
+        p
+          | For servers where you want to run VMs directly via libvirt/QEMU — outside of containerlab — use the VM Manager. This provides a GUI over
+          span.help-code  virsh
+          |  commands.
+        h4 Opening the VM Manager
+        p Go to
+          strong  Simulate → VM Manager (KVM)…
+          |  from the menu. The dialog operates on the currently active server (local or remote via SSH).
+
+        h4 Viewing VMs
+        p
+          | The VM list shows all VMs on the active server with their current state:
+        ul
+          li
+            span(style='color:#22c55e') ●
+            strong  running
+            |  — VM is active and operational
+          li
+            span(style='color:#f59e0b') ●
+            strong  paused
+            |  — VM is suspended in memory
+          li
+            span(style='color:#6b7280') ●
+            strong  shut off
+            |  — VM is stopped
+        p Click
+          strong  Refresh
+          |  to reload the VM list from the server.
+
+        h4 VM Actions
+        table.help-table
+          thead: tr
+            th Action
+            th Description
+            th When Available
+          tbody
+            tr
+              td Start
+              td
+                span.help-code virsh start
+                |  — Boot the VM
+              td When shut off
+            tr
+              td Stop
+              td
+                span.help-code virsh shutdown
+                |  — Graceful ACPI shutdown
+              td When running
+            tr
+              td Console
+              td Opens a terminal with
+                span.help-code  virsh console
+                |  for serial access
+              td When running
+            tr
+              td Snapshots
+              td Expand/collapse inline snapshot list for the VM
+              td Always
+            tr
+              td ⚡ Autostart
+              td
+                span.help-code virsh autostart
+                |  — Enable the VM to start automatically on host boot
+              td When running
+            tr
+              td Force Stop
+              td
+                span.help-code virsh destroy
+                |  — Immediate power-off (no graceful shutdown)
+              td When running
+            tr
+              td Delete
+              td
+                span.help-code virsh undefine
+                |  — Permanently remove the VM definition. Optionally delete associated disk storage.
+              td When shut off
+
+        h4 Creating a New VM
+        p Click
+          strong  + Create VM
+          |  to open the creation form:
+        table.help-table
+          thead: tr
+            th Field
+            th Description
+            th Default
+          tbody
+            tr
+              td Name
+              td VM name (used in virsh commands)
+              td —
+            tr
+              td vCPUs
+              td Number of virtual CPU cores
+              td 2
+            tr
+              td Memory (MB)
+              td RAM allocation in megabytes
+              td 2048
+            tr
+              td Disk Image
+              td Path to qcow2/vmdk file — pick from the Server Image Library or click Browse… to select a local file
+              td —
+            tr
+              td Network Bridge
+              td Linux bridge for VM networking (includes dynamically discovered bridges)
+              td virbr0
+        p
+          strong Disk Image Library:
+          |  When creating a VM, the form shows a "Server Images" panel listing all disk images in
+          |
+          span.help-code /var/lib/libvirt/images
+          |  on the active server. Click an image to select it. Features:
+        ul
+          li
+            strong Image list:
+            |  Shows file name and size for each image on the server
+          li
+            strong Upload:
+            |  Click ⬆ Upload to pick a local qcow2/vmdk file and upload it to the server's
+            span.help-code  /var/lib/libvirt/images
+            |  directory. For remote servers, the file is transferred via SFTP then moved with sudo.
+          li
+            strong Refresh:
+            |  Click ↻ to reload the image list
+          li
+            strong Browse:
+            |  Click Browse… to select a file from the local filesystem directly (bypasses the server image library)
+        p
+          | Click
+          strong  Create & Start
+          |  to define and boot the VM. The app generates a libvirt XML domain definition, runs
+          span.help-code  virsh define
+          |  and
+          span.help-code  virsh start
+          | . For remote servers, the XML is uploaded via SFTP.
+
+        h4 VM Snapshots
+        p
+          | Click
+          strong  Snapshots
+          |  on any VM to expand the inline snapshot panel:
+        ul
+          li View existing snapshots with names and creation dates
+          li Click
+            strong  + New Snapshot
+            |  to create a snapshot of the current VM state (
+            span.help-code virsh snapshot-create-as
+            | )
+          li Click
+            strong  Restore
+            |  to revert a VM to a previous snapshot (
+            span.help-code virsh snapshot-revert
+            | )
+          li Click
+            strong  🗑
+            |  (delete) to permanently remove a snapshot (
+            span.help-code virsh snapshot-delete
+            | )
+          li Snapshots capture the full VM state including memory and disk — useful for saving known-good configurations
+
+        h4 Deleting a VM
+        p
+          | Click
+          strong  Delete
+          |  on a shut-off VM to open the deletion confirmation dialog. Options:
+        ul
+          li
+            strong Confirm Delete:
+            |  Permanently removes the VM definition via
+            span.help-code  virsh undefine
+          li
+            strong Also delete disk image:
+            |  Check this option to also remove the associated disk storage (
+            span.help-code virsh undefine --remove-all-storage
+            | )
+
+        h4 End-to-End Example
+        p
+          strong Scenario:
+          |  You want to run a Cisco XRv9000 router on a remote server with KVM support.
+        ol
+          li Open
+            strong  Server Manager
+            |  → verify
+            span.help-code  san-ft-ai-srv02
+            |  shows KVM ✓
+          li Open
+            strong  Docker Image Manager
+            |  → click
+            strong  Build vrnetlab Image
+          li Select "Cisco XRv9000" → Browse for your
+            span.help-code  xrv9k-7.9.1.qcow2
+            |  → click
+            strong  Build Image
+          li Wait for the build to complete in the terminal window
+          li On the canvas, add a Cisco XRv9k router node — it picks up the new Docker image
+          li Deploy via
+            strong  Simulate → Deploy Containerlab
+            |  targeting the KVM-enabled server
+          li Alternatively, use
+            strong  VM Manager
+            |  to create a standalone VM directly with libvirt (no containerlab needed)
+
+        h4 Prerequisites
+        p
+          strong For vrnetlab image building:
+        ul
+          li
+            span.help-code git
+            |  installed on the machine (to clone the vrnetlab repository)
+          li Docker running (the build uses
+            span.help-code  docker build
+            |  internally)
+          li Vendor VM disk image file (qcow2/vmdk — obtained from the vendor portal)
+        p
+          strong For VM Manager (libvirt):
+        ul
+          li
+            span.help-code libvirt
+            |  and
+            span.help-code  qemu-kvm
+            |  installed on the server
+          li
+            span.help-code virsh
+            |  command available in PATH
+          li KVM kernel module loaded (
+            span.help-code /dev/kvm
+            |  exists)
+          li For remote servers: SSH access configured in Server Manager
+        .help-example
+          .help-example-title Install libvirt on Ubuntu/Debian
+          span.help-code sudo apt install -y qemu-kvm libvirt-daemon-system virtinst
+          br
+          span.help-code sudo systemctl enable --now libvirtd
+          br
+          span.help-code sudo usermod -aG libvirt $USER
+          br
+          span.help-code # Log out and back in, then verify:
+          br
+          span.help-code virsh list --all
+
+    //- ── Monitoring & Automation ───────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("monitoring")')
+        span.help-chevron {{ isSectionOpen('monitoring') ? '▾' : '▸' }}
+        | Monitoring & Automation
+      .help-section-body(*ngIf='isSectionOpen("monitoring")')
+        p Workflow: SSH Setup → Device Mapping → Polling → Alarms → Config Backup → Event Rules → Upgrade Plans.
+
+        p
+          strong 1. SSH Setup
+        p Node Info tab → Management IP, Username, Password. "Test SSH" verifies connectivity. Vendor auto-detected if blank. Right-click node → Open SSH Terminal for interactive shell.
+        p Vendors: Cisco, Juniper, Arista, Nokia, SONiC, Huawei, HPE, Dell, MikroTik, Extreme.
+
+        p
+          strong 2. Device Mapping
+        p Devices menu → Import Device CSV. Preview dialog matches by hostname or management IP, shows matched/unmatched counts. Mapped nodes show "M" badge on canvas.
+
+        p
+          strong 3. Polling
+        p Inventory menu → Poll All / Poll Selected. Auto-Poll intervals: 1, 2, 5, 10, 15, or 30 minutes (first poll runs immediately). Runs vendor-specific commands and detects:
+        table.help-table
+          thead: tr
+            th Alarm
+            th Condition
+            th Severity
+          tbody
+            tr
+              td High CPU
+              td &gt;80% (&gt;95% = Critical)
+              td Major / Critical
+            tr
+              td High Memory
+              td &gt;85% (&gt;95% = Critical)
+              td Major / Critical
+            tr
+              td Interface Down
+              td Mapped port goes down
+              td Warning
+            tr
+              td Vendor Alarms
+              td Parsed from CLI output
+              td Per device
+            tr
+              td Config Drift
+              td Config hash changed since backup
+              td Warning
+        p Alarms auto-clear when resolved. Interface states sync to front-panel port diagram.
+
+        p
+          strong Inventory Panel:
+          |  Toggle via Inventory menu → Inventory Panel. Shows a sidebar table with Device / OS Version / Model / Last Polled columns. Quick-action buttons: Poll All (↻) and Toggle Auto-Poll (⟳). Rows with active alarms are highlighted.
+        p
+          strong 4. Alarm Panel
+        p Inventory menu → Alarm Panel. Active alarm count shown in status bar (click to toggle panel); critical nodes get a red badge on canvas.
+        p
+          strong Severity filter:
+          |  All / Critical / Major / Minor / Warning / Info.
+        p
+          strong Category filter:
+          |  All / Interface Down / High CPU / High Memory / Config Drift / Reachability / Version Mismatch / Custom.
+        p
+          strong Actions:
+          |  Per-alarm Acknowledge or Clear buttons. Bulk Ack All / Clear All for batch operations.
+
+        p
+          strong 5. Config Backup & Diff
+        p Inventory menu → Backup All / Backup Selected. Up to 20 versions per node. Config Diff Viewer compares any two versions side-by-side. Inventory auto-saves to
+          |
+          span.help-code .inv.json
+          |  sidecar.
+
+        p
+          strong 6. Event Rules
+        p Inventory menu → Event Rules. Each rule: trigger + action + optional node/vendor filters. Enable/disable or delete rules.
+        table.help-table
+          thead: tr
+            th Trigger
+            th Fires When
+          tbody
+            tr
+              td: span.help-tag Command Check
+              td SSH command output matches regex
+            tr
+              td: span.help-tag Alarm Raised
+              td New alarm detected
+            tr
+              td: span.help-tag Alarm Cleared
+              td Alarm auto-resolves
+            tr
+              td: span.help-tag Config Change
+              td Config hash changed
+            tr
+              td: span.help-tag Poll Complete
+              td Poll cycle finishes
+            tr
+              td: span.help-tag Version Change
+              td OS version changed
+            tr
+              td: span.help-tag Link Down / Up
+              td Interface transitions
+        p
+          strong Actions:
+          |
+          span.help-tag Notify
+          |  ·
+          span.help-tag Backup Config
+          |  ·
+          span.help-tag Run Command
+          |  ·
+          span.help-tag Log
+        p
+          strong Filters:
+          |  Node =
+          |
+          span.help-code *
+          |  (all),
+          |
+          span.help-code router-*
+          |  (prefix),
+          |
+          span.help-code ?w-core
+          |  (wildcard). Vendor =
+          |
+          span.help-code *
+          |  or specific.
+        p Event log at bottom of dialog tracks recent triggers.
+
+        p
+          strong 7. Command Check
+        p SSHs into matching devices after each poll, runs a custom command, tests output against regex. Match → action fires. No match next poll → alarm auto-clears.
+        .help-example
+          .help-example-title Examples per vendor
+          table.help-table
+            thead: tr
+              th Vendor
+              th Check Command
+              th Match Pattern
+              th Detects
+            tbody
+              tr
+                td Juniper
+                td: span.help-code cli -c "show system alarms"
+                td: span.help-code Fan.*Degraded
+                td Fan failure
+              tr
+                td Cisco
+                td: span.help-code show environment all
+                td: span.help-code Failed|Not Present
+                td PSU / fan failure
+              tr
+                td Arista
+                td: span.help-code FastCli -p 15 -c "show system environment all"
+                td: span.help-code overheating|powerSupply.*Error
+                td Thermal / PSU alert
+              tr
+                td Nokia
+                td: span.help-code show system alarms
+                td: span.help-code Critical|Major
+                td Any critical alarm
+              tr
+                td Huawei
+                td: span.help-code display alarm active
+                td: span.help-code Power.*Abnormal
+                td Power alarm
+              tr
+                td SONiC
+                td: span.help-code show system-health summary
+                td: span.help-code Not OK
+                td Health check failure
+              tr
+                td MikroTik
+                td: span.help-code /system health print
+                td: span.help-code temperature.*[5-9]\d
+                td High temperature
+              tr
+                td Dell
+                td: span.help-code show environment
+                td: span.help-code Failed|Absent
+                td Hardware failure
+              tr
+                td HPE
+                td: span.help-code show system
+                td: span.help-code fault|failure
+                td System fault
+              tr
+                td Extreme
+                td: span.help-code show system
+                td: span.help-code Error|Failed
+                td System error
+
+        p
+          strong 8. Upgrade Plans
+        p Inventory menu → Upgrade Plans. Create plan with target firmware, track stages (planned → downloading → staged → upgrading → verifying → completed), run pre/post-check validations.
+
+    //- ── SNMP Polling ────────────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("snmp")')
+        span.help-chevron {{ isSectionOpen('snmp') ? '▾' : '▸' }}
+        | SNMP Polling
+      .help-section-body(*ngIf='isSectionOpen("snmp")')
+        p
+          strong Overview:
+          |  SNMP polling provides an alternative to SSH for monitoring device metrics. Useful for devices that support SNMP but have limited SSH access, or for lightweight read-only polling.
+        p
+          strong Setup
+          |  — select a node, open the
+          |
+          span.help-tag Info
+          |  tab, and scroll to the SNMP section:
+        ul
+          li
+            span.help-tag Poll Method
+            |  — choose between
+            |
+            span.help-code ssh
+            |  (default) and
+            |
+            span.help-code snmp
+          li
+            span.help-tag SNMP Version
+            |  —
+            |
+            span.help-code v2c
+            |  (community string) or
+            |
+            span.help-code v3
+            |  (auth + privacy)
+          li
+            span.help-tag Community
+            |  (v2c only) — default
+            |
+            span.help-code public
+          li
+            span.help-tag Port
+            |  — default
+            |
+            span.help-code 161
+          li
+            span.help-tag v3 Authentication
+            |  — protocol (
+            span.help-code MD5
+            |  /
+            |
+            span.help-code SHA
+            | ), username, password
+          li
+            span.help-tag v3 Privacy
+            |  — protocol (
+            span.help-code DES
+            |  /
+            |
+            span.help-code AES
+            | ), password
+        p
+          strong Test Connection:
+          |  Click "Test SNMP" to verify reachability. Sends a
+          |
+          span.help-code sysDescr.0
+          |  (1.3.6.1.2.1.1.1.0) GET request.
+        p
+          strong Vendor OID Map:
+          |  Built-in OID sets for 10 vendors — includes sysDescr, sysName, sysUpTime, ifTable, cpuLoad, and memoryUsed per vendor (Cisco, Juniper, Arista, Nokia, Huawei, SONiC, HPE, Dell, MikroTik, Extreme).
+        h3 Vendor SNMP Configuration Examples
+        table.help-table
+          thead: tr
+            th Vendor
+            th Enable SNMP
+          tbody
+            tr
+              td Cisco IOS
+              td: span.help-code snmp-server community public RO
+            tr
+              td Cisco NX-OS
+              td: span.help-code snmp-server community public use-vrf management
+            tr
+              td Arista EOS
+              td: span.help-code snmp-server community public ro
+            tr
+              td Juniper Junos
+              td: span.help-code set snmp community public authorization read-only
+            tr
+              td Palo Alto
+              td: span.help-code set deviceconfig system snmp-setting access-setting version v2c snmp-community-string public
+            tr
+              td MikroTik
+              td: span.help-code /snmp set enabled=yes
+            tr
+              td Nokia SR OS
+              td: span.help-code configure system snmp community "public" access-permissions r
+            tr
+              td SONiC
+              td: span.help-code sudo config snmp community add public RO
+            tr
+              td Huawei
+              td: span.help-code snmp-agent community read public
+            tr
+              td Linux (net-snmp)
+              td: span.help-code rocommunity public (in /etc/snmp/snmpd.conf)
+
+    //- ── Syslog / Event Streaming ───────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("syslog")')
+        span.help-chevron {{ isSectionOpen('syslog') ? '▾' : '▸' }}
+        | Syslog / Event Streaming
+      .help-section-body(*ngIf='isSectionOpen("syslog")')
+        p
+          strong Overview:
+          |  Tlink NetOps includes a built-in UDP syslog receiver (RFC 3164). Network devices forward syslog messages in real time, and they appear in the Syslog Feed panel on the canvas.
+        p
+          strong Opening the panel:
+          |  View menu →
+          |
+          span.help-tag Syslog Feed
+          | . The panel appears at the bottom of the canvas.
+        p
+          strong Panel controls:
+        ul
+          li
+            span.help-tag ▶ Start
+            |  — starts the UDP syslog server on port 1514
+          li
+            span.help-tag ⏹ Stop
+            |  — stops the syslog server
+          li
+            span.help-tag Status dot
+            |  — green pulsing = listening, grey = stopped
+          li
+            span.help-tag Severity filter
+            |  — dropdown to filter by Emergency, Alert, Critical, Error, Warning, Notice, Info, Debug, or All
+          li
+            span.help-tag ✕ Clear
+            |  — clears all received messages
+          li
+            span.help-tag ? Help
+            |  — toggles the vendor configuration hints (always accessible, even when messages are present)
+        p
+          strong Severity color coding:
+        ul
+          li
+            span.help-tag CRIT
+            |  (emergency / alert / critical) — red background
+          li
+            span.help-tag ERRO
+            |  (error) — red text
+          li
+            span.help-tag WARN
+            |  (warning) — yellow text
+          li
+            span.help-tag INFO
+            |  (notice / informational) — blue text
+          li
+            span.help-tag DEBU
+            |  (debug) — muted, reduced opacity
+        p
+          strong Message fields:
+          |  Timestamp (HH:MM:SS) · Hostname · Severity · Message body. Messages cap at 500 entries (oldest discarded).
+        p
+          strong Port 1514:
+          |  The server listens on UDP port 1514 (non-privileged, no sudo needed). If your devices require port 514, set up a port redirect:
+        .help-example
+          .help-example-title Linux iptables redirect 514 → 1514
+          span.help-code sudo iptables -t nat -A PREROUTING -p udp --dport 514 -j REDIRECT --to-port 1514
+        p
+          strong Auto-detected IP:
+          |  The vendor hints panel auto-detects your machine's IP address and pre-fills it in the example commands.
+        h3 Vendor Syslog Configuration
+        table.help-table
+          thead: tr
+            th Vendor
+            th Commands
+          tbody
+            tr
+              td Cisco IOS / IOS-XE
+              td
+                span.help-code logging host &lt;ip&gt;
+                br
+                span.help-code logging trap informational
+                br
+                span.help-code logging transport udp port 1514
+            tr
+              td Cisco NX-OS
+              td
+                span.help-code logging server &lt;ip&gt; 6 port 1514
+            tr
+              td Arista EOS
+              td
+                span.help-code logging host &lt;ip&gt; 1514 protocol udp
+                br
+                span.help-code logging trap informational
+            tr
+              td Juniper Junos
+              td
+                span.help-code set system syslog host &lt;ip&gt; port 1514
+                br
+                span.help-code set system syslog host &lt;ip&gt; any info
+            tr
+              td Palo Alto PAN-OS
+              td
+                span.help-code set shared syslog-server-profile tlink server &lt;ip&gt; transport UDP port 1514
+            tr
+              td MikroTik RouterOS
+              td
+                span.help-code /system logging action set remote remote=&lt;ip&gt;:1514
+                br
+                span.help-code /system logging add topics=info action=remote
+            tr
+              td Linux / rsyslog
+              td
+                span.help-code *.info @&lt;ip&gt;:1514
+                |  (in /etc/rsyslog.d/50-tlink.conf)
+
+    //- ── gRPC/gNMI Telemetry ─────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("telemetry")')
+        span.help-chevron {{ isSectionOpen('telemetry') ? '▾' : '▸' }}
+        | gRPC/gNMI Telemetry
+      .help-section-body(*ngIf='isSectionOpen("telemetry")')
+        p
+          strong Overview:
+          |  gRPC/gNMI telemetry enables real-time streaming of operational data (interface counters, BGP state, CPU/memory) from network devices to a collector. Unlike SNMP polling, telemetry is push-based and supports sub-second data granularity.
+        p
+          strong Enabling Telemetry
+        ul
+          li
+            strong Topology Builder (all nodes):
+            |  In Step 3 (Addressing), check
+            |
+            span.help-tag Enable gRPC/gNMI telemetry
+            | . Configure collector IP, port, encoding, sample interval, and TLS.
+          li
+            strong Per-node:
+            |  Select a node → Info tab → set
+            |
+            span.help-tag gRPC Telemetry
+            |  to
+            |
+            span.help-code Enabled
+            | . The node's startup config will include telemetry configuration.
+        p
+          strong Collector Settings
+        ul
+          li
+            span.help-tag Collector IP
+            |  — IP address of your Telegraf/gNMI collector (default:
+            |
+            span.help-code 0.0.0.0
+            | )
+          li
+            span.help-tag Collector Port
+            |  — gRPC port (default:
+            |
+            span.help-code 50051
+            | ). Juniper uses 32767, Arista uses 6030, Nokia uses 57400.
+          li
+            span.help-tag Encoding
+            |  —
+            |
+            span.help-code GPB
+            |  (Protobuf, most efficient),
+            |
+            span.help-code JSON
+            | , or
+            |
+            span.help-code JSON-IETF
+          li
+            span.help-tag Sample Interval
+            |  — 5s (real-time monitoring), 10s, 30s (default), 60s (low overhead)
+          li
+            span.help-tag TLS
+            |  — Enable TLS encryption for gRPC transport
+        p
+          strong Sensor Paths (OpenConfig)
+        p Each vendor has default sensor paths that are automatically configured:
+        ul
+          li
+            strong Juniper:
+            |
+            span.help-code /junos/system/linecard/interface/
+            | ,
+            span.help-code /junos/system/linecard/cpu/
+            | , BGP
+          li
+            strong Cisco NX-OS:
+            |
+            span.help-code sys/intf
+            | ,
+            span.help-code sys/bgp
+            | ,
+            span.help-code sys/procsys
+          li
+            strong Arista:
+            |
+            span.help-code /interfaces/interface/state/counters
+            | ,
+            span.help-code /network-instances/.../bgp
+          li
+            strong Nokia:
+            |
+            span.help-code /interface[name=ethernet-*]/statistics
+            | ,
+            span.help-code /network-instance/.../bgp/neighbor
+        p
+          strong Exporting Telegraf Pipeline Config
+        p From the File menu, select
+          |
+          span.help-tag Export Telegraf Config
+          |  to download a complete
+          |
+          span.help-code telegraf.conf
+          |  file. This includes:
+        ul
+          li
+            span.help-code [agent]
+            |  — collection interval and flush settings
+          li
+            span.help-code [[outputs.prometheus_client]]
+            |  — Prometheus metrics endpoint on port 9273
+          li
+            span.help-code [[inputs.gnmi]]
+            |  — per-node gNMI subscriptions with device IP, credentials, and sensor paths
+        p
+          strong Pipeline Setup
+        ol
+          li Install Telegraf:
+            |
+            span.help-code apt install telegraf
+            |  or download from influxdata.com
+          li Copy the exported config:
+            |
+            span.help-code cp telegraf.conf /etc/telegraf/
+          li Start Telegraf:
+            |
+            span.help-code systemctl start telegraf
+          li Install Prometheus:
+            |
+            span.help-code docker run -p 9090:9090 prom/prometheus
+          li Add scrape target in prometheus.yml:
+            |
+            span.help-code targets: ['localhost:9273']
+          li Install Grafana:
+            |
+            span.help-code docker run -p 3000:3000 grafana/grafana
+          li Add Prometheus datasource → Import dashboard ID
+            |
+            span.help-code 12489
+        p
+          strong Troubleshooting Telemetry
+        p Right-click any telemetry-enabled node →
+          |
+          span.help-tag Troubleshoot
+          |  → expand the
+          |
+          span.help-tag 📡 Telemetry Validation
+          |  section. Key commands:
+        ul
+          li
+            strong Juniper:
+            |
+            span.help-code show system services extension-service request-response grpc
+            | ,
+            span.help-code show services analytics sensor
+          li
+            strong Cisco:
+            |
+            span.help-code show telemetry transport
+            | ,
+            span.help-code show telemetry control database subscriptions
+          li
+            strong Arista:
+            |
+            span.help-code show management api gnmi
+          li
+            strong Nokia:
+            |
+            span.help-code info / system grpc
+        p
+          strong Vendor gRPC Ports (Reference)
+        table.help-table
+          tr
+            th Vendor
+            th Default Port
+            th Protocol
+          tr
+            td Juniper
+            td 32767
+            td gRPC/gNMI
+          tr
+            td Cisco NX-OS
+            td 50051
+            td gRPC/MDT
+          tr
+            td Cisco IOS-XR
+            td 57400
+            td gRPC/gNMI
+          tr
+            td Arista
+            td 6030
+            td gNMI
+          tr
+            td Nokia SR Linux
+            td 57400
+            td gNMI
+          tr
+            td SONiC
+            td 8080
+            td gNMI
+
+    //- ── Config Snippet Library ─────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("snippets")')
+        span.help-chevron {{ isSectionOpen('snippets') ? '▾' : '▸' }}
+        | Config Snippet Library
+      .help-section-body(*ngIf='isSectionOpen("snippets")')
+        p
+          strong Overview:
+          |  Save and reuse reusable configuration fragments. Snippets support variable interpolation — any
+          |
+          span.help-code {{ '{{' }}variable{{ '}}' }}
+          |  placeholder is automatically replaced with the selected node's properties when inserted.
+        p
+          strong Accessing snippets:
+          |  Select a node → Config tab → click
+          |
+          span.help-tag Snippets
+          |  button at the bottom of the config actions bar.
+        p
+          strong Snippet panel features:
+        ul
+          li
+            span.help-tag Category filter
+            |  — filter by: interface, routing, security, qos, system, other
+          li
+            span.help-tag Search
+            |  — free-text search across snippet names and content
+          li
+            span.help-tag Insert
+            |  — click a snippet to insert it at the cursor position (or append to config)
+          li
+            span.help-tag Save
+            |  — save the current config as a new named snippet with a category
+          li
+            span.help-tag Delete
+            |  — remove a snippet from the library
+        p
+          strong Variable interpolation:
+          |  When inserting a snippet, these placeholders are replaced automatically:
+        table.help-table
+          thead: tr
+            th Placeholder
+            th Replaced With
+          tbody
+            tr
+              td: span.help-code {{ '{{' }}hostname{{ '}}' }}
+              td Node label
+            tr
+              td: span.help-code {{ '{{' }}mgmt_ip{{ '}}' }}
+              td Management IP (without CIDR)
+            tr
+              td: span.help-code {{ '{{' }}vendor{{ '}}' }}
+              td Vendor name
+            tr
+              td: span.help-code {{ '{{' }}model{{ '}}' }}
+              td Device model
+            tr
+              td: span.help-code {{ '{{' }}asn{{ '}}' }}
+              td BGP ASN
+            tr
+              td: span.help-code {{ '{{' }}loopback{{ '}}' }}
+              td Loopback IP
+        p
+          strong Storage:
+          |  Snippets are stored in
+          |
+          span.help-code netops-snippets.json
+          |  inside the Electron userData directory. They persist across sessions and topologies.
+
+    //- ── Workspaces, Export & Import ───────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("workspace")')
+        span.help-chevron {{ isSectionOpen('workspace') ? '▾' : '▸' }}
+        | Workspaces, Export & Import
+      .help-section-body(*ngIf='isSectionOpen("workspace")')
+        p
+          strong Tabs:
+          |  Each tab is an independent topology with its own inventory. Click "+" to add a tab. Double-click a tab to rename it. A "•" dot appears on tabs with unsaved changes. Middle-click a tab to close it. Right-click tab → Open in New Window.
+        p
+          strong Save Workspace
+          |  (
+          span.help-kbd Ctrl+Shift+S
+          | ): All tabs →
+          |
+          span.help-code .workspace.json
+          | . Open Workspace (File menu) restores the full session.
+        p
+          strong File formats:
+          |
+          span.help-code .topo.json
+          |  (topology) ·
+          span.help-code .inv.json
+          |  (inventory sidecar) ·
+          span.help-code .workspace.json
+          |  (multi-tab)
+        p
+          strong Exports:
+        ul
+          li
+            span.help-tag Ansible Inventory
+            |  — YAML hosts file
+          li
+            span.help-tag GNS3 Project
+            |  — .gns3 archive
+          li
+            span.help-tag Containerlab Topology
+            |  — .clab.yml for SONiC-VS / multi-vendor virtual lab (export file or deploy directly)
+          li
+            span.help-tag IP Matrix CSV
+            |  — Node / Port / IP (re-importable)
+          li
+            span.help-tag HTML Report
+            |  — Standalone with SVG diagram
+          li
+            span.help-tag Download All Configs
+            |  — All startup configs
+          li
+            span.help-tag Inventory JSON / Alarms CSV
+            |  — State and alarm exports
+          li
+            span.help-tag Device CSV
+            |  — Export from Devices menu
+        p
+          strong Imports:
+          |  IP Matrix CSV (Export menu) · Device CSV (Devices menu) · Drag-and-drop
+          |
+          span.help-code .json
+          |  files onto canvas.
