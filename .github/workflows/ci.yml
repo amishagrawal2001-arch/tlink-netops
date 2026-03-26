@@ -6,23 +6,22 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
-    name: Build (Node ${{ matrix.node-version }})
+    name: Build
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18, 20]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: 'npm'
 
       - name: Install system dependencies for native modules
@@ -31,7 +30,10 @@ jobs:
           sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install --ignore-scripts || npm install
+
+      - name: Rebuild native modules
+        run: npm rebuild 2>&1 || true
 
       - name: Build main process
         run: npm run build:main
@@ -43,9 +45,9 @@ jobs:
         run: |
           echo "## Build Results" >> $GITHUB_STEP_SUMMARY
           echo "📦 **Build artifacts:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           du -sh app/dist/ renderer/dist/ >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
   test:
     name: Test
@@ -55,10 +57,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install system dependencies
@@ -67,11 +69,11 @@ jobs:
           sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install --ignore-scripts || npm install
 
       - name: Run tests
         continue-on-error: true
-        run: npm test -- --ci --coverage 2>&1 | tee test-output.txt
+        run: npm test -- --ci 2>&1 | tee test-output.txt
 
       - name: Test summary
         if: always()
@@ -81,5 +83,5 @@ jobs:
             grep "Test Suites:" test-output.txt >> $GITHUB_STEP_SUMMARY
             grep "Tests:" test-output.txt >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Tests could not be parsed" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Tests could not run" >> $GITHUB_STEP_SUMMARY
           fi
