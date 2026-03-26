@@ -6,34 +6,27 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: Install system dependencies for native modules
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
+          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev libsecret-1-dev
 
-      - name: Install dependencies
-        run: npm install --ignore-scripts || npm install
-
-      - name: Rebuild native modules
-        run: npm rebuild 2>&1 || true
+      - name: Install npm dependencies
+        run: npm install
 
       - name: Build main process
         run: npm run build:main
@@ -41,47 +34,30 @@ jobs:
       - name: Build renderer
         run: npm run build:renderer
 
-      - name: Check bundle size
-        run: |
-          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
-          echo "📦 **Build artifacts:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          du -sh app/dist/ renderer/dist/ >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+      - name: Bundle size
+        run: du -sh app/dist/ renderer/dist/
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
+          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev libsecret-1-dev
 
-      - name: Install dependencies
-        run: npm install --ignore-scripts || npm install
+      - name: Install npm dependencies
+        run: npm install
 
       - name: Run tests
         continue-on-error: true
-        run: npm test -- --ci 2>&1 | tee test-output.txt
-
-      - name: Test summary
-        if: always()
-        run: |
-          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
-          if grep -q "Test Suites:" test-output.txt 2>/dev/null; then
-            grep "Test Suites:" test-output.txt >> $GITHUB_STEP_SUMMARY
-            grep "Tests:" test-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ Tests could not run" >> $GITHUB_STEP_SUMMARY
-          fi
+        run: npm test -- --ci
