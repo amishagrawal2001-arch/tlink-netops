@@ -1,7 +1,9 @@
 {
   "name": "tlink-netops",
   "version": "1.0.0",
-  "description": "GNS3-like network topology designer built on Electron + Angular",
+  "description": "Professional Network Topology Design & Management Tool",
+  "author": "Tlink Technologies",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "app/dist/main.js",
   "type": "commonjs",
   "private": true,

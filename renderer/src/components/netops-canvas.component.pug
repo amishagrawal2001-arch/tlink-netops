@@ -100,6 +100,11 @@
         path(d='M6,12 L10,8 L14,12 L10,16 Z', fill='#fff', opacity='0.9')
         text(x='22', y='16', font-size='13', font-weight='700', fill='url(#tlink-grad)', font-family='system-ui, sans-serif') Tlink
 
+  //- ── Trial Banner ──────────────────────────────────────────────────────────
+  .license-trial-banner(*ngIf='licenseSvc.showTrialBanner')
+    span.trial-banner-text Trial: {{ licenseSvc.trialDaysRemaining }} day{{ licenseSvc.trialDaysRemaining === 1 ? '' : 's' }} remaining
+    a.trial-banner-upgrade(href='https://tlink.io/pricing', target='_blank') Upgrade
+
   //- ── Menu bar ────────────────────────────────────────────────────────────
   .netops-menubar((click)='$event.stopPropagation()')
     input#fileInput(type='file', accept='.json', hidden='', (change)='onFileInput($event)')
@@ -3798,3 +3803,60 @@
         span.help-footer-version v1.0.0
         span.help-footer-sep ·
         a.help-footer-link(href='javascript:void(0)') Report a Bug
+
+  //- ── Splash Screen ──────────────────────────────────────────────────────────
+  .splash-overlay(*ngIf='showSplashScreen')
+    .splash-content
+      .splash-logo
+        svg(width='72', height='72', viewBox='0 0 48 48')
+          defs
+            linearGradient#splash-grad(x1='0%', y1='0%', x2='100%', y2='100%')
+              stop(offset='0%', stop-color='#3b82f6')
+              stop(offset='100%', stop-color='#8b5cf6')
+          circle(cx='24', cy='24', r='22', fill='url(#splash-grad)', opacity='0.9')
+          path(d='M16,24 L24,16 L32,24 L24,32 Z', fill='#fff', opacity='0.9')
+      .splash-title Tlink NetOps
+      .splash-version v1.0.0
+      .splash-spinner
+        .splash-spinner-bar
+
+  //- ── License Activation Dialog ──────────────────────────────────────────────
+  .license-overlay(*ngIf='showLicenseDialog && !showSplashScreen')
+    .license-dialog((click)='$event.stopPropagation()')
+      .license-dialog-header
+        .license-dialog-logo
+          svg(width='40', height='40', viewBox='0 0 48 48')
+            defs
+              linearGradient#lic-grad(x1='0%', y1='0%', x2='100%', y2='100%')
+                stop(offset='0%', stop-color='#3b82f6')
+                stop(offset='100%', stop-color='#8b5cf6')
+            circle(cx='24', cy='24', r='22', fill='url(#lic-grad)', opacity='0.9')
+            path(d='M16,24 L24,16 L32,24 L24,32 Z', fill='#fff', opacity='0.9')
+        h2.license-dialog-title(
+          *ngIf='licenseSvc.licenseStatus === "expired"'
+        ) Trial Expired
+        h2.license-dialog-title(
+          *ngIf='licenseSvc.licenseStatus !== "expired"'
+        ) Activate Tlink NetOps
+        p.license-dialog-subtitle Enter your license key to continue, or start a free trial.
+      .license-dialog-body
+        .license-input-group
+          label.license-label License Key
+          input.license-input(
+            type='text',
+            placeholder='TLINK-XXXX-XXXX-XXXX-XXXX',
+            [(ngModel)]='licenseKeyInput',
+            (keyup.enter)='onActivateLicense()'
+          )
+          .license-error(*ngIf='licenseActivationError') {{ licenseActivationError }}
+        .license-actions
+          button.license-btn.license-btn-primary(type='button', (click)='onActivateLicense()') Activate
+          button.license-btn.license-btn-secondary(
+            *ngIf='!licenseSvc.trialStarted',
+            type='button',
+            (click)='onStartTrial()'
+          ) Start Free Trial (14 days)
+        .license-buy-link
+          a(href='https://tlink.io/pricing', target='_blank') Buy a license at tlink.io
+      .license-dialog-footer
+        span (c) 2026 Tlink Technologies

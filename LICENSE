@@ -1,21 +1,106 @@
-MIT License
+TLINK NETOPS PROPRIETARY SOFTWARE LICENSE AGREEMENT
 
-Copyright (c) 2026 Tlink NetOps Contributors
+Copyright (c) 2026 Tlink Technologies. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+NOTICE: This software and all associated documentation, files, and materials
+(collectively, the "Software") are the proprietary property of Tlink Technologies
+and are protected by copyright law and international treaties.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. LICENSE GRANT
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Subject to the terms of this Agreement and payment of applicable subscription fees,
+Tlink Technologies grants you a limited, non-exclusive, non-transferable,
+non-sublicensable, revocable license to use the Software solely for your internal
+business purposes, provided that you hold a valid license key or are within an
+authorized trial period.
+
+2. LICENSE KEY REQUIREMENT
+
+Use of this Software requires a valid license key issued by Tlink Technologies or
+an active trial period. Unauthorized use of the Software without a valid license key
+is strictly prohibited.
+
+3. RESTRICTIONS
+
+You shall NOT:
+
+  a) Copy, reproduce, distribute, publish, or transfer the Software or any portion
+     thereof to any third party;
+
+  b) Modify, adapt, translate, reverse engineer, decompile, disassemble, or create
+     derivative works based on the Software;
+
+  c) Remove, alter, or obscure any proprietary notices, labels, or marks on the
+     Software;
+
+  d) Sublicense, lease, rent, loan, sell, or otherwise transfer the Software or
+     access thereto to any third party;
+
+  e) Use the Software for any purpose that competes with or is detrimental to
+     Tlink Technologies;
+
+  f) Circumvent, disable, or interfere with any license key verification, copy
+     protection, or security mechanism in the Software;
+
+  g) Use the Software in violation of any applicable laws or regulations.
+
+4. OWNERSHIP
+
+The Software is licensed, not sold. Tlink Technologies retains all right, title,
+and interest in and to the Software, including all intellectual property rights.
+No title or ownership of the Software is transferred to you by this Agreement.
+
+5. SUBSCRIPTION AND FEES
+
+Access to the Software requires an active subscription. Subscription terms and fees
+are as specified at the time of purchase. Failure to maintain an active subscription
+will result in termination of your license to use the Software.
+
+6. TERM AND TERMINATION
+
+This license is effective until terminated. Your rights under this license will
+terminate automatically without notice if you fail to comply with any term of this
+Agreement. Upon termination, you must cease all use of the Software and destroy all
+copies in your possession or control.
+
+7. UPDATES AND SUPPORT
+
+Tlink Technologies may, at its sole discretion, provide updates, patches, or new
+versions of the Software. Such updates are subject to the terms of this Agreement.
+Technical support is provided in accordance with your subscription tier.
+
+8. WARRANTY DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, AND NONINFRINGEMENT. TLINK TECHNOLOGIES DOES NOT WARRANT THAT
+THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, OR FREE OF HARMFUL COMPONENTS.
+
+9. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL TLINK TECHNOLOGIES BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE,
+DATA, OR USE, ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT OR THE USE OR
+INABILITY TO USE THE SOFTWARE, EVEN IF TLINK TECHNOLOGIES HAS BEEN ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES. IN NO EVENT SHALL TLINK TECHNOLOGIES' TOTAL LIABILITY
+EXCEED THE AMOUNTS PAID BY YOU FOR THE SOFTWARE IN THE TWELVE (12) MONTHS PRECEDING
+THE CLAIM.
+
+10. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws of
+the State of Delaware, United States, without regard to its conflict of laws
+principles.
+
+11. ENTIRE AGREEMENT
+
+This Agreement constitutes the entire agreement between you and Tlink Technologies
+regarding the Software and supersedes all prior or contemporaneous agreements,
+understandings, and communications.
+
+12. CONTACT
+
+For licensing inquiries, contact:
+Tlink Technologies
+Email: licensing@tlink.io
+Website: https://tlink.io

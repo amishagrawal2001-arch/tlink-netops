@@ -23,6 +23,7 @@ import { TopologyGraphService } from '../services/topology-graph.service'
 import { getVendorCommands } from '../services/vendor-command-map'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
 import { LayoutAlgorithm, forceDirectedLayout, hierarchicalLayout, radialLayout, gridLayout } from '../services/layout-helpers'
+import { LicenseService } from '../services/license.service'
 
 interface PendingLink { sourceNodeId: string; sourcePortId: string; sourceAnnotationId?: string; anchorX?: number; anchorY?: number }
 interface PortPickerOption { port: NodePort; available: boolean; displayLabel?: string }
@@ -1508,6 +1509,12 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // ── Performance: reusable SVG point for coordinate transforms ────────────
     private _svgPt: { x: number; y: number } = { x: 0, y: 0 }
 
+    // ── License / activation ─────────────────────────────────────────────────
+    showLicenseDialog = false
+    licenseKeyInput = ''
+    licenseActivationError = ''
+    showSplashScreen = true
+
     constructor (
         public svc: TopologyService,
         public invSvc: InventoryService,
@@ -1515,9 +1522,18 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         private cdr: ChangeDetectorRef,
         @Inject(IS_ACTIVE_TAB) private _isActive$: BehaviorSubject<boolean>,
         private graphSvc: TopologyGraphService,
+        public licenseSvc: LicenseService,
     ) {}
 
     ngOnInit (): void {
+        // ── Splash screen: auto-dismiss after 2 seconds ──
+        setTimeout(() => {
+            this.showSplashScreen = false
+            // After splash, check license
+            this.checkLicenseOnStartup()
+            this.cdr.markForCheck()
+        }, 2000)
+
         // ── Theme: read persisted preference or respect system default ──
         const savedTheme = localStorage.getItem('netops-theme')
         if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -12519,6 +12535,49 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         localStorage.setItem('netops-welcome-seen', '1')
         this.showWelcomeDialog = false
         this.startTour()
+    }
+
+    // ── License Activation ────────────────────────────────────────────────────
+
+    checkLicenseOnStartup (): void {
+        const status = this.licenseSvc.checkLicense()
+        if (status === 'expired' || status === 'invalid') {
+            this.showLicenseDialog = true
+        }
+        this.cdr.markForCheck()
+    }
+
+    onActivateLicense (): void {
+        this.licenseActivationError = ''
+        if (this.licenseSvc.activateLicense(this.licenseKeyInput)) {
+            this.showLicenseDialog = false
+            this.licenseKeyInput = ''
+        } else {
+            this.licenseActivationError = 'Invalid key format. Expected: TLINK-XXXX-XXXX-XXXX-XXXX'
+        }
+        this.cdr.markForCheck()
+    }
+
+    onStartTrial (): void {
+        this.licenseSvc.startTrial()
+        this.showLicenseDialog = false
+        this.cdr.markForCheck()
+    }
+
+    onDeactivateLicense (): void {
+        this.licenseSvc.deactivateLicense()
+        this.showLicenseDialog = true
+        this.cdr.markForCheck()
+    }
+
+    dismissSplash (): void {
+        this.showSplashScreen = false
+        this.cdr.markForCheck()
+    }
+
+    /** Check feature gating — returns true if allowed */
+    isLicensedFeature (feature: string): boolean {
+        return this.licenseSvc.isFeatureAvailable(feature)
     }
 
     // ── Onboarding: Interactive Tour ────────────────────────────────────────

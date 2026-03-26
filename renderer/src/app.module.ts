@@ -13,6 +13,7 @@ import { TopologyBuilderComponent } from './components/topology-builder.componen
 import { HelpViewComponent }        from './components/help-view.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
 import { TabManagerService }       from './services/tab-manager.service'
+import { LicenseService }          from './services/license.service'
 import { TAB_MANAGER }             from './api/tokens'
 
 @NgModule({
@@ -34,6 +35,7 @@ import { TAB_MANAGER }             from './api/tokens'
     ],
     providers: [
         TabManagerService,
+        LicenseService,
         { provide: TAB_MANAGER, useExisting: TabManagerService },
         // TopologyService is NOT listed here — each tab creates its own instance
         // via a child injector in TabManagerService.createTab()

@@ -7433,3 +7433,210 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   from { opacity: 0; transform: translateX(-50%) translateY(16px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+// ── Trial Banner ──────────────────────────────────────────────────────────────
+.license-trial-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 4px 16px;
+  background: linear-gradient(90deg, var(--warning-25), var(--warning-12));
+  border-bottom: 1px solid var(--warning-30);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 100;
+  .trial-banner-text {
+    font-weight: 600;
+    color: var(--warning-light, #fbbf24);
+  }
+  .trial-banner-upgrade {
+    padding: 2px 10px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    &:hover { background: var(--accent-hover); }
+  }
+}
+
+// ── Splash Screen ─────────────────────────────────────────────────────────────
+.splash-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-app);
+  animation: splashFadeIn 0.3s ease;
+}
+.splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.splash-logo {
+  animation: splashPulse 1.5s ease-in-out infinite;
+}
+.splash-title {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.splash-version {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.splash-spinner {
+  width: 120px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.splash-spinner-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 2px;
+  animation: splashLoading 1.2s ease-in-out infinite;
+}
+@keyframes splashFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes splashPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@keyframes splashLoading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+// ── License Dialog ────────────────────────────────────────────────────────────
+.license-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(4px);
+  animation: splashFadeIn 0.3s ease;
+}
+.license-dialog {
+  width: 420px;
+  max-width: 90vw;
+  background: var(--bg-card);
+  border: 1px solid var(--border-panel);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.license-dialog-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 24px 16px;
+  text-align: center;
+}
+.license-dialog-logo {
+  margin-bottom: 4px;
+}
+.license-dialog-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 0;
+}
+.license-dialog-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+.license-dialog-body {
+  padding: 0 24px 20px;
+}
+.license-input-group {
+  margin-bottom: 16px;
+}
+.license-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.license-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  &:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-20); }
+}
+.license-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 6px;
+}
+.license-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.license-btn {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+.license-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  &:hover { background: var(--accent-hover); }
+}
+.license-btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  &:hover { background: var(--border); }
+}
+.license-buy-link {
+  text-align: center;
+  a {
+    font-size: 13px;
+    color: var(--text-link);
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
+}
+.license-dialog-footer {
+  padding: 12px 24px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
