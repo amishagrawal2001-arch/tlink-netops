@@ -5,19 +5,37 @@
 # This script sets up a new Electron + Angular project with:
 # - Git initialization with proper .gitignore
 # - .npmrc for peer dependency handling
+# - Environment file setup (.env.example / .env)
 # - GitHub Actions CI pipeline
 # - GitHub Actions Release pipeline (Mac/Win/Linux installers)
 # - Pre-commit validation hook
-# - Contributing guide template
+# - License picker (MIT, Apache 2.0, GPL 3.0)
+# - README.md generator
+# - Issue & PR templates
+# - Code quality (ESLint + Prettier)
+# - Husky git hooks + lint-staged
+# - Docker support (Dockerfile, docker-compose, .dockerignore)
+# - Dependency audit (npm audit)
+# - Branch protection (via gh CLI)
+# - Changelog generator
+# - Version bumping
+# - Rollback support
+# - Webhook notifications (Slack/Discord)
+# - CI health check after push
 #
 # Usage:
-#   ./scripts/setup-project.sh                    # Setup current directory
+#   ./scripts/setup-project.sh                    # Full interactive setup
 #   ./scripts/setup-project.sh my-new-app         # Create and setup new directory
 #   ./scripts/setup-project.sh --fix              # Fix common CI issues in existing project
 #   ./scripts/setup-project.sh --validate         # Validate project is CI-ready
 #   ./scripts/setup-project.sh --release v1.0.0   # Tag and push a release
+#   ./scripts/setup-project.sh --changelog        # Generate CHANGELOG.md from git log
+#   ./scripts/setup-project.sh --bump patch       # Bump version (major|minor|patch)
+#   ./scripts/setup-project.sh --rollback         # Delete latest version tag
+#   ./scripts/setup-project.sh --notify "msg"     # Send Slack/Discord webhook notification
 #
 # Requirements: git, node (22+), npm
+# Optional:     gh (GitHub CLI), python3 (for JSON parsing)
 
 set -euo pipefail
 
@@ -873,6 +891,1219 @@ initial_commit_and_push() {
     fi
 }
 
+# ─── Environment File Setup ─────────────────────────────────────────────────
+setup_env_file() {
+    header "Environment File Setup"
+
+    # Create .env.example
+    if [ -f ".env.example" ]; then
+        success ".env.example already exists"
+    else
+        cat > .env.example << 'ENVEXAMPLE'
+# ─── Application ────────────────────────────────────────────────────────────
+PORT=3000
+NODE_ENV=development
+
+# ─── Database ───────────────────────────────────────────────────────────────
+DATABASE_URL=postgresql://user:password@localhost:5432/mydb
+
+# ─── API Keys ───────────────────────────────────────────────────────────────
+API_KEY=your_api_key_here
+
+# ─── Notifications (optional) ──────────────────────────────────────────────
+# SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
+# DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXX/YYY
+ENVEXAMPLE
+        success ".env.example created"
+    fi
+
+    # Verify .env is in .gitignore
+    if [ -f ".gitignore" ]; then
+        if grep -q '^\.env$' .gitignore 2>/dev/null || grep -q '^\.env\b' .gitignore 2>/dev/null; then
+            success ".env is listed in .gitignore"
+        else
+            echo ".env" >> .gitignore
+            success "Added .env to .gitignore"
+        fi
+    else
+        warn "No .gitignore found — create one first"
+    fi
+
+    # Create .env from .env.example if it doesn't exist
+    if [ -f ".env" ]; then
+        success ".env already exists"
+    else
+        cp .env.example .env
+        success ".env created from .env.example (edit with your values)"
+    fi
+}
+
+# ─── README Generator ──────────────────────────────────────────────────────
+generate_readme() {
+    header "README Generator"
+
+    if [ -f "README.md" ]; then
+        warn "README.md already exists"
+        read -p "  Overwrite? (y/N): " overwrite
+        if [[ ! "$overwrite" =~ ^[Yy] ]]; then
+            info "Keeping existing README.md"
+            return
+        fi
+    fi
+
+    local project_name="My Project"
+    local project_description="A project generated with Tlink setup"
+    local repo_user="USER"
+    local repo_name="REPO"
+
+    if [ -f "package.json" ]; then
+        project_name=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' package.json | head -1 | sed 's/"name"[[:space:]]*:[[:space:]]*"//;s/"$//')
+        project_description=$(grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' package.json | head -1 | sed 's/"description"[[:space:]]*:[[:space:]]*"//;s/"$//')
+        project_name=${project_name:-"My Project"}
+        project_description=${project_description:-"A project generated with Tlink setup"}
+    fi
+
+    if git remote get-url origin &>/dev/null 2>&1; then
+        local remote_url=$(git remote get-url origin)
+        repo_user=$(echo "$remote_url" | sed -E 's#.*(github\.com[:/])([^/]+)/.*#\2#')
+        repo_name=$(echo "$remote_url" | sed -E 's#.*/([^/]+?)(\.git)?$#\1#')
+    fi
+
+    # Gather scripts from package.json
+    local scripts_section=""
+    if [ -f "package.json" ]; then
+        scripts_section=$(python3 -c "
+import json, sys
+try:
+    with open('package.json') as f:
+        pkg = json.load(f)
+    scripts = pkg.get('scripts', {})
+    for k, v in scripts.items():
+        print(f'| \`npm run {k}\` | {v} |')
+except:
+    sys.exit(0)
+" 2>/dev/null || true)
+    fi
+
+    if [ -z "$scripts_section" ]; then
+        scripts_section="| \`npm start\` | Start the application |
+| \`npm run build\` | Build for production |
+| \`npm test\` | Run tests |"
+    fi
+
+    cat > README.md << READMEEOF
+# ${project_name}
+
+${project_description}
+
+![CI](https://github.com/${repo_user}/${repo_name}/actions/workflows/ci.yml/badge.svg)
+
+## Installation
+
+\`\`\`bash
+git clone https://github.com/${repo_user}/${repo_name}.git
+cd ${repo_name}
+npm install
+\`\`\`
+
+## Available Scripts
+
+| Command | Description |
+| ------- | ----------- |
+${scripts_section}
+
+## Project Structure
+
+\`\`\`
+.
+├── src/                # Source code
+├── dist/               # Build output
+├── .github/            # GitHub Actions workflows
+├── scripts/            # Utility scripts
+├── package.json        # Dependencies and scripts
+└── README.md           # This file
+\`\`\`
+
+## Screenshots
+
+<!-- Add screenshots here -->
+_No screenshots yet._
+
+## License
+
+See [LICENSE](./LICENSE) for details.
+READMEEOF
+
+    success "README.md generated"
+}
+
+# ─── License Picker ────────────────────────────────────────────────────────
+pick_license() {
+    header "License Picker"
+
+    if [ -f "LICENSE" ]; then
+        warn "LICENSE file already exists"
+        read -p "  Overwrite? (y/N): " overwrite
+        if [[ ! "$overwrite" =~ ^[Yy] ]]; then
+            info "Keeping existing LICENSE"
+            return
+        fi
+    fi
+
+    echo "  Choose a license:"
+    echo ""
+    echo "  1) MIT"
+    echo "  2) Apache 2.0"
+    echo "  3) GPL 3.0"
+    echo "  4) Skip"
+    echo ""
+    read -p "  Choice [1/2/3/4]: " license_choice
+
+    local current_year
+    current_year=$(date +%Y)
+    local author=""
+
+    if [ "$license_choice" != "4" ] && [ -n "$license_choice" ]; then
+        # Try to get author from git config or package.json
+        author=$(git config user.name 2>/dev/null || true)
+        if [ -z "$author" ] && [ -f "package.json" ]; then
+            author=$(grep -o '"author"[[:space:]]*:[[:space:]]*"[^"]*"' package.json | head -1 | sed 's/"author"[[:space:]]*:[[:space:]]*"//;s/"$//')
+        fi
+        if [ -z "$author" ]; then
+            read -p "  Author name: " author
+        else
+            read -p "  Author name [$author]: " custom_author
+            author=${custom_author:-$author}
+        fi
+    fi
+
+    case "$license_choice" in
+        1)
+            cat > LICENSE << MITEOF
+MIT License
+
+Copyright (c) ${current_year} ${author}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+MITEOF
+            success "MIT License created"
+            ;;
+        2)
+            cat > LICENSE << APACHEEOF
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   Copyright ${current_year} ${author}
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+APACHEEOF
+            success "Apache 2.0 License created"
+            ;;
+        3)
+            cat > LICENSE << GPLEOF
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) ${current_year} ${author}
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+GPLEOF
+            success "GPL 3.0 License created"
+            ;;
+        4|"")
+            info "Skipping license"
+            ;;
+        *)
+            warn "Invalid choice. Skipping license."
+            ;;
+    esac
+}
+
+# ─── Dependency Audit ──────────────────────────────────────────────────────
+run_dependency_audit() {
+    header "Dependency Audit"
+
+    if [ ! -f "package.json" ]; then
+        warn "No package.json found. Skipping audit."
+        return
+    fi
+
+    if [ ! -d "node_modules" ]; then
+        warn "node_modules not found. Run npm install first."
+        return
+    fi
+
+    info "Running npm audit..."
+    local audit_output
+    audit_output=$(npm audit --json 2>/dev/null || true)
+
+    if [ -z "$audit_output" ]; then
+        warn "Could not run npm audit"
+        return
+    fi
+
+    local total_vulns
+    total_vulns=$(echo "$audit_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    v = data.get('metadata', {}).get('vulnerabilities', {})
+    total = sum(v.values())
+    print(total)
+except:
+    print('0')
+" 2>/dev/null || echo "0")
+
+    if [ "$total_vulns" = "0" ]; then
+        success "No vulnerabilities found!"
+    else
+        local vuln_summary
+        vuln_summary=$(echo "$audit_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    v = data.get('metadata', {}).get('vulnerabilities', {})
+    parts = []
+    for level in ['critical', 'high', 'moderate', 'low', 'info']:
+        count = v.get(level, 0)
+        if count > 0:
+            parts.append(f'{count} {level}')
+    print(', '.join(parts))
+except:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+        warn "Found $total_vulns vulnerability(ies): $vuln_summary"
+        echo ""
+        read -p "  Run 'npm audit fix' to attempt auto-fix? (Y/n): " do_fix
+        if [[ ! "$do_fix" =~ ^[Nn] ]]; then
+            info "Running npm audit fix..."
+            npm audit fix 2>&1 | tail -5
+            success "Audit fix complete. Re-run audit to verify."
+        fi
+    fi
+}
+
+# ─── Docker Support ────────────────────────────────────────────────────────
+setup_docker() {
+    header "Docker Support"
+
+    read -p "  Add Docker support? (y/N): " want_docker
+    if [[ ! "$want_docker" =~ ^[Yy] ]]; then
+        info "Skipping Docker setup"
+        return
+    fi
+
+    local project_type
+    project_type=$(detect_project_type)
+
+    # Generate Dockerfile
+    if [ -f "Dockerfile" ]; then
+        warn "Dockerfile already exists — skipping"
+    else
+        case "$project_type" in
+            electron)
+                cat > Dockerfile << 'DOCKEREOF'
+FROM node:22-bullseye AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+COPY . .
+RUN npm run build
+
+# Electron apps typically aren't run in Docker,
+# but this builds the project for CI/testing purposes.
+CMD ["npm", "start"]
+DOCKEREOF
+                ;;
+            angular)
+                cat > Dockerfile << 'DOCKEREOF'
+# Stage 1: Build
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+COPY . .
+RUN npm run build
+
+# Stage 2: Serve
+FROM nginx:alpine
+COPY --from=builder /app/dist/ /usr/share/nginx/html/
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+DOCKEREOF
+                ;;
+            *)
+                cat > Dockerfile << 'DOCKEREOF'
+FROM node:22-alpine
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --production
+COPY . .
+
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+DOCKEREOF
+                ;;
+        esac
+        success "Dockerfile created (type: $project_type)"
+    fi
+
+    # Generate docker-compose.yml
+    if [ -f "docker-compose.yml" ]; then
+        warn "docker-compose.yml already exists — skipping"
+    else
+        cat > docker-compose.yml << 'COMPOSEEOF'
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
+COMPOSEEOF
+        success "docker-compose.yml created"
+    fi
+
+    # Generate .dockerignore
+    if [ -f ".dockerignore" ]; then
+        warn ".dockerignore already exists — skipping"
+    else
+        cat > .dockerignore << 'DIGNOREEOF'
+node_modules
+dist
+.git
+.github
+.env
+.env.local
+*.log
+coverage
+.DS_Store
+.idea
+.vscode
+DIGNOREEOF
+        success ".dockerignore created"
+    fi
+}
+
+# ─── Branch Protection (via gh CLI) ────────────────────────────────────────
+setup_branch_protection() {
+    header "Branch Protection"
+
+    if ! command -v gh &>/dev/null; then
+        warn "'gh' CLI not installed — skipping branch protection"
+        return
+    fi
+
+    if ! gh auth status &>/dev/null 2>&1; then
+        warn "'gh' not authenticated — skipping branch protection"
+        return
+    fi
+
+    read -p "  Set up branch protection on main? (y/N): " want_protection
+    if [[ ! "$want_protection" =~ ^[Yy] ]]; then
+        info "Skipping branch protection"
+        return
+    fi
+
+    local branch="main"
+    if ! git rev-parse --verify main &>/dev/null 2>&1; then
+        branch="master"
+        if ! git rev-parse --verify master &>/dev/null 2>&1; then
+            warn "Neither 'main' nor 'master' branch found. Skipping."
+            return
+        fi
+    fi
+
+    local repo
+    repo=$(gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || true)
+    if [ -z "$repo" ]; then
+        warn "Could not determine GitHub repo. Skipping."
+        return
+    fi
+
+    info "Setting branch protection on '$branch' for $repo..."
+    if gh api -X PUT "repos/${repo}/branches/${branch}/protection" \
+        --input - << PROTEOF 2>/dev/null
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["Build", "Test"]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1
+  },
+  "restrictions": null
+}
+PROTEOF
+    then
+        success "Branch protection enabled on '$branch'"
+        info "  - Require PR reviews (1 approval)"
+        info "  - Require status checks (Build, Test must pass)"
+    else
+        error "Failed to set branch protection. You may need admin access."
+    fi
+}
+
+# ─── Issue/PR Templates ────────────────────────────────────────────────────
+create_issue_pr_templates() {
+    header "Issue & PR Templates"
+
+    read -p "  Create GitHub issue/PR templates? (Y/n): " want_templates
+    if [[ "$want_templates" =~ ^[Nn] ]]; then
+        info "Skipping templates"
+        return
+    fi
+
+    mkdir -p .github/ISSUE_TEMPLATE
+
+    # Bug report template
+    if [ -f ".github/ISSUE_TEMPLATE/bug_report.md" ]; then
+        warn "bug_report.md already exists — skipping"
+    else
+        cat > .github/ISSUE_TEMPLATE/bug_report.md << 'BUGEOF'
+---
+name: Bug Report
+about: Report a bug to help us improve
+title: "[BUG] "
+labels: bug
+assignees: ""
+---
+
+## Describe the Bug
+A clear and concise description of what the bug is.
+
+## Steps to Reproduce
+1. Go to '...'
+2. Click on '...'
+3. See error
+
+## Expected Behavior
+What you expected to happen.
+
+## Actual Behavior
+What actually happened.
+
+## Screenshots
+If applicable, add screenshots.
+
+## Environment
+- OS: [e.g., macOS 14, Windows 11]
+- Node version: [e.g., 22.x]
+- App version: [e.g., v1.0.0]
+
+## Additional Context
+Add any other context here.
+BUGEOF
+        success "Bug report template created"
+    fi
+
+    # Feature request template
+    if [ -f ".github/ISSUE_TEMPLATE/feature_request.md" ]; then
+        warn "feature_request.md already exists — skipping"
+    else
+        cat > .github/ISSUE_TEMPLATE/feature_request.md << 'FEATEOF'
+---
+name: Feature Request
+about: Suggest a new feature or enhancement
+title: "[FEATURE] "
+labels: enhancement
+assignees: ""
+---
+
+## Problem Statement
+A clear description of the problem this feature would solve.
+
+## Proposed Solution
+Describe the solution you'd like.
+
+## Alternatives Considered
+Any alternative solutions or features you've considered.
+
+## Additional Context
+Add any other context, mockups, or screenshots.
+FEATEOF
+        success "Feature request template created"
+    fi
+
+    # Pull request template
+    if [ -f ".github/PULL_REQUEST_TEMPLATE.md" ]; then
+        warn "PULL_REQUEST_TEMPLATE.md already exists — skipping"
+    else
+        cat > .github/PULL_REQUEST_TEMPLATE.md << 'PREOF'
+## Summary
+<!-- Brief description of what this PR does -->
+
+## Changes
+-
+
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+- [ ] Refactoring
+- [ ] CI/CD changes
+
+## Testing
+- [ ] Tests added/updated
+- [ ] Manual testing performed
+
+## Checklist
+- [ ] Code follows project style guidelines
+- [ ] Self-review completed
+- [ ] Documentation updated (if needed)
+- [ ] No new warnings introduced
+PREOF
+        success "Pull request template created"
+    fi
+}
+
+# ─── Changelog Generator ──────────────────────────────────────────────────
+generate_changelog() {
+    header "Changelog Generator"
+
+    if [ ! -d ".git" ]; then
+        error "Not a git repository. Cannot generate changelog."
+        return 1
+    fi
+
+    local commit_count
+    commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+    if [ "$commit_count" = "0" ]; then
+        warn "No commits found. Cannot generate changelog."
+        return
+    fi
+
+    info "Generating CHANGELOG.md from git history ($commit_count commits)..."
+
+    {
+        echo "# Changelog"
+        echo ""
+        echo "All notable changes to this project are documented in this file."
+        echo ""
+
+        # Group by tag (version), or show all if no tags
+        local tags
+        tags=$(git tag --sort=-version:refname 2>/dev/null | head -20)
+
+        if [ -n "$tags" ]; then
+            local prev_tag=""
+            for tag in $tags; do
+                local tag_date
+                tag_date=$(git log -1 --format='%ai' "$tag" 2>/dev/null | cut -d' ' -f1)
+                echo "## [$tag] - ${tag_date}"
+                echo ""
+
+                local range
+                if [ -n "$prev_tag" ]; then
+                    range="${tag}..${prev_tag}"
+                else
+                    range="$tag"
+                fi
+
+                for type_prefix in "feat" "fix" "chore" "docs" "refactor" "test" "ci" "style" "perf"; do
+                    local entries
+                    entries=$(git log --pretty=format:"- %s (\`%h\`)" "$range" 2>/dev/null | grep -i "^- ${type_prefix}" || true)
+                    if [ -n "$entries" ]; then
+                        local type_label
+                        case "$type_prefix" in
+                            feat)     type_label="Features" ;;
+                            fix)      type_label="Bug Fixes" ;;
+                            chore)    type_label="Chores" ;;
+                            docs)     type_label="Documentation" ;;
+                            refactor) type_label="Refactoring" ;;
+                            test)     type_label="Tests" ;;
+                            ci)       type_label="CI/CD" ;;
+                            style)    type_label="Styling" ;;
+                            perf)     type_label="Performance" ;;
+                        esac
+                        echo "### $type_label"
+                        echo "$entries"
+                        echo ""
+                    fi
+                done
+
+                # Uncategorized
+                local uncategorized
+                uncategorized=$(git log --pretty=format:"- %s (\`%h\`)" "$range" 2>/dev/null | grep -iv "^- \(feat\|fix\|chore\|docs\|refactor\|test\|ci\|style\|perf\)" || true)
+                if [ -n "$uncategorized" ]; then
+                    echo "### Other"
+                    echo "$uncategorized"
+                    echo ""
+                fi
+
+                prev_tag="$tag"
+            done
+
+            # Commits before earliest tag
+            local earliest_tag
+            earliest_tag=$(echo "$tags" | tail -1)
+            local before_tag
+            before_tag=$(git log --pretty=format:"- %s (\`%h\`)" "${earliest_tag}" 2>/dev/null || true)
+            if [ -n "$before_tag" ]; then
+                echo "## Earlier Commits"
+                echo ""
+                echo "$before_tag"
+                echo ""
+            fi
+        else
+            # No tags — just list all commits grouped by type
+            echo "## Unreleased"
+            echo ""
+
+            for type_prefix in "feat" "fix" "chore" "docs" "refactor" "test" "ci" "style" "perf"; do
+                local entries
+                entries=$(git log --pretty=format:"- %s (\`%h\`) — %ai" HEAD 2>/dev/null | grep -i "^- ${type_prefix}" | sed 's/ [0-9][0-9]:[0-9][0-9]:[0-9][0-9] [+-][0-9]*//' || true)
+                if [ -n "$entries" ]; then
+                    local type_label
+                    case "$type_prefix" in
+                        feat)     type_label="Features" ;;
+                        fix)      type_label="Bug Fixes" ;;
+                        chore)    type_label="Chores" ;;
+                        docs)     type_label="Documentation" ;;
+                        refactor) type_label="Refactoring" ;;
+                        test)     type_label="Tests" ;;
+                        ci)       type_label="CI/CD" ;;
+                        style)    type_label="Styling" ;;
+                        perf)     type_label="Performance" ;;
+                    esac
+                    echo "### $type_label"
+                    echo "$entries"
+                    echo ""
+                fi
+            done
+
+            local uncategorized
+            uncategorized=$(git log --pretty=format:"- %s (\`%h\`) — %ai" HEAD 2>/dev/null | grep -iv "^- \(feat\|fix\|chore\|docs\|refactor\|test\|ci\|style\|perf\)" | sed 's/ [0-9][0-9]:[0-9][0-9]:[0-9][0-9] [+-][0-9]*//' || true)
+            if [ -n "$uncategorized" ]; then
+                echo "### Other"
+                echo "$uncategorized"
+                echo ""
+            fi
+        fi
+    } > CHANGELOG.md
+
+    success "CHANGELOG.md generated"
+}
+
+# ─── Version Bump ──────────────────────────────────────────────────────────
+do_version_bump() {
+    local bump_type=$1
+
+    if [[ ! "$bump_type" =~ ^(major|minor|patch)$ ]]; then
+        error "Invalid bump type. Use: major, minor, or patch"
+        exit 1
+    fi
+
+    header "Version Bump ($bump_type)"
+
+    if [ ! -f "package.json" ]; then
+        error "No package.json found."
+        exit 1
+    fi
+
+    # Get current version
+    local current_version
+    current_version=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' package.json | head -1 | sed 's/"version"[[:space:]]*:[[:space:]]*"//;s/"$//')
+
+    if [ -z "$current_version" ]; then
+        error "Could not read version from package.json"
+        exit 1
+    fi
+
+    info "Current version: $current_version"
+
+    # Parse semver
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$current_version"
+    patch=${patch%%[-+]*}  # strip pre-release/build metadata
+
+    case "$bump_type" in
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        patch) patch=$((patch + 1)) ;;
+    esac
+
+    local new_version="${major}.${minor}.${patch}"
+    info "New version: $new_version"
+
+    # Update package.json
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/\"version\"[[:space:]]*:[[:space:]]*\"${current_version}\"/\"version\": \"${new_version}\"/" package.json
+    else
+        sed -i "s/\"version\"[[:space:]]*:[[:space:]]*\"${current_version}\"/\"version\": \"${new_version}\"/" package.json
+    fi
+    success "package.json updated to $new_version"
+
+    # Check for uncommitted changes
+    if [ -n "$(git status --porcelain)" ]; then
+        git add package.json
+        git commit -m "chore: bump version to ${new_version}"
+        success "Version bump committed"
+    fi
+
+    # Create git tag
+    local tag="v${new_version}"
+    git tag "$tag"
+    success "Tag $tag created"
+
+    # Push
+    read -p "  Push tag $tag to origin? (Y/n): " do_push
+    if [[ ! "$do_push" =~ ^[Nn] ]]; then
+        local branch
+        branch=$(git branch --show-current)
+        git push origin "$branch" 2>&1 || warn "Could not push branch"
+        git push origin "$tag" 2>&1 || warn "Could not push tag"
+        success "Tag $tag pushed (release workflow should trigger)"
+    fi
+}
+
+# ─── Health Check After Push ──────────────────────────────────────────────
+health_check_ci() {
+    header "CI Health Check"
+
+    if ! command -v gh &>/dev/null; then
+        warn "'gh' CLI not installed — cannot check CI status"
+        return
+    fi
+
+    if ! gh auth status &>/dev/null 2>&1; then
+        warn "'gh' not authenticated — cannot check CI status"
+        return
+    fi
+
+    info "Polling GitHub Actions status (up to 5 minutes)..."
+
+    local max_wait=300
+    local waited=0
+    local interval=15
+    local run_id=""
+
+    # Get the latest workflow run
+    run_id=$(gh run list --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+
+    if [ -z "$run_id" ]; then
+        warn "No workflow runs found"
+        return
+    fi
+
+    info "Watching run #${run_id}..."
+
+    while [ $waited -lt $max_wait ]; do
+        local status conclusion
+        status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "unknown")
+        conclusion=$(gh run view "$run_id" --json conclusion -q '.conclusion' 2>/dev/null || echo "")
+
+        if [ "$status" = "completed" ]; then
+            if [ "$conclusion" = "success" ]; then
+                success "CI passed!"
+            else
+                error "CI failed (conclusion: $conclusion)"
+                local run_url
+                run_url=$(gh run view "$run_id" --json url -q '.url' 2>/dev/null || true)
+                if [ -n "$run_url" ]; then
+                    info "View details: $run_url"
+                fi
+                # Show failed steps
+                gh run view "$run_id" --log-failed 2>/dev/null | tail -20 || true
+            fi
+            return
+        fi
+
+        info "  Status: $status — waiting ${interval}s (${waited}s/${max_wait}s)..."
+        sleep "$interval"
+        waited=$((waited + interval))
+    done
+
+    warn "Timeout waiting for CI. Check manually:"
+    gh run view "$run_id" --json url -q '.url' 2>/dev/null || true
+}
+
+# ─── Rollback ──────────────────────────────────────────────────────────────
+do_rollback() {
+    header "Rollback Latest Version Tag"
+
+    if [ ! -d ".git" ]; then
+        error "Not a git repository."
+        exit 1
+    fi
+
+    # Find latest version tag
+    local latest_tag
+    latest_tag=$(git tag --sort=-version:refname | head -1)
+
+    if [ -z "$latest_tag" ]; then
+        error "No tags found to rollback."
+        exit 1
+    fi
+
+    warn "Latest tag: $latest_tag"
+    echo ""
+    read -p "  Delete tag '$latest_tag' locally and remotely? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        info "Rollback cancelled"
+        return
+    fi
+
+    # Delete local tag
+    git tag -d "$latest_tag" 2>/dev/null && success "Local tag '$latest_tag' deleted" || warn "Could not delete local tag"
+
+    # Delete remote tag
+    if git remote get-url origin &>/dev/null 2>&1; then
+        read -p "  Also delete remote tag? (y/N): " del_remote
+        if [[ "$del_remote" =~ ^[Yy] ]]; then
+            git push origin ":refs/tags/$latest_tag" 2>/dev/null && success "Remote tag '$latest_tag' deleted" || warn "Could not delete remote tag"
+        fi
+    fi
+
+    success "Rollback complete"
+}
+
+# ─── Notifications (Slack/Discord webhook) ─────────────────────────────────
+send_notification() {
+    local message="${1:-Release completed}"
+
+    header "Sending Notification"
+
+    local webhook_url=""
+
+    # Try to detect webhook from .env
+    if [ -f ".env" ]; then
+        webhook_url=$(grep -E '^(SLACK_WEBHOOK_URL|DISCORD_WEBHOOK_URL)=' .env 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    fi
+
+    if [ -z "$webhook_url" ]; then
+        read -p "  Webhook URL (Slack or Discord): " webhook_url
+    fi
+
+    if [ -z "$webhook_url" ]; then
+        warn "No webhook URL provided. Skipping notification."
+        return
+    fi
+
+    local project_name
+    project_name=$(basename "$(pwd)")
+    local version
+    version=$(git tag --sort=-version:refname 2>/dev/null | head -1 || echo "unknown")
+
+    local payload
+    # Detect Slack vs Discord
+    if echo "$webhook_url" | grep -q "discord"; then
+        payload=$(cat << DISCORDEOF
+{
+  "content": "**${project_name}** — ${message}\nVersion: ${version}\nTimestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+}
+DISCORDEOF
+)
+    else
+        payload=$(cat << SLACKEOF
+{
+  "text": "*${project_name}* — ${message}\nVersion: ${version}\nTimestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+}
+SLACKEOF
+)
+    fi
+
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d "$payload" "$webhook_url" 2>/dev/null || echo "000")
+
+    if [ "$http_code" = "200" ] || [ "$http_code" = "204" ]; then
+        success "Notification sent successfully"
+    else
+        warn "Notification may have failed (HTTP $http_code)"
+    fi
+}
+
+# ─── Code Quality Setup ───────────────────────────────────────────────────
+setup_code_quality() {
+    header "Code Quality Setup"
+
+    read -p "  Set up linting and formatting (ESLint + Prettier)? (y/N): " want_lint
+    if [[ ! "$want_lint" =~ ^[Yy] ]]; then
+        info "Skipping code quality setup"
+        return
+    fi
+
+    local project_type
+    project_type=$(detect_project_type)
+
+    # Generate .eslintrc.json
+    if [ -f ".eslintrc.json" ] || [ -f ".eslintrc.js" ] || [ -f ".eslintrc" ]; then
+        warn "ESLint config already exists — skipping"
+    else
+        case "$project_type" in
+            angular)
+                cat > .eslintrc.json << 'ESLINTEOF'
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "warn",
+    "eqeqeq": "error",
+    "curly": "error"
+  },
+  "overrides": [
+    {
+      "files": ["*.ts"],
+      "parser": "@typescript-eslint/parser",
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+      ],
+      "rules": {
+        "@typescript-eslint/no-unused-vars": "warn",
+        "@typescript-eslint/explicit-function-return-type": "off"
+      }
+    }
+  ]
+}
+ESLINTEOF
+                ;;
+            electron)
+                cat > .eslintrc.json << 'ESLINTEOF'
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "eqeqeq": "error",
+    "curly": "error"
+  },
+  "overrides": [
+    {
+      "files": ["*.ts"],
+      "parser": "@typescript-eslint/parser",
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+      ]
+    }
+  ]
+}
+ESLINTEOF
+                ;;
+            *)
+                cat > .eslintrc.json << 'ESLINTEOF'
+{
+  "root": true,
+  "env": {
+    "node": true,
+    "es2022": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "eqeqeq": "error",
+    "curly": "error"
+  }
+}
+ESLINTEOF
+                ;;
+        esac
+        success ".eslintrc.json created (type: $project_type)"
+    fi
+
+    # Generate .prettierrc
+    if [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ] || [ -f ".prettierrc.js" ]; then
+        warn "Prettier config already exists — skipping"
+    else
+        cat > .prettierrc << 'PRETTIEREOF'
+{
+  "semi": true,
+  "trailingComma": "all",
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "endOfLine": "lf",
+  "bracketSpacing": true,
+  "arrowParens": "always"
+}
+PRETTIEREOF
+        success ".prettierrc created"
+    fi
+
+    # Add lint script to package.json if missing
+    if [ -f "package.json" ]; then
+        if ! grep -q '"lint"' package.json; then
+            # Insert lint script after the first script entry
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' '/"scripts"/,/\}/{
+                    /"/!b
+                    /"scripts"/!{
+                        /^[[:space:]]*"[a-z]/{
+                            N
+                            /\n[[:space:]]*}/i\
+\    "lint": "eslint . --ext .js,.ts,.tsx",
+                            b done
+                        }
+                    }
+                    :done
+                }' package.json 2>/dev/null || true
+            else
+                sed -i '/"scripts"/,/\}/{
+                    /"/!b
+                    /"scripts"/!{
+                        /^[[:space:]]*"[a-z]/{
+                            N
+                            /\n[[:space:]]*}/i\    "lint": "eslint . --ext .js,.ts,.tsx",
+                            b done
+                        }
+                    }
+                    :done
+                }' package.json 2>/dev/null || true
+            fi
+
+            if grep -q '"lint"' package.json 2>/dev/null; then
+                success "Added 'lint' script to package.json"
+            else
+                info "Could not auto-add lint script. Add manually:"
+                echo '    "lint": "eslint . --ext .js,.ts,.tsx"'
+            fi
+        else
+            success "lint script already exists in package.json"
+        fi
+    fi
+}
+
+# ─── Husky Integration ─────────────────────────────────────────────────────
+setup_husky() {
+    header "Husky Git Hooks"
+
+    read -p "  Set up Husky for git hooks (replaces raw .git/hooks)? (y/N): " want_husky
+    if [[ ! "$want_husky" =~ ^[Yy] ]]; then
+        info "Skipping Husky setup"
+        return
+    fi
+
+    if [ ! -f "package.json" ]; then
+        error "No package.json found. Skipping."
+        return
+    fi
+
+    info "Installing husky and lint-staged..."
+    npm install --save-dev husky lint-staged 2>&1 | tail -3
+
+    # Initialize husky
+    info "Initializing husky..."
+    npx husky init 2>/dev/null || npx husky install 2>/dev/null || {
+        # Manual fallback
+        mkdir -p .husky
+    }
+
+    # Create pre-commit hook via husky
+    mkdir -p .husky
+    cat > .husky/pre-commit << 'HUSKYEOF'
+npx lint-staged
+HUSKYEOF
+    chmod +x .husky/pre-commit
+    success "Husky pre-commit hook created"
+
+    # Configure lint-staged in package.json
+    if ! grep -q '"lint-staged"' package.json; then
+        # Add lint-staged config to package.json using python3
+        python3 -c "
+import json
+with open('package.json', 'r') as f:
+    pkg = json.load(f)
+pkg['lint-staged'] = {
+    '*.{js,ts,tsx}': ['eslint --fix', 'prettier --write'],
+    '*.{json,md,yml,yaml}': ['prettier --write']
+}
+with open('package.json', 'w') as f:
+    json.dump(pkg, f, indent=2)
+    f.write('\n')
+" 2>/dev/null && success "lint-staged config added to package.json" || warn "Could not add lint-staged config automatically"
+    else
+        success "lint-staged config already in package.json"
+    fi
+
+    # Migrate away from raw .git/hooks if husky is set up
+    if [ -f ".git/hooks/pre-commit" ] && [ -d ".husky" ]; then
+        info "Husky will now manage git hooks (raw .git/hooks/pre-commit can be removed)"
+    fi
+}
+
 # ─── Full setup ───────────────────────────────────────────────────────────────
 full_setup() {
     local target_dir=${1:-"."}
@@ -907,6 +2138,9 @@ full_setup() {
     create_gitignore "$project_type"
     create_npmrc
 
+    # Environment file setup
+    setup_env_file
+
     # Create CI/CD workflows
     header "Creating CI/CD Workflows"
     create_ci_workflow "$project_type"
@@ -916,29 +2150,76 @@ full_setup() {
     header "Installing Git Hooks"
     create_pre_commit_hook
 
+    # License
+    pick_license
+
+    # README
+    read -p "  Generate README.md? (Y/n): " want_readme
+    if [[ ! "$want_readme" =~ ^[Nn] ]]; then
+        generate_readme
+    fi
+
+    # Issue/PR templates
+    create_issue_pr_templates
+
+    # Code quality (ESLint + Prettier)
+    setup_code_quality
+
+    # Husky git hooks
+    setup_husky
+
+    # Docker support
+    setup_docker
+
+    # Dependency audit
+    read -p "  Run dependency audit? (Y/n): " want_audit
+    if [[ ! "$want_audit" =~ ^[Nn] ]]; then
+        run_dependency_audit
+    fi
+
     # Validate
     validate_project
 
     # Setup git remote
     setup_git_remote
 
+    # Branch protection
+    setup_branch_protection
+
     # Initial commit and push
     initial_commit_and_push
+
+    # Health check after push
+    if git remote get-url origin &>/dev/null 2>&1; then
+        read -p "  Monitor CI status after push? (y/N): " want_health
+        if [[ "$want_health" =~ ^[Yy] ]]; then
+            health_check_ci
+        fi
+    fi
 
     # Summary
     header "Setup Complete!"
     echo "  Files created/updated:"
     echo "    .gitignore"
     echo "    .npmrc"
+    echo "    .env.example / .env"
     echo "    .github/workflows/ci.yml"
     if [ "$project_type" = "electron" ]; then
         echo "    .github/workflows/release.yml"
     fi
     echo "    .git/hooks/pre-commit"
+    echo "    README.md (if generated)"
+    echo "    LICENSE (if chosen)"
+    echo "    .github/ISSUE_TEMPLATE/ (if created)"
+    echo "    .github/PULL_REQUEST_TEMPLATE.md (if created)"
     echo ""
     echo "  Available commands:"
-    echo "    ./scripts/setup-project.sh --validate      # Check CI readiness"
-    echo "    ./scripts/setup-project.sh --fix           # Auto-fix issues"
+    echo "    ./scripts/setup-project.sh --validate        # Check CI readiness"
+    echo "    ./scripts/setup-project.sh --fix             # Auto-fix issues"
+    echo "    ./scripts/setup-project.sh --changelog       # Generate CHANGELOG.md"
+    echo "    ./scripts/setup-project.sh --bump patch      # Bump version (major|minor|patch)"
+    echo "    ./scripts/setup-project.sh --rollback        # Delete latest version tag"
+    echo "    ./scripts/setup-project.sh --notify          # Send webhook notification"
     if [ "$project_type" = "electron" ]; then
         echo "    ./scripts/setup-project.sh --release v1.0.0  # Create release"
     fi
@@ -961,22 +2242,60 @@ main() {
             fi
             do_release "$2"
             ;;
+        --changelog)
+            generate_changelog
+            ;;
+        --bump)
+            if [ -z "${2:-}" ]; then
+                error "Usage: $0 --bump major|minor|patch"
+                exit 1
+            fi
+            do_version_bump "$2"
+            ;;
+        --rollback)
+            do_rollback
+            ;;
+        --notify)
+            send_notification "${2:-Release completed}"
+            ;;
         --help|-h)
             echo "Usage: $0 [options] [directory]"
             echo ""
             echo "Options:"
-            echo "  (none)          Full setup — git, .gitignore, CI/CD, hooks"
-            echo "  --fix           Auto-fix common CI issues"
-            echo "  --validate      Check if project is CI-ready"
-            echo "  --release VER   Create and push a release tag (e.g., v1.0.0)"
-            echo "  --help          Show this help"
+            echo "  (none)              Full setup — git, .gitignore, CI/CD, hooks, env, etc."
+            echo "  --fix               Auto-fix common CI issues"
+            echo "  --validate          Check if project is CI-ready"
+            echo "  --release VER       Create and push a release tag (e.g., v1.0.0)"
+            echo "  --changelog         Generate CHANGELOG.md from git log"
+            echo "  --bump TYPE         Bump version in package.json (major|minor|patch)"
+            echo "  --rollback          Delete the latest version tag (local + remote)"
+            echo "  --notify [MSG]      Send notification via Slack/Discord webhook"
+            echo "  --help              Show this help"
+            echo ""
+            echo "Full setup includes (each offered interactively):"
+            echo "  - Git init + .gitignore + .npmrc"
+            echo "  - Environment file (.env.example / .env)"
+            echo "  - CI/CD workflows (GitHub Actions)"
+            echo "  - License picker (MIT, Apache 2.0, GPL 3.0)"
+            echo "  - README.md generator"
+            echo "  - Issue & PR templates"
+            echo "  - Code quality (ESLint + Prettier)"
+            echo "  - Husky git hooks + lint-staged"
+            echo "  - Docker support (Dockerfile, docker-compose, .dockerignore)"
+            echo "  - Dependency audit (npm audit)"
+            echo "  - Branch protection (via gh CLI)"
+            echo "  - CI health check after push"
             echo ""
             echo "Examples:"
-            echo "  $0                      # Setup current directory"
-            echo "  $0 my-new-app           # Create and setup new directory"
-            echo "  $0 --fix                # Fix CI issues in existing project"
-            echo "  $0 --validate           # Check project readiness"
-            echo "  $0 --release v1.0.0     # Tag and release"
+            echo "  $0                          # Full interactive setup"
+            echo "  $0 my-new-app               # Create and setup new directory"
+            echo "  $0 --fix                    # Fix CI issues in existing project"
+            echo "  $0 --validate               # Check project readiness"
+            echo "  $0 --release v1.0.0         # Tag and release"
+            echo "  $0 --changelog              # Generate changelog from commits"
+            echo "  $0 --bump patch             # Bump patch version, tag, push"
+            echo "  $0 --rollback               # Remove latest version tag"
+            echo "  $0 --notify 'Deployed v2!'  # Send webhook notification"
             ;;
         *)
             full_setup "${1:-.}"
