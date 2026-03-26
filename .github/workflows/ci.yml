@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Build (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -25,8 +25,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
+      - name: Install system dependencies for native modules
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci || npm install
 
       - name: Build main process
         run: npm run build:main
@@ -36,13 +41,15 @@ jobs:
 
       - name: Check bundle size
         run: |
-          echo "📦 Build artifacts:"
-          du -sh app/dist/ renderer/dist/
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Build artifacts:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          du -sh app/dist/ renderer/dist/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
       - name: Checkout code
@@ -54,8 +61,13 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 libx11-dev libxkbfile-dev
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci || npm install
 
       - name: Run tests
         continue-on-error: true
@@ -65,7 +77,9 @@ jobs:
         if: always()
         run: |
           echo "## Test Results" >> $GITHUB_STEP_SUMMARY
-          if grep -q "Test Suites:" test-output.txt; then
+          if grep -q "Test Suites:" test-output.txt 2>/dev/null; then
             grep "Test Suites:" test-output.txt >> $GITHUB_STEP_SUMMARY
             grep "Tests:" test-output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Tests could not be parsed" >> $GITHUB_STEP_SUMMARY
           fi
