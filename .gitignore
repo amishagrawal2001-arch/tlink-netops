@@ -9,3 +9,4 @@ coverage/
 .claude/
 .env
 .env.*
+scripts/.license-log.csv

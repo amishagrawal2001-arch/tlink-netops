@@ -3661,6 +3661,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     @HostListener('window:keydown', ['$event'])
     onKeyDown (ev: KeyboardEvent): void {
         if (!this._isActiveTab) { return }
+        // Admin panel: Ctrl+Shift+L
+        if (ev.ctrlKey && ev.shiftKey && ev.key === 'L') {
+            ev.preventDefault()
+            this.toggleAdminPanel()
+            return
+        }
+        if (this.showAdminPanel && ev.key === 'Escape') {
+            ev.preventDefault()
+            this.showAdminPanel = false
+            this.cdr.markForCheck()
+            return
+        }
         if ((this.pendingLink || this._shapeDragSourceId) && ev.key === 'Escape') {
             ev.preventDefault()
             this.pendingLink = null
@@ -12547,13 +12559,22 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
-    onActivateLicense (): void {
+    async onActivateLicense (): Promise<void> {
         this.licenseActivationError = ''
-        if (this.licenseSvc.activateLicense(this.licenseKeyInput)) {
+        const key = this.licenseKeyInput.trim().toUpperCase()
+        const keyPattern5 = /^TLINK-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/
+        const keyPattern6 = /^TLINK-[A-Z0-9]{2}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/
+        if (!keyPattern5.test(key) && !keyPattern6.test(key)) {
+            this.licenseActivationError = 'Invalid key format. Expected: TLINK-XXXX-XXXX-XXXX-XXXX or TLINK-XX-XXXX-XXXX-XXXX-XXXX'
+            this.cdr.markForCheck()
+            return
+        }
+        const result = await this.licenseSvc.activateLicense(key)
+        if (result.success) {
             this.showLicenseDialog = false
             this.licenseKeyInput = ''
         } else {
-            this.licenseActivationError = 'Invalid key format. Expected: TLINK-XXXX-XXXX-XXXX-XXXX'
+            this.licenseActivationError = result.message
         }
         this.cdr.markForCheck()
     }
@@ -12567,6 +12588,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     onDeactivateLicense (): void {
         this.licenseSvc.deactivateLicense()
         this.showLicenseDialog = true
+        this.showAdminPanel = false
         this.cdr.markForCheck()
     }
 
@@ -12578,6 +12600,49 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     /** Check feature gating — returns true if allowed */
     isLicensedFeature (feature: string): boolean {
         return this.licenseSvc.isFeatureAvailable(feature)
+    }
+
+    // ── Admin Panel (Ctrl+Shift+L) ──────────────────────────────────────────
+
+    showAdminPanel = false
+
+    toggleAdminPanel (): void {
+        this.showAdminPanel = !this.showAdminPanel
+        this.cdr.markForCheck()
+    }
+
+    // ── License Server Settings ──────────────────────────────────────────────
+
+    showServerSettings = false
+    serverUrlInput = ''
+    serverReachable: boolean | null = null
+
+    testServerConnection (): void {
+        const url = this.serverUrlInput.replace(/\/+$/, '')
+        if (!url) { this.serverReachable = false; return }
+        this.serverReachable = null
+        this.cdr.markForCheck()
+
+        fetch(`${url}/api/health`, { method: 'GET' })
+            .then(res => res.json())
+            .then(data => {
+                this.serverReachable = data && data.status === 'ok'
+                this.cdr.markForCheck()
+            })
+            .catch(() => {
+                this.serverReachable = false
+                this.cdr.markForCheck()
+            })
+    }
+
+    saveServerUrl (): void {
+        const url = this.serverUrlInput.replace(/\/+$/, '')
+        if (!url) { return }
+        this.licenseSvc.licenseServerUrl = url
+        localStorage.setItem('tlink-license-server-url', url)
+        this.serverReachable = null
+        this.showServerSettings = false
+        this.cdr.markForCheck()
     }
 
     // ── Onboarding: Interactive Tour ────────────────────────────────────────

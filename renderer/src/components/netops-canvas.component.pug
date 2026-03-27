@@ -100,10 +100,13 @@
         path(d='M6,12 L10,8 L14,12 L10,16 Z', fill='#fff', opacity='0.9')
         text(x='22', y='16', font-size='13', font-weight='700', fill='url(#tlink-grad)', font-family='system-ui, sans-serif') Tlink
 
-  //- ── Trial Banner ──────────────────────────────────────────────────────────
+  //- ── License / Trial Banner ────────────────────────────────────────────────
   .license-trial-banner(*ngIf='licenseSvc.showTrialBanner')
     span.trial-banner-text Trial: {{ licenseSvc.trialDaysRemaining }} day{{ licenseSvc.trialDaysRemaining === 1 ? '' : 's' }} remaining
-    a.trial-banner-upgrade(href='https://tlink.io/pricing', target='_blank') Upgrade
+    button.trial-banner-upgrade(type='button', (click)='showLicenseDialog = true') Upgrade
+  .license-tier-banner(*ngIf='licenseSvc.showLicenseBanner', [class.tier-pro]='licenseSvc.licenseTier === "pro"', [class.tier-enterprise]='licenseSvc.licenseTier === "enterprise"')
+    span.tier-banner-text {{ licenseSvc.tierDisplayName }}
+    span.tier-banner-expiry(*ngIf='licenseSvc.licenseExpiry') Expires: {{ licenseSvc.formattedExpiry }}
 
   //- ── Menu bar ────────────────────────────────────────────────────────────
   .netops-menubar((click)='$event.stopPropagation()')
@@ -507,6 +510,48 @@
         .menu-sep
         button.menu-item(type='button', [disabled]='!hasConfigs', (click)='exportAllConfigs(); closeMenus()')
           span.mi-label Download All Configs
+
+    //- ── License ─────────────────────────────
+    .menu-item-wrap
+      button.menu-trigger(
+        type='button',
+        [class.active]='openMenu === "license"',
+        (click)='toggleMenu("license")',
+        (mouseenter)='onMenuEnter("license")'
+      ) License
+      .menu-dropdown(*ngIf='openMenu === "license"')
+        .menu-license-status
+          span.menu-license-badge(
+            [class.badge-trial]='licenseSvc.licenseStatus === "trial"',
+            [class.badge-active]='licenseSvc.licenseStatus === "active"',
+            [class.badge-expired]='licenseSvc.licenseStatus === "expired"'
+          ) {{ licenseSvc.licenseStatus === 'active' ? licenseSvc.tierDisplayName : licenseSvc.licenseStatus === 'trial' ? 'Trial' : 'Expired' }}
+          span.menu-license-detail(*ngIf='licenseSvc.licenseStatus === "trial"') {{ licenseSvc.trialDaysRemaining }} days remaining
+          span.menu-license-detail(*ngIf='licenseSvc.licenseStatus === "active" && licenseSvc.licenseExpiry') Expires: {{ licenseSvc.formattedExpiry }}
+        .menu-sep
+        button.menu-item(type='button', (click)='showLicenseDialog = true; closeMenus()')
+          span.mi-icon 🔑
+          span.mi-label Activate License
+        button.menu-item(type='button', (click)='toggleAdminPanel(); closeMenus()')
+          span.mi-icon ⚙
+          span.mi-label License Details
+          span.mi-shortcut ⌃⇧L
+        .menu-sep
+        button.menu-item(
+          type='button',
+          [disabled]='licenseSvc.licenseStatus !== "active"',
+          (click)='onDeactivateLicense(); closeMenus()'
+        )
+          span.mi-icon ✕
+          span.mi-label Deactivate License
+        button.menu-item(type='button', (click)='showServerSettings = true; serverUrlInput = licenseSvc.licenseServerUrl; serverReachable = null; closeMenus()')
+          span.mi-icon 🌐
+          span.mi-label Server Settings
+        .menu-sep
+        button.menu-item(type='button', (click)='closeMenus()')
+          a.menu-link(href='https://tlink.io/pricing', target='_blank')
+            span.mi-icon 🛒
+            span.mi-label Buy License
 
     //- ── Help ─────────────────────────────
     .menu-item-wrap
@@ -3821,8 +3866,9 @@
         .splash-spinner-bar
 
   //- ── License Activation Dialog ──────────────────────────────────────────────
-  .license-overlay(*ngIf='showLicenseDialog && !showSplashScreen')
+  .license-overlay(*ngIf='showLicenseDialog && !showSplashScreen', (click)='showLicenseDialog = false')
     .license-dialog((click)='$event.stopPropagation()')
+      button.license-dialog-close(type='button', (click)='showLicenseDialog = false', title='Close') ✕
       .license-dialog-header
         .license-dialog-logo
           svg(width='40', height='40', viewBox='0 0 48 48')
@@ -3860,3 +3906,79 @@
           a(href='https://tlink.io/pricing', target='_blank') Buy a license at tlink.io
       .license-dialog-footer
         span (c) 2026 Tlink Technologies
+
+  //- ── Admin Panel (Ctrl+Shift+L) ──────────────────────────────────────────
+  .admin-panel-overlay(*ngIf='showAdminPanel', (click)='toggleAdminPanel()')
+    .admin-panel((click)='$event.stopPropagation()')
+      .admin-panel-header
+        h3.admin-panel-title License Admin
+        button.admin-panel-close(type='button', (click)='toggleAdminPanel()') &times;
+      .admin-panel-body
+        .admin-row
+          .admin-label License Key
+          .admin-value.admin-mono {{ licenseSvc.maskedKey || 'None' }}
+        .admin-row
+          .admin-label Status
+          .admin-value
+            span.admin-status-badge(
+              [class.status-active]='licenseSvc.licenseStatus === "active"',
+              [class.status-trial]='licenseSvc.licenseStatus === "trial"',
+              [class.status-expired]='licenseSvc.licenseStatus === "expired"',
+              [class.status-invalid]='licenseSvc.licenseStatus === "invalid"'
+            ) {{ licenseSvc.licenseStatus | uppercase }}
+        .admin-row
+          .admin-label Tier
+          .admin-value {{ licenseSvc.tierDisplayName }}
+        .admin-row
+          .admin-label Expiry
+          .admin-value {{ licenseSvc.formattedExpiry || 'N/A' }}
+        .admin-row
+          .admin-label Machine ID
+          .admin-value.admin-mono {{ licenseSvc.getMachineId() }}
+      .admin-panel-footer
+        button.admin-btn-deactivate(
+          type='button',
+          *ngIf='licenseSvc.licenseStatus === "active"',
+          (click)='onDeactivateLicense()'
+        ) Deactivate License
+
+  //- ── License Server Settings Dialog ──
+  .admin-panel-overlay(*ngIf='showServerSettings', (click)='showServerSettings = false')
+    .admin-panel((click)='$event.stopPropagation()', style='max-width: 480px')
+      .admin-panel-header
+        h3.admin-panel-title License Server Settings
+        button.admin-panel-close(type='button', (click)='showServerSettings = false') &times;
+      .admin-panel-body
+        .admin-detail-row
+          .admin-detail-label Server URL
+          .admin-detail-value(style='flex: 1')
+            input.server-url-input(
+              type='text',
+              [(ngModel)]='serverUrlInput',
+              placeholder='http://localhost:4000',
+              style='width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; font-family: monospace'
+            )
+        .admin-detail-row(style='margin-top: 8px')
+          .admin-detail-label Status
+          .admin-detail-value
+            span.admin-badge(
+              [class.admin-badge-active]='serverReachable === true',
+              [class.admin-badge-expired]='serverReachable === false',
+              [style.background]='serverReachable === null ? "#fefcbf" : ""',
+              [style.color]='serverReachable === null ? "#744210" : ""'
+            ) {{ serverReachable === true ? 'Connected' : serverReachable === false ? 'Unreachable' : 'Not checked' }}
+        .admin-detail-row(style='margin-top: 8px')
+          .admin-detail-label Current
+          .admin-detail-value(style='font-family: monospace; font-size: 13px; color: #888') {{ licenseSvc.licenseServerUrl }}
+        p(style='margin-top: 16px; font-size: 12px; color: #888') Enter the license server URL including protocol and port. Example: https://license.tlink.io or http://192.168.1.100:4000
+      .admin-panel-footer(style='display: flex; gap: 8px')
+        button(
+          type='button',
+          (click)='testServerConnection()',
+          style='padding: 8px 16px; background: #667eea; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px'
+        ) Test Connection
+        button(
+          type='button',
+          (click)='saveServerUrl()',
+          style='padding: 8px 16px; background: #38a169; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px'
+        ) Save
