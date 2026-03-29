@@ -280,8 +280,7 @@ function emitPortVlanConfig (port: NodePort, vendorKey: string): string[] {
                     lines.push(`config vlan member add ${port.vlan} ${ifName}`)
                     break
                 case 'nokia':
-                    lines.push(`set / interface ${ifName} vlan-tagging true`)
-                    lines.push(`set / interface ${ifName} subinterface 0 vlan encap single-tagged vlan-id ${port.vlan}`)
+                    lines.push(`set / interface ${ifName} subinterface 0 vlan encap untagged`)
                     break
                 case 'huawei':
                     lines.push(' port link-type access')
@@ -341,7 +340,6 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
             if (is4B) { lines.push(`# 4-byte ASN ${asn} (asdot: ${asnToAsdot(asn)})`) }
             if (rid) { lines.push(`set routing-options router-id ${rid}`) }
             lines.push(`set routing-options autonomous-system ${asn}`)
-            if (any4B) { lines.push('set routing-options autonomous-system asdot-notation') }
             // iBGP group (route reflector / client)
             if (hasIbgp) {
                 lines.push('set protocols bgp group IBGP type internal')
@@ -404,7 +402,7 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
             if (rid) { lines.push(`   router-id ${rid}`) }
             // iBGP peer group
             if (hasIbgp) {
-                lines.push('   neighbor IBGP peer group')
+                lines.push('   neighbor IBGP peer-group')
                 lines.push(`   neighbor IBGP remote-as ${asn}`)
                 lines.push('   neighbor IBGP update-source Loopback0')
                 lines.push('   neighbor IBGP send-community')
@@ -419,7 +417,7 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
             }
             // eBGP peer group
             if (hasEbgp) {
-                lines.push('   neighbor EBGP peer group')
+                lines.push('   neighbor EBGP peer-group')
                 lines.push('   neighbor EBGP send-community')
                 for (const n of ebgpNeighbors) {
                     lines.push(`   neighbor ${n.ip} peer group EBGP`)
@@ -428,8 +426,8 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 }
             }
             // ECMP multipath
-            if (hasEbgp) { lines.push('   maximum-paths 64') }
-            if (hasIbgp) { lines.push('   maximum-paths 64 ecmp 64') }
+            if (hasEbgp) { lines.push('   maximum-paths 64 ecmp 64') }
+            if (hasIbgp) { lines.push('   maximum-paths 64') }
             lines.push('   address-family ipv4 unicast')
             if (hasIbgp) { lines.push('      neighbor IBGP activate') }
             if (hasEbgp) { lines.push('      neighbor EBGP activate') }
@@ -507,7 +505,7 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 lines.push(`/routing bgp template add name=ibgp as=${asn}${rid ? ' router-id=' + rid : ''} address-families=ip`)
                 for (const n of ibgpNeighbors) {
                     const safeName = n.peerHostname.replace(/[^a-zA-Z0-9_-]/g, '_')
-                    lines.push(`/routing bgp connection add name=ibgp_${safeName} remote.address=${n.ip}/32 remote.as=${asn} template=ibgp local.role=ibgp${isRR ? ' local.role=ibgp-rr' : ''}`)
+                    lines.push(`/routing bgp connection add name=ibgp_${safeName} remote.address=${n.ip}/32 remote.as=${asn} template=ibgp local.role=${isRR ? 'ibgp-rr' : 'ibgp'}`)
                 }
             }
             for (const n of ebgpNeighbors) {
@@ -810,7 +808,8 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             // Loopback1 for VTEP (separate from Loopback0 router-id)
             if (isAristaLeaf && vtep) {
                 const lo1Octets = vtep.split('.')
-                lo1Octets[2] = String(Number(lo1Octets[2]) + 100)
+                const octet2 = Number(lo1Octets[2]) + 100
+                lo1Octets[2] = String(Math.min(octet2, 255))
                 lines.push('interface Loopback1')
                 lines.push('   description VTEP-Source')
                 lines.push(`   ip address ${lo1Octets.join('.')}/32`)
@@ -1181,7 +1180,7 @@ function emitOspfUnderlay (vendorKey: string, ctx: VendorConfigContext, isV3: bo
             for (const p of ifaces) {
                 lines.push(`interface ${p.portLabel}`)
                 lines.push(`   ip ${isV3 ? 'ospfv3' : 'ospf'} area ${ospfAreaDotted(p.area)}`)
-                lines.push(`   ip ospf network point-to-point`)
+                lines.push(`   ${isV3 ? 'ipv6 ospfv3' : 'ip ospf'} network point-to-point`)
             }
             break
 
@@ -1292,7 +1291,7 @@ function emitOspfUnderlay (vendorKey: string, ctx: VendorConfigContext, isV3: bo
             for (const p of ifaces) {
                 lines.push(`interface ${p.portLabel}`)
                 lines.push(` ip ${isV3 ? 'ospfv3 1' : 'ospf 1'} area ${ospfAreaDotted(p.area)}`)
-                lines.push(` ip ospf network point-to-point`)
+                lines.push(` ${isV3 ? 'ipv6 ospfv3' : 'ip ospf'} network point-to-point`)
             }
             lines.push('!')
             break
@@ -1569,6 +1568,13 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
             }
             break
 
+        case 'mikrotik':
+        case 'sonic':
+        case 'extreme':
+            lines.push('')
+            lines.push(`# SR-MPLS is not supported on ${vendorKey} in this config generator`)
+            break
+
         default: // cisco / dell / hpe
             lines.push('!')
             lines.push('! SR-MPLS')
@@ -1646,6 +1652,13 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
                 lines.push('  ipv6 enable')
             }
             lines.push('#')
+            break
+
+        case 'mikrotik':
+        case 'sonic':
+        case 'extreme':
+            lines.push('')
+            lines.push(`# SRv6 is not supported on ${vendorKey} in this config generator`)
             break
 
         default: // cisco
@@ -1932,6 +1945,22 @@ function emitMplsLdp (vendorKey: string, ctx: VendorConfigContext): string[] {
                 lines.push(' mpls ldp')
                 lines.push('#')
             }
+            break
+
+        case 'mikrotik':
+            lines.push('')
+            lines.push('# MPLS / LDP')
+            lines.push('/mpls ldp')
+            lines.push(`set enabled=yes lsr-id=${rid || '0.0.0.0'} transport-address=${rid || '0.0.0.0'}`)
+            for (const ifName of ifaces) {
+                lines.push(`/mpls ldp interface add interface=${ifName}`)
+            }
+            break
+
+        case 'sonic':
+        case 'extreme':
+            lines.push('')
+            lines.push(`# MPLS LDP is not supported on ${vendorKey} in this config generator`)
             break
 
         default: // cisco / dell / hpe
@@ -2822,7 +2851,7 @@ export function buildVendorStartupConfig (
         // Loopback1 — NVE VTEP source (best practice: separate from router-id)
         if (ctx.overlayEnabled && loopParsed) {
             const lo1Octets = loopParsed.ip.split('.')
-            lo1Octets[2] = String(Number(lo1Octets[2]) + 100) // offset to avoid collision
+            lo1Octets[2] = String(Math.min(Number(lo1Octets[2]) + 100, 255)) // offset to avoid collision
             const lo1Ip = lo1Octets.join('.')
             lines.push('interface loopback1')
             lines.push('  description VTEP-Source')
@@ -2903,7 +2932,7 @@ export function buildVendorStartupConfig (
         if (loopParsed || loopV6) {
             lines.push('interface Loopback0')
             lines.push(' description Router-ID')
-            if (loopParsed) { lines.push(` ipv4 address ${loopParsed.ip} ${prefixToMask(loopParsed.prefix)}`) }
+            if (loopParsed) { lines.push(` ipv4 address ${loopParsed.ip} ${prefixToMask(loopParsed.prefix) ?? '255.255.255.255'}`) }
             if (loopV6) { lines.push(` ipv6 address ${loopV6.ip}/${loopV6.prefix}`) }
             lines.push(' no shutdown')
             lines.push('!')
@@ -2921,7 +2950,7 @@ export function buildVendorStartupConfig (
             if (description) { lines.push(` description ${description}`) }
             if (parsed) {
                 lines.push(` mtu 9216`)
-                lines.push(` ipv4 address ${parsed.ip} ${prefixToMask(parsed.prefix)}`)
+                lines.push(` ipv4 address ${parsed.ip} ${prefixToMask(parsed.prefix) ?? '255.255.255.0'}`)
             }
             if (hasV6Port) {
                 if (!parsed) { lines.push(' mtu 9216') }
@@ -3033,11 +3062,15 @@ export function buildVendorStartupConfig (
 
         // Telemetry
         if (ctx.telemetryEnabled) {
+            const tc = ctx.telemetryConfig
+            const grpcPort = tc?.collectorPort || 57400
+            const tls = tc?.tls !== false
+            const sampleInterval = tc?.sampleInterval || 30000
             lines.push('!')
             lines.push('!! gRPC/gNMI telemetry')
             lines.push('grpc')
-            lines.push(' port 57400')
-            lines.push(' no-tls')
+            lines.push(` port ${grpcPort}`)
+            if (!tls) { lines.push(' no-tls') }
             lines.push('!')
             lines.push('telemetry model-driven')
             lines.push(' sensor-group INTERFACES')
@@ -3047,8 +3080,8 @@ export function buildVendorStartupConfig (
             lines.push('  sensor-path Cisco-IOS-XR-ipv4-bgp-oper:bgp/instances/instance/instance-active/default-vrf/neighbors/neighbor')
             lines.push(' !')
             lines.push(' subscription SUB1')
-            lines.push('  sensor-group-id INTERFACES sample-interval 30000')
-            lines.push('  sensor-group-id BGP sample-interval 30000')
+            lines.push(`  sensor-group-id INTERFACES sample-interval ${sampleInterval}`)
+            lines.push(`  sensor-group-id BGP sample-interval ${sampleInterval}`)
             lines.push(' !')
             lines.push('!')
         }

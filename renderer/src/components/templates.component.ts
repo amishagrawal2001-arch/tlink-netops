@@ -6,7 +6,7 @@ import {
     TOPOLOGY_TEMPLATES, TopologyTemplate, TemplateCategory,
     DEFAULT_PORTS, TemplateNodeDef, NodePort,
 } from '../api/interfaces'
-import { buildVendorStartupConfig, VendorConfigContext, BgpNeighbor } from '../services/vendor-config-builder'
+import { buildVendorStartupConfig, VendorConfigContext, BgpNeighbor, OspfInterface, IsisInterface } from '../services/vendor-config-builder'
 
 type FilterTab = 'all' | TemplateCategory
 
@@ -88,6 +88,8 @@ export class TemplatesComponent {
 
     close (): void { this.closed.emit() }
 
+    trackById (_index: number, tpl: TopologyTemplate): string { return tpl.id }
+
     openBuilder (): void {
         this.closed.emit()
         this.switchToBuilder.emit()
@@ -112,69 +114,172 @@ export class TemplatesComponent {
         sections.push(divider)
         sections.push('')
 
-        for (const def of tpl.nodes) {
+        const isIbgpRr = tpl.underlayProtocol === 'ibgp-rr'
+        const vniBase = tpl.vniBase ?? 10000
+
+        // Pre-compute overlay neighbor lists (loopback IPs by role)
+        const spineLoopbacks: string[] = []
+        const leafLoopbacks: string[] = []
+        for (const n of tpl.nodes) {
+            const loopIp = n.loopbackIp?.split('/')[0] ?? ''
+            if (!loopIp || n.asn == null) { continue }
+            if (n.role === 'spine' || n.role === 'super-spine') {
+                spineLoopbacks.push(loopIp)
+            } else if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') {
+                leafLoopbacks.push(loopIp)
+            }
+        }
+
+        // Pre-compute per-node BGP neighbors from links (with iBGP-RR loopback peering)
+        const bgpNeighborMap = new Map<number, BgpNeighbor[]>()
+        for (const link of tpl.links) {
+            const srcDef = tpl.nodes[link.sourceNode]
+            const tgtDef = tpl.nodes[link.targetNode]
+            if (!srcDef || !tgtDef) { continue }
+
+            const srcPorts = srcDef.ports ?? DEFAULT_PORTS[srcDef.type] ?? []
+            const tgtPorts = tgtDef.ports ?? DEFAULT_PORTS[tgtDef.type] ?? []
+            const srcPort = srcPorts.find(p => p.id === link.sourcePort)
+            const tgtPort = tgtPorts.find(p => p.id === link.targetPort)
+            if (!srcPort?.ipAddress || !tgtPort?.ipAddress) { continue }
+
+            const srcIp = srcPort.ipAddress.split('/')[0]
+            const tgtIp = tgtPort.ipAddress.split('/')[0]
+
+            if (srcDef.asn != null && tgtDef.asn != null) {
+                const sameAsn = srcDef.asn === tgtDef.asn
+                const useLoopback = isIbgpRr && sameAsn
+                const srcLoopback = srcDef.loopbackIp?.split('/')[0]
+                const tgtLoopback = tgtDef.loopbackIp?.split('/')[0]
+
+                const neighborIpForSrc = useLoopback && tgtLoopback ? tgtLoopback : tgtIp
+                const neighborIpForTgt = useLoopback && srcLoopback ? srcLoopback : srcIp
+
+                if (!bgpNeighborMap.has(link.sourceNode)) { bgpNeighborMap.set(link.sourceNode, []) }
+                const srcList = bgpNeighborMap.get(link.sourceNode)!
+                if (!srcList.some(nb => nb.ip === neighborIpForSrc)) {
+                    srcList.push({ ip: neighborIpForSrc, peerAsn: tgtDef.asn, portLabel: srcPort.label, peerHostname: tgtDef.label })
+                }
+
+                if (!bgpNeighborMap.has(link.targetNode)) { bgpNeighborMap.set(link.targetNode, []) }
+                const tgtList = bgpNeighborMap.get(link.targetNode)!
+                if (!tgtList.some(nb => nb.ip === neighborIpForTgt)) {
+                    tgtList.push({ ip: neighborIpForTgt, peerAsn: srcDef.asn, portLabel: tgtPort.label, peerHostname: srcDef.label })
+                }
+            }
+        }
+
+        // Pre-compute per-node OSPF interface list from links
+        const ospfInterfaceMap = new Map<number, OspfInterface[]>()
+        for (const link of tpl.links) {
+            const srcDef = tpl.nodes[link.sourceNode]
+            const tgtDef = tpl.nodes[link.targetNode]
+            if (!srcDef || !tgtDef) { continue }
+            if (srcDef.ospfArea == null && tgtDef.ospfArea == null) { continue }
+
+            const srcPorts = srcDef.ports ?? DEFAULT_PORTS[srcDef.type] ?? []
+            const tgtPorts = tgtDef.ports ?? DEFAULT_PORTS[tgtDef.type] ?? []
+            const srcPort = srcPorts.find(p => p.id === link.sourcePort)
+            const tgtPort = tgtPorts.find(p => p.id === link.targetPort)
+            if (!srcPort?.ipAddress || !tgtPort?.ipAddress) { continue }
+
+            const srcArea = srcDef.ospfArea ?? 0
+            const tgtArea = tgtDef.ospfArea ?? 0
+            const linkArea = srcArea === tgtArea ? srcArea : Math.max(srcArea, tgtArea)
+
+            if (!ospfInterfaceMap.has(link.sourceNode)) { ospfInterfaceMap.set(link.sourceNode, []) }
+            ospfInterfaceMap.get(link.sourceNode)!.push({ portLabel: srcPort.label, area: linkArea })
+            if (!ospfInterfaceMap.has(link.targetNode)) { ospfInterfaceMap.set(link.targetNode, []) }
+            ospfInterfaceMap.get(link.targetNode)!.push({ portLabel: tgtPort.label, area: linkArea })
+        }
+
+        // Pre-compute per-node IS-IS interface list from links
+        const isisInterfaceMap = new Map<number, IsisInterface[]>()
+        for (const link of tpl.links) {
+            const srcDef = tpl.nodes[link.sourceNode]
+            const tgtDef = tpl.nodes[link.targetNode]
+            if (!srcDef || !tgtDef) { continue }
+            if (srcDef.isisLevel == null && tgtDef.isisLevel == null) { continue }
+
+            const srcPorts = srcDef.ports ?? DEFAULT_PORTS[srcDef.type] ?? []
+            const tgtPorts = tgtDef.ports ?? DEFAULT_PORTS[tgtDef.type] ?? []
+            const srcPort = srcPorts.find(p => p.id === link.sourcePort)
+            const tgtPort = tgtPorts.find(p => p.id === link.targetPort)
+            if (!srcPort?.ipAddress || !tgtPort?.ipAddress) { continue }
+
+            const srcLevel = srcDef.isisLevel ?? 2
+            const tgtLevel = tgtDef.isisLevel ?? 2
+
+            if (!isisInterfaceMap.has(link.sourceNode)) { isisInterfaceMap.set(link.sourceNode, []) }
+            isisInterfaceMap.get(link.sourceNode)!.push({ portLabel: srcPort.label, level: srcLevel as 1 | 2 | 12 })
+            if (!isisInterfaceMap.has(link.targetNode)) { isisInterfaceMap.set(link.targetNode, []) }
+            isisInterfaceMap.get(link.targetNode)!.push({ portLabel: tgtPort.label, level: tgtLevel as 1 | 2 | 12 })
+        }
+
+        for (let nodeIdx = 0; nodeIdx < tpl.nodes.length; nodeIdx++) {
+            const def = tpl.nodes[nodeIdx]
             if (!def.vendor) { continue }
 
             const ports = def.ports ?? DEFAULT_PORTS[def.type] ?? []
-            // Resolve overlay neighbors for this node
             const loopIp = def.loopbackIp?.split('/')[0] ?? ''
             const isSpine = def.role === 'spine' || def.role === 'super-spine'
-            const spineLoopbacks = tpl.nodes
-                .filter(n => n.role === 'spine' || n.role === 'super-spine')
-                .map(n => n.loopbackIp?.split('/')[0] ?? '')
-                .filter(ip => ip && ip !== loopIp)
-            const leafLoopbacks = tpl.nodes
-                .filter(n => n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor')
-                .map(n => n.loopbackIp?.split('/')[0] ?? '')
-                .filter(ip => ip && ip !== loopIp)
-            const vniBase = tpl.vniBase ?? 10000
+            const hasAsn = def.asn != null
+            const hasVlans = (def.vlans?.length ?? 0) > 0
+            const overlay = tpl.overlayEnabled && hasAsn ? (isSpine || hasVlans) : false
 
-            // Build BGP neighbors from links
-            const bgpNeighbors: BgpNeighbor[] = []
-            const nodeIdx = tpl.nodes.indexOf(def)
-            for (const link of tpl.links) {
-                if (link.sourceNode === nodeIdx) {
-                    const peer = tpl.nodes[link.targetNode]
-                    const peerPort = peer?.ports?.find(p => p.id === link.targetPort)
-                    const localPort = def.ports?.find(p => p.id === link.sourcePort)
-                    if (peerPort?.ipAddress && peer?.asn) {
-                        bgpNeighbors.push({ ip: peerPort.ipAddress.split('/')[0], peerAsn: peer.asn, portLabel: localPort?.label ?? '', peerHostname: peer.label })
-                    }
-                } else if (link.targetNode === nodeIdx) {
-                    const peer = tpl.nodes[link.sourceNode]
-                    const peerPort = peer?.ports?.find(p => p.id === link.sourcePort)
-                    const localPort = def.ports?.find(p => p.id === link.targetPort)
-                    if (peerPort?.ipAddress && peer?.asn) {
-                        bgpNeighbors.push({ ip: peerPort.ipAddress.split('/')[0], peerAsn: peer.asn, portLabel: localPort?.label ?? '', peerHostname: peer.label })
-                    }
+            // Build IS-IS NET address from loopback IP
+            let isisNet: string | undefined
+            if (def.isisLevel != null && loopIp) {
+                const parts = loopIp.split('.').map(Number)
+                if (parts.length === 4 && parts.every(p => Number.isFinite(p))) {
+                    const padded = parts.map(p => String(p).padStart(3, '0')).join('')
+                    isisNet = `49.0001.${padded.slice(0, 4)}.${padded.slice(4, 8)}.${padded.slice(8, 12)}.00`
                 }
             }
+
+            const isisIfaces = isisInterfaceMap.get(nodeIdx) ?? []
 
             const ctx: VendorConfigContext = {
                 nodeType: def.type,
                 hostname: def.label,
                 mgmtIp:  def.mgmtIp ?? '',
+                loopbackIp: def.loopbackIp ?? '',
+                loopbackIpv6: def.loopbackIpv6 ?? '',
                 sshUsername: '',
                 model: def.model ?? '',
                 switchFamily: (def.switchFamily ?? '') as any,
                 vlans: def.vlans ?? [],
-                loopbackIp: def.loopbackIp,
                 asn: def.asn,
                 routerId: loopIp || undefined,
-                bgpNeighbors,
+                bgpNeighbors: bgpNeighborMap.get(nodeIdx) ?? [],
                 underlayProtocol: tpl.underlayProtocol,
-                overlayEnabled: tpl.overlayEnabled,
-                overlayNeighbors: isSpine ? leafLoopbacks : spineLoopbacks,
-                vniMappings: (def.vlans ?? [])
-                    .filter(v => v.id >= 100 && v.id < 4000)
-                    .map(v => ({ vlanId: v.id, vni: vniBase + v.id, vlanName: v.name })),
-                vtepSourceIp: isSpine ? (loopIp || undefined) : (loopIp || undefined),
+                isRouteReflector: isIbgpRr && isSpine,
+                overlayEnabled: overlay,
+                overlayNeighbors: isSpine ? leafLoopbacks.filter(ip => ip !== loopIp) : spineLoopbacks.filter(ip => ip !== loopIp),
+                vniMappings: isSpine
+                    ? []
+                    : (def.vlans ?? [])
+                        .filter(v => v.id >= 100 && v.id < 4000)
+                        .map(v => ({ vlanId: v.id, vni: vniBase + v.id, vlanName: v.name })),
+                vtepSourceIp: isSpine ? undefined : (loopIp || undefined),
                 nodeRole: def.role,
                 irbEnabled: tpl.irbEnabled,
                 irbGatewayBase: tpl.irbGatewayBase,
                 irbMode: tpl.irbMode,
                 oismEnabled: tpl.oismEnabled,
                 macVrfEnabled: tpl.macVrfEnabled,
+                telemetryEnabled: false,
+                ospfInterfaces: ospfInterfaceMap.get(nodeIdx) ?? [],
+                ospfArea: def.ospfArea,
+                nodeSid: def.nodeSid,
+                srgbStart: def.srgbStart,
+                srgbEnd: def.srgbEnd,
+                srv6Locator: def.srv6Locator,
+                mplsLdp: def.mplsLdp,
+                mplsInterfaces: isisIfaces.map(i => i.portLabel),
+                isisInterfaces: isisIfaces,
+                isisLevel: def.isisLevel as 1 | 2 | 12 | undefined,
+                isisNet,
             }
 
             const cfg = buildVendorStartupConfig(def.vendor, ports, ctx)

@@ -35,11 +35,12 @@
         span.tpl-filter-count {{ countFor(tab.id) }}
 
     .tpl-no-results(*ngIf='templates.length === 0')
-      span No templates found for "{{ searchQuery }}"
+      span(*ngIf='searchQuery') No templates found for "{{ searchQuery }}"
+      span(*ngIf='!searchQuery') No templates in this category
 
     .tpl-grid
       .tpl-card(
-        *ngFor='let tpl of templates',
+        *ngFor='let tpl of templates; trackBy: trackById',
         [class.tpl-hovered]='hovered === tpl.id',
         (mouseenter)='hovered = tpl.id',
         (mouseleave)='hovered = null',

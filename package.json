@@ -71,7 +71,7 @@
   },
   "build": {
     "appId": "com.tlink.netops",
-    "productName": "Tlink NetOps",
+    "productName": "NetOps",
     "directories": {
       "app": "."
     },

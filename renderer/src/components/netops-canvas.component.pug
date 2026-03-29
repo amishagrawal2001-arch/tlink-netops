@@ -4,9 +4,6 @@
 
   //- ── Top bar (brand + topology info) ──────────────────────────────────────
   .netops-topbar
-    .toolbar-brand
-      span.brand-icon ⬡
-      span.brand-text NetOps
     .topbar-divider
     .topbar-topo
       span.topo-name {{ topology?.name }}
@@ -3702,7 +3699,7 @@
                 stop(offset='100%', stop-color='#8b5cf6')
             circle(cx='24', cy='24', r='22', fill='url(#welcome-grad)', opacity='0.9')
             path(d='M16,24 L24,16 L32,24 L24,32 Z', fill='#fff', opacity='0.9')
-        h2.welcome-title Welcome to Tlink NetOps
+        h2.welcome-title Welcome to NetOps
         p.welcome-subtitle Build and visualize network topologies with ease
       .welcome-features
         .welcome-feature-card(*ngFor='let f of welcomeFeatures')

@@ -303,6 +303,12 @@ contextBridge.exposeInMainWorld('netopsAPI', {
         ipcRenderer.removeAllListeners('pty-exit')
     },
 
+    // ── Preferences (persistent across restarts) ───────────────────────────
+    prefGet: (key: string): Promise<any> =>
+        ipcRenderer.invoke('pref-get', key),
+    prefSet: (key: string, value: any): Promise<any> =>
+        ipcRenderer.invoke('pref-set', key, value),
+
     // ── Syslog server ─────────────────────────────────────────────────────
     syslogStart: (port?: number): Promise<any> =>
         ipcRenderer.invoke('syslog-start', port),

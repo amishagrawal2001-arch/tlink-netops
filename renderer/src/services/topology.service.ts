@@ -670,6 +670,8 @@ export class TopologyService {
                 ospfArea: def.ospfArea,
                 isisLevel: def.isisLevel,
                 nodeSid: def.nodeSid,
+                srgbStart: def.srgbStart,
+                srgbEnd: def.srgbEnd,
                 srv6Locator: def.srv6Locator,
                 mplsLdp: def.mplsLdp,
             }
@@ -1496,6 +1498,8 @@ export class TopologyService {
 
                 // SR-MPLS / SRv6 / MPLS-LDP context
                 nodeSid: n.nodeSid,
+                srgbStart: n.srgbStart,
+                srgbEnd: n.srgbEnd,
                 srv6Locator: n.srv6Locator,
                 mplsLdp: n.mplsLdp,
                 mplsInterfaces: (isisInterfaceMap.get(n.id) ?? []).map(i => i.portLabel),

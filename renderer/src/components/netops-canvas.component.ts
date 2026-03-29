@@ -1513,7 +1513,9 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showLicenseDialog = false
     licenseKeyInput = ''
     licenseActivationError = ''
-    showSplashScreen = true
+    showSplashScreen = false
+
+    private static _splashShown = false
 
     constructor (
         public svc: TopologyService,
@@ -1526,13 +1528,20 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     ) {}
 
     ngOnInit (): void {
-        // ── Splash screen: auto-dismiss after 2 seconds ──
-        setTimeout(() => {
-            this.showSplashScreen = false
-            // After splash, check license
-            this.checkLicenseOnStartup()
+        // ── Splash screen: only on first app launch, not on new tabs ──
+        if (!NetopsCanvasComponent._splashShown) {
+            NetopsCanvasComponent._splashShown = true
+            this.showSplashScreen = true
             this.cdr.markForCheck()
-        }, 2000)
+            setTimeout(() => {
+                this.showSplashScreen = false
+                this.checkLicenseOnStartup()
+                setTimeout(() => this.checkAndShowWelcome(), 500)
+                this.cdr.markForCheck()
+            }, 2000)
+        } else {
+            this.checkLicenseOnStartup()
+        }
 
         // ── Theme: read persisted preference or respect system default ──
         const savedTheme = localStorage.getItem('netops-theme')
@@ -1574,8 +1583,6 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
             })
         }
 
-        // Show welcome dialog on first launch
-        setTimeout(() => this.checkAndShowWelcome(), 500)
     }
 
     toggleTheme (): void {
@@ -12528,23 +12535,29 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     // ── Onboarding: Welcome Dialog ──────────────────────────────────────────
 
     checkAndShowWelcome (): void {
-        const seen = localStorage.getItem('netops-welcome-seen')
-        if (!seen) {
-            this.showWelcomeDialog = true
-            this.cdr.markForCheck()
+        const api = (window as any).netopsAPI
+        if (api?.prefGet) {
+            api.prefGet('welcome-seen').then((val: any) => {
+                if (!val) {
+                    this.showWelcomeDialog = true
+                    this.cdr.markForCheck()
+                }
+            })
         }
     }
 
     dismissWelcome (): void {
         if (this.welcomeDontShowAgain) {
-            localStorage.setItem('netops-welcome-seen', '1')
+            const api = (window as any).netopsAPI
+            api?.prefSet?.('welcome-seen', true)
         }
         this.showWelcomeDialog = false
         this.cdr.markForCheck()
     }
 
     startTourFromWelcome (): void {
-        localStorage.setItem('netops-welcome-seen', '1')
+        const api = (window as any).netopsAPI
+        api?.prefSet?.('welcome-seen', true)
         this.showWelcomeDialog = false
         this.startTour()
     }

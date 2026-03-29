@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0f3460"/>
+    </linearGradient>
+    <linearGradient id="hex" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="100%" style="stop-color:#3a7bd5"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="100%" style="stop-color:#48e0c0"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS-style rounded rect background -->
+  <rect x="18" y="18" width="988" height="988" rx="220" fill="url(#bg)"/>
+  <!-- Outer hexagon (subtle) -->
+  <polygon points="512,140 832,300 832,620 512,780 192,620 192,300" fill="none" stroke="url(#hex)" stroke-width="12" opacity="0.2"/>
+  <!-- Network links -->
+  <line x1="512" y1="240" x2="740" y2="372" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <line x1="512" y1="240" x2="284" y2="372" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <line x1="740" y1="372" x2="740" y2="612" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <line x1="284" y1="372" x2="284" y2="612" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <line x1="740" y1="612" x2="512" y2="744" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <line x1="284" y1="612" x2="512" y2="744" stroke="url(#hex)" stroke-width="10" stroke-linecap="round"/>
+  <!-- Cross links -->
+  <line x1="512" y1="240" x2="740" y2="612" stroke="url(#hex)" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+  <line x1="512" y1="240" x2="284" y2="612" stroke="url(#hex)" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+  <line x1="740" y1="372" x2="284" y2="612" stroke="url(#hex)" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+  <line x1="284" y1="372" x2="740" y2="612" stroke="url(#hex)" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+  <!-- Center links -->
+  <line x1="512" y1="492" x2="512" y2="240" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <line x1="512" y1="492" x2="740" y2="372" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <line x1="512" y1="492" x2="284" y2="372" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <line x1="512" y1="492" x2="740" y2="612" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <line x1="512" y1="492" x2="284" y2="612" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <line x1="512" y1="492" x2="512" y2="744" stroke="#48e0c0" stroke-width="5" opacity="0.35"/>
+  <!-- Center node -->
+  <circle cx="512" cy="492" r="32" fill="url(#node)" opacity="0.6"/>
+  <circle cx="512" cy="492" r="14" fill="#ffffff"/>
+  <!-- Vertex nodes -->
+  <circle cx="512" cy="240" r="28" fill="url(#node)"/>
+  <circle cx="740" cy="372" r="28" fill="url(#node)"/>
+  <circle cx="284" cy="372" r="28" fill="url(#node)"/>
+  <circle cx="740" cy="612" r="28" fill="url(#node)"/>
+  <circle cx="284" cy="612" r="28" fill="url(#node)"/>
+  <circle cx="512" cy="744" r="28" fill="url(#node)"/>
+  <!-- Node inner dots -->
+  <circle cx="512" cy="240" r="10" fill="#ffffff"/>
+  <circle cx="740" cy="372" r="10" fill="#ffffff"/>
+  <circle cx="284" cy="372" r="10" fill="#ffffff"/>
+  <circle cx="740" cy="612" r="10" fill="#ffffff"/>
+  <circle cx="284" cy="612" r="10" fill="#ffffff"/>
+  <circle cx="512" cy="744" r="10" fill="#ffffff"/>
+</svg>

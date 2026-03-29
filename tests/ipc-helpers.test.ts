@@ -135,10 +135,10 @@ describe('_parseSshPayload', () => {
         if (result.ok) expect(result.value.timeoutMs).toBe(1000)
     })
 
-    it('clamps timeout to max 30000ms', () => {
-        const result = _parseSshPayload(makeSshPayload({ timeoutMs: 99999 }))
+    it('clamps timeout to max 120000ms', () => {
+        const result = _parseSshPayload(makeSshPayload({ timeoutMs: 999999 }))
         expect(result.ok).toBe(true)
-        if (result.ok) expect(result.value.timeoutMs).toBe(30000)
+        if (result.ok) expect(result.value.timeoutMs).toBe(120000)
     })
 
     it('returns error for null input', () => {

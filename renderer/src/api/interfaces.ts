@@ -133,6 +133,8 @@ export interface TopologyNode {
     ospfArea?: number           // OSPF area ID (0 = backbone)
     isisLevel?: 1 | 2 | 12     // IS-IS level (12 = L1/L2)
     nodeSid?: number            // SR-MPLS Node SID index (e.g. 1 → label 16001)
+    srgbStart?: number          // SRGB start label (default 16000)
+    srgbEnd?: number            // SRGB end label (default 23999)
     srv6Locator?: string        // SRv6 locator prefix (e.g. fc00:0:1::/48)
     mplsLdp?: boolean           // enable MPLS LDP on this node
     telemetryEnabled?: boolean  // gRPC/gNMI telemetry streaming
@@ -1715,7 +1717,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 ports: [
                     { id: 'ge0', label: 'ge-0/0/0', enabled: true, speed: '1G', description: 'WAN uplink', ipAddress: '203.0.113.10/30' },
                     { id: 'ge1', label: 'ge-0/0/1', enabled: true, speed: '1G', description: 'LAN trunk', vlanMode: 'trunk', trunkAllowedVlans: 'all', ipAddress: '192.168.1.0/31' },
-                    { id: 'ge2', label: 'ge-0/0/2', enabled: true, speed: '1G', description: 'DMZ', ipAddress: '172.16.0.1/24' },
+                    { id: 'ge2', label: 'ge-0/0/2', enabled: true, speed: '1G', description: 'DMZ', ipAddress: '10.99.0.1/24' },
                     { id: 'ge3', label: 'ge-0/0/3', enabled: true, speed: '1G' },
                 ],
             },
@@ -12093,10 +12095,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'e2' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'e2' },
             { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'e2' },
-            { sourceNode: 2, sourcePort: 'e3', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e3', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e3', targetNode: 8, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e3', targetNode: 9, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e3', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e3', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e3', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e3', targetNode: 9, targetPort: 'eth0' },
         ],
     },
 
@@ -12174,8 +12176,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 2, sourcePort: 'e4', targetNode: 5, targetPort: 'e0' },
             { sourceNode: 3, sourcePort: 'e3', targetNode: 4, targetPort: 'e4' },
             { sourceNode: 3, sourcePort: 'e4', targetNode: 5, targetPort: 'e4' },
-            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e8', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e8', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -12256,8 +12258,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 2, sourcePort: 'et3', targetNode: 5, targetPort: 'e1' },
             { sourceNode: 3, sourcePort: 'et2', targetNode: 4, targetPort: 'e2' },
             { sourceNode: 3, sourcePort: 'et3', targetNode: 5, targetPort: 'e2' },
-            { sourceNode: 4, sourcePort: 'e3', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e3', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 4, sourcePort: 'e3', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e3', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -12338,8 +12340,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 2, sourcePort: 'ge1', targetNode: 5, targetPort: 'e0' },
             { sourceNode: 3, sourcePort: 'ge0', targetNode: 4, targetPort: 'e4' },
             { sourceNode: 3, sourcePort: 'ge1', targetNode: 5, targetPort: 'e4' },
-            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e8', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e8', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -12464,8 +12466,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e0' },
             { sourceNode: 2, sourcePort: 'e2', targetNode: 3, targetPort: 'e4' },
             { sourceNode: 2, sourcePort: 'e3', targetNode: 4, targetPort: 'e4' },
-            { sourceNode: 3, sourcePort: 'e8', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'e0' },
+            { sourceNode: 3, sourcePort: 'e8', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e8', targetNode: 6, targetPort: 'eth0' },
         ],
     },
 // ── Template: EVPN-VXLAN DC Fabric (L2 Stretch) ────────────────────────
@@ -12527,8 +12529,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 0, sourcePort: 'et1', targetNode: 3, targetPort: 'et0' },
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
         ],
     },
 
@@ -12586,8 +12588,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 0, sourcePort: 'xe1', targetNode: 3, targetPort: 'xe0' },
             { sourceNode: 1, sourcePort: 'xe0', targetNode: 2, targetPort: 'xe1' },
             { sourceNode: 1, sourcePort: 'xe1', targetNode: 3, targetPort: 'xe1' },
-            { sourceNode: 2, sourcePort: 'xe2', targetNode: 4, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe2', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe2', targetNode: 4, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe2', targetNode: 5, targetPort: 'eth0' },
         ],
     },
 
@@ -12652,8 +12654,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 0, sourcePort: 'et1', targetNode: 3, targetPort: 'et0' },
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
         ],
     },
 
@@ -12740,9 +12742,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -12829,9 +12831,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -12916,9 +12918,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -13008,9 +13010,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             // Leaves to servers
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -13102,9 +13104,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             // Leaves to servers
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -13178,8 +13180,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'et1' },
             // Leaves to servers
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 4, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 5, targetPort: 'eth0' },
         ],
     },
 
@@ -13285,11 +13287,11 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'et1' },
             // Leaves to endpoints
-            { sourceNode: 2, sourcePort: 'et2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'et2', targetNode: 8, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'et2', targetNode: 8, targetPort: 'e1' },
-            { sourceNode: 5, sourcePort: 'et3', targetNode: 9, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'et2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'et2', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'et2', targetNode: 8, targetPort: 'eth1' },
+            { sourceNode: 5, sourcePort: 'et3', targetNode: 9, targetPort: 'eth0' },
         ],
     },
 
@@ -13394,10 +13396,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'et1' },
             // Leaves to servers (Server-1 dual-homed to Leaf-1 + Leaf-2)
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e1' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'xe0', targetNode: 8, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth1' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'xe0', targetNode: 8, targetPort: 'eth0' },
         ],
     },
 
@@ -13508,15 +13510,15 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'et1' },
             // Leaf-1 to servers
-            { sourceNode: 2, sourcePort: 'et2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'et2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
             // Leaf-2 to West2 (ESI peer)
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 7, targetPort: 'e1' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth1' },
             // Leaf-5/6 ESI to firewall
-            { sourceNode: 4, sourcePort: 'et2', targetNode: 8, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'et2', targetNode: 8, targetPort: 'e1' },
+            { sourceNode: 4, sourcePort: 'et2', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'et2', targetNode: 8, targetPort: 'eth1' },
             // Leaf-6 to East3
-            { sourceNode: 5, sourcePort: 'et3', targetNode: 9, targetPort: 'e0' },
+            { sourceNode: 5, sourcePort: 'et3', targetNode: 9, targetPort: 'eth0' },
         ],
     },
 
@@ -13617,10 +13619,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'et1' },
             { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'et1' },
             // Dual-homed servers
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'e1' },
-            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'xe0', targetNode: 7, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 6, targetPort: 'eth1' },
+            { sourceNode: 4, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth1' },
         ],
     },
 
@@ -13776,10 +13778,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 5, sourcePort: 'et2', targetNode: 8, targetPort: 'et1' },
             { sourceNode: 5, sourcePort: 'et3', targetNode: 9, targetPort: 'et1' },
             // Leaf to server
-            { sourceNode: 6, sourcePort: 'xe0', targetNode: 10, targetPort: 'e0' },
-            { sourceNode: 7, sourcePort: 'xe0', targetNode: 11, targetPort: 'e0' },
-            { sourceNode: 8, sourcePort: 'xe0', targetNode: 12, targetPort: 'e0' },
-            { sourceNode: 9, sourcePort: 'xe0', targetNode: 13, targetPort: 'e0' },
+            { sourceNode: 6, sourcePort: 'xe0', targetNode: 10, targetPort: 'eth0' },
+            { sourceNode: 7, sourcePort: 'xe0', targetNode: 11, targetPort: 'eth0' },
+            { sourceNode: 8, sourcePort: 'xe0', targetNode: 12, targetPort: 'eth0' },
+            { sourceNode: 9, sourcePort: 'xe0', targetNode: 13, targetPort: 'eth0' },
         ],
     },
 
@@ -13893,8 +13895,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 4, sourcePort: 'et2', targetNode: 6, targetPort: 'et0' },
             { sourceNode: 5, sourcePort: 'et2', targetNode: 6, targetPort: 'et1' },
             // Leaves to servers
-            { sourceNode: 2, sourcePort: 'xe0', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'xe0', targetNode: 8, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'xe0', targetNode: 8, targetPort: 'eth0' },
         ],
     },
 
@@ -14025,8 +14027,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             // Core to Dist
             { sourceNode: 2, sourcePort: 'xe2', targetNode: 3, targetPort: 'xe0' },
             // Dist to servers
-            { sourceNode: 3, sourcePort: 'ge0', targetNode: 4, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'ge1', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 3, sourcePort: 'ge0', targetNode: 4, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'ge1', targetNode: 5, targetPort: 'eth0' },
         ],
     },
 
@@ -14107,9 +14109,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14178,9 +14180,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14261,9 +14263,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14349,9 +14351,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'et0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'et1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'et2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14433,9 +14435,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14513,9 +14515,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14597,9 +14599,9 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -14707,10 +14709,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 2, sourcePort: 'e2', targetNode: 3, targetPort: 'e2' },
             { sourceNode: 4, sourcePort: 'e2', targetNode: 5, targetPort: 'e2' },
             // Dual-homed servers
-            { sourceNode: 2, sourcePort: 'e3', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e3', targetNode: 6, targetPort: 'e1' },
-            { sourceNode: 4, sourcePort: 'e3', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e3', targetNode: 7, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e3', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e3', targetNode: 6, targetPort: 'eth1' },
+            { sourceNode: 4, sourcePort: 'e3', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e3', targetNode: 7, targetPort: 'eth1' },
         ],
     },
 
@@ -14808,10 +14810,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 1, sourcePort: 'e2', targetNode: 3, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e1' },
             { sourceNode: 1, sourcePort: 'e4', targetNode: 5, targetPort: 'e1' },
-            { sourceNode: 2, sourcePort: 'e2', targetNode: 6, targetPort: 'e0' },
-            { sourceNode: 3, sourcePort: 'e2', targetNode: 7, targetPort: 'e0' },
-            { sourceNode: 4, sourcePort: 'e2', targetNode: 8, targetPort: 'e0' },
-            { sourceNode: 5, sourcePort: 'e2', targetNode: 9, targetPort: 'e0' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e2', targetNode: 9, targetPort: 'eth0' },
         ],
     },
 
@@ -14864,8 +14866,8 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         links: [
             { sourceNode: 0, sourcePort: 'e0', targetNode: 1, targetPort: 'e0' },
             { sourceNode: 0, sourcePort: 'e1', targetNode: 2, targetPort: 'e0' },
-            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
-            { sourceNode: 2, sourcePort: 'e1', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'eth0' },
+            { sourceNode: 2, sourcePort: 'e1', targetNode: 4, targetPort: 'eth0' },
         ],
     },
 ]

@@ -129,7 +129,7 @@ export class TabManagerService {
         }
         this._activeTabId$.next(id)
         const active = this._tabs$.value.find(t => t.id === id)
-        if (active) { document.title = `${active.label} — NetOps` }
+        if (active) { document.title = 'NetOps' }
     }
 
     closeTab (id: string, opts: { skipConfirm?: boolean } = {}): void {

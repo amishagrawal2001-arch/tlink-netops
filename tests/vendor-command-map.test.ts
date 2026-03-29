@@ -6,9 +6,12 @@ import { getVendorCommands, VENDOR_COMMAND_MAP } from '../renderer/src/services/
 describe('VENDOR_COMMAND_MAP completeness', () => {
     const expectedVendors = [
         'cisco',
+        'cisco-nxos',
+        'cisco-iosxr',
         'juniper',
         'arista',
         'nokia',
+        'nokia-sros',
         'sonic',
         'huawei',
         'hpe',
@@ -152,28 +155,28 @@ describe('getVendorCommands("arista")', () => {
 describe('getVendorCommands("nokia")', () => {
     const cmds = getVendorCommands('nokia')
 
-    it('showRunningConfig uses "admin show configuration"', () => {
-        expect(cmds.showRunningConfig).toBe('admin show configuration')
+    it('showRunningConfig uses sr_cli "info flat"', () => {
+        expect(cmds.showRunningConfig).toBe('sr_cli "info flat"')
     })
 
-    it('showCpu uses "show system cpu"', () => {
-        expect(cmds.showCpu).toBe('show system cpu')
+    it('showCpu uses sr_cli "show system cpu"', () => {
+        expect(cmds.showCpu).toBe('sr_cli "show system cpu"')
     })
 
-    it('showMemory uses "show system memory"', () => {
-        expect(cmds.showMemory).toBe('show system memory')
+    it('showMemory uses sr_cli "show system memory"', () => {
+        expect(cmds.showMemory).toBe('sr_cli "show system memory"')
     })
 
-    it('showInterfaceBrief uses "show interface brief"', () => {
-        expect(cmds.showInterfaceBrief).toBe('show interface brief')
+    it('showInterfaceBrief uses sr_cli "show interface brief"', () => {
+        expect(cmds.showInterfaceBrief).toBe('sr_cli "show interface brief"')
     })
 
-    it('showRouteTable uses "show router route-table"', () => {
-        expect(cmds.showRouteTable).toBe('show router route-table')
+    it('showRouteTable uses sr_cli "show network-instance default route-table"', () => {
+        expect(cmds.showRouteTable).toBe('sr_cli "show network-instance default route-table"')
     })
 
-    it('showAlarms uses "show system alarms"', () => {
-        expect(cmds.showAlarms).toBe('show system alarms')
+    it('showAlarms uses sr_cli "show system alarms"', () => {
+        expect(cmds.showAlarms).toBe('sr_cli "show system alarms"')
     })
 })
 
@@ -191,8 +194,8 @@ describe('getVendorCommands("sonic")', () => {
         expect(cmds.showRunningConfig).toBe('show runningconfiguration all')
     })
 
-    it('showStartupConfig uses "show startupconfiguration"', () => {
-        expect(cmds.showStartupConfig).toBe('show startupconfiguration')
+    it('showStartupConfig uses "cat /etc/sonic/config_db.json"', () => {
+        expect(cmds.showStartupConfig).toBe('cat /etc/sonic/config_db.json')
     })
 
     it('showMemory uses "free -m" (Linux-based)', () => {
@@ -418,10 +421,10 @@ describe('config push commands', () => {
         expect(cmds.loadConfigPostamble).toContain('write memory')
     })
 
-    it('juniper loadConfigPreamble includes "configure" and "load override terminal"', () => {
+    it('juniper loadConfigPreamble includes "configure" and "load set terminal"', () => {
         const cmds = VENDOR_COMMAND_MAP['juniper']
         expect(cmds.loadConfigPreamble).toContain('configure')
-        expect(cmds.loadConfigPreamble).toContain('load override terminal')
+        expect(cmds.loadConfigPreamble).toContain('load set terminal')
     })
 
     it('juniper loadConfigPostamble includes "commit"', () => {
@@ -440,14 +443,16 @@ describe('config push commands', () => {
         expect(cmds.loadConfigPostamble).toContain('save')
     })
 
-    it('nokia loadConfigPreamble includes "configure"', () => {
+    it('nokia loadConfigPreamble includes "sr_cli" and "enter candidate"', () => {
         const cmds = VENDOR_COMMAND_MAP['nokia']
-        expect(cmds.loadConfigPreamble).toContain('configure')
+        expect(cmds.loadConfigPreamble).toContain('sr_cli')
+        expect(cmds.loadConfigPreamble).toContain('enter candidate')
     })
 
-    it('nokia loadConfigPostamble includes "commit"', () => {
+    it('nokia loadConfigPostamble includes "commit now" and "quit"', () => {
         const cmds = VENDOR_COMMAND_MAP['nokia']
-        expect(cmds.loadConfigPostamble).toContain('commit')
+        expect(cmds.loadConfigPostamble).toContain('commit now')
+        expect(cmds.loadConfigPostamble).toContain('quit')
     })
 
     it('mikrotik loadConfigPreamble is an empty array (no config mode)', () => {

@@ -1,4 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
+
+// Set app name before anything else — controls dock tooltip and Activity Monitor
+app.name = 'NetOps'
+
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -286,12 +290,14 @@ function _openSshTerminal (payload: SshTerminalPayload): SshTerminalResult & { s
 }
 
 function createWindow (initialTopologyJson?: string): BrowserWindow {
+    const iconPath = path.join(__dirname, '..', '..', 'assets', process.platform === 'darwin' ? 'icon.icns' : 'icon.png')
     const win = new BrowserWindow({
         width: 1400,
         height: 900,
         minWidth: 900,
         minHeight: 600,
-        title: 'Tlink NetOps',
+        title: 'NetOps',
+        icon: iconPath,
         backgroundColor: '#0d1117',
         webPreferences: {
             nodeIntegration: false,
@@ -366,7 +372,14 @@ function _openTerminalWindow (opts: {
     }
 }
 
-app.whenReady().then(() => createWindow())
+app.whenReady().then(() => {
+    // Set dock icon on macOS
+    if (process.platform === 'darwin') {
+        const dockIcon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'icon.png'))
+        if (!dockIcon.isEmpty()) { app.dock.setIcon(dockIcon) }
+    }
+    createWindow()
+})
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') { app.quit() }
@@ -806,6 +819,30 @@ ipcMain.handle('inventory-export-config', async (_event, content: string, defaul
 ipcMain.handle('file-hash', async (_event, content: string) => {
     const hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex')
     return { hash }
+})
+
+// ─── IPC: Preferences (persistent key-value store) ───────────────────────────
+
+const prefsFilePath = () => path.join(app.getPath('userData'), 'netops-prefs.json')
+
+function loadPrefs (): Record<string, any> {
+    try { return JSON.parse(fs.readFileSync(prefsFilePath(), 'utf-8')) } catch { return {} }
+}
+
+function savePrefs (prefs: Record<string, any>): void {
+    fs.writeFileSync(prefsFilePath(), JSON.stringify(prefs, null, 2), 'utf-8')
+}
+
+ipcMain.handle('pref-get', async (_e, key: string) => {
+    const prefs = loadPrefs()
+    return prefs[key] ?? null
+})
+
+ipcMain.handle('pref-set', async (_e, key: string, value: any) => {
+    const prefs = loadPrefs()
+    prefs[key] = value
+    savePrefs(prefs)
+    return { ok: true }
 })
 
 // ─── IPC: Config Snippet Library ──────────────────────────────────────────────
