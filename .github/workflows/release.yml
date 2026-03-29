@@ -34,7 +34,7 @@ jobs:
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tlink-netops-mac
+          name: netops-mac
           path: |
             dist/*.dmg
             dist/*.zip
@@ -64,7 +64,7 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tlink-netops-windows
+          name: netops-windows
           path: |
             dist/*.exe
             dist/*.msi
@@ -99,7 +99,7 @@ jobs:
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tlink-netops-linux
+          name: netops-linux
           path: |
             dist/*.AppImage
             dist/*.deb
@@ -127,8 +127,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            tlink-netops-mac/*
-            tlink-netops-windows/*
-            tlink-netops-linux/*
+            netops-mac/*
+            netops-windows/*
+            netops-linux/*
           generate_release_notes: true
           draft: false
