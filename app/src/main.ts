@@ -5059,14 +5059,13 @@ function _pushConfigCrpd (containerName: string, configLines: string[]): PushRes
     // Filter to actual set/delete commands (skip comments, blanks, and "commit and-quit")
     const setLines = configLines.filter(l => {
         const t = l.trim()
-        return t && !t.startsWith('#') && t !== 'commit and-quit'
+        return t && !t.startsWith('#') && !t.startsWith('!') && t !== 'commit and-quit'
     })
     if (!setLines.length) {
         return { ok: false, message: 'No config lines to push' }
     }
 
     // Write config to a temp file inside the container, then load it.
-    // "load override terminal" fails in Docker because /dev/tty doesn't exist.
     const tmpFile = '/tmp/_pushed_config.txt'
     const fileContent = setLines.join('\n') + '\n'
 
@@ -5078,14 +5077,54 @@ function _pushConfigCrpd (containerName: string, configLines: string[]): PushRes
         return { ok: false, message: `Failed to write config to container: ${(writeR.stderr || '').trim()}` }
     }
 
-    // Step 2: Load the config file via CLI
+    // Step 2: Try loading config — attempt multiple CLI approaches for cRPD compatibility
+    // Approach 1: cli (standard JunOS CLI)
     const cliInput = `configure\nload set ${tmpFile}\ncommit and-quit\n`
-    const r = spawnSync('docker', ['exec', '-i', containerName, 'cli'], {
+    let r = spawnSync('docker', ['exec', '-i', containerName, 'cli'], {
         input: cliInput, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
     })
+
+    // Approach 2: If cli fails (e.g. not found), try direct cli -c with batch mode
+    if (r.status !== 0 && (r.stderr || '').includes('not found')) {
+        r = spawnSync('docker', [
+            'exec', containerName, 'sh', '-c',
+            `cli -c "configure; load set ${tmpFile}; commit and-quit"`,
+        ], {
+            stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
+        })
+    }
+
+    // Approach 3: If still fails, try using clic (cRPD variant)
+    if (r.status !== 0) {
+        r = spawnSync('docker', ['exec', '-i', containerName, 'clic'], {
+            input: cliInput, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
+        })
+    }
+
+    // Approach 4: Last resort — apply set commands one-by-one via cli -c
+    if (r.status !== 0) {
+        const batchCmds = setLines.map(l => l.trim()).join('; ')
+        r = spawnSync('docker', [
+            'exec', containerName, 'sh', '-c',
+            `cli << 'CLEOF'\nconfigure\n${setLines.join('\n')}\ncommit and-quit\nCLEOF`,
+        ], {
+            stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 90_000, env: _dockerEnv(),
+        })
+    }
+
     const output = (r.stdout || '') + (r.stderr || '')
-    const hasError = output.toLowerCase().includes('error') && !output.toLowerCase().includes('0 errors')
-    return { ok: !hasError, message: `Config pushed to ${containerName}`, output: output.trim() || '(no output)' }
+    // Check for real errors (not just warnings or "0 errors")
+    const lowerOutput = output.toLowerCase()
+    const hasError = r.status !== 0 || (
+        lowerOutput.includes('error') &&
+        !lowerOutput.includes('0 errors') &&
+        !lowerOutput.includes('commit complete')
+    )
+    return {
+        ok: !hasError,
+        message: hasError ? `Config push failed for ${containerName}` : `Config pushed to ${containerName}`,
+        output: output.trim() || '(no output)',
+    }
 }
 
 // ── Fetch running config from container for diff ──────────────────────────────
