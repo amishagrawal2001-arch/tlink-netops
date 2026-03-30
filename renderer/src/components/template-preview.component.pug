@@ -1,0 +1,32 @@
+svg.tpl-preview-svg(
+  [attr.viewBox]='viewBox',
+  xmlns='http://www.w3.org/2000/svg',
+  preserveAspectRatio='xMidYMid meet'
+)
+  //- Links layer (rendered behind nodes)
+  g.preview-links
+    line.preview-link(
+      *ngFor='let link of previewLinks; let i = index',
+      [attr.x1]='link.x1',
+      [attr.y1]='link.y1',
+      [attr.x2]='link.x2',
+      [attr.y2]='link.y2',
+      [class.preview-link-flow]='showFlow',
+      [style.animation-delay.ms]='linkDelay(i)'
+    )
+
+  //- Nodes layer
+  g.preview-nodes
+    ng-container(*ngFor='let node of previewNodes; let i = index')
+      circle.preview-node(
+        [attr.cx]='node.cx',
+        [attr.cy]='node.cy',
+        [attr.r]='node.r',
+        [attr.fill]='node.color',
+        [style.animation-delay.ms]='nodeDelay(i)'
+      )
+      text.preview-label(
+        [attr.x]='node.cx',
+        [attr.y]='node.cy + node.r + 8',
+        text-anchor='middle'
+      ) {{ node.label }}

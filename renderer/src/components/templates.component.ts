@@ -1,5 +1,5 @@
 import {
-    ChangeDetectionStrategy, Component, EventEmitter, Output,
+    ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, OnDestroy, Output,
 } from '@angular/core'
 import { TopologyService } from '../services/topology.service'
 import {
@@ -16,7 +16,7 @@ type FilterTab = 'all' | TemplateCategory
     styleUrls: ['./templates.component.scss'],
     changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TemplatesComponent {
+export class TemplatesComponent implements OnDestroy {
 
     @Output() closed = new EventEmitter<void>()
     @Output() switchToBuilder = new EventEmitter<void>()
@@ -25,6 +25,13 @@ export class TemplatesComponent {
     hovered: string | null = null
     activeFilter: FilterTab = 'all'
     searchQuery = ''
+
+    private _hoverTimer: any
+
+    constructor (
+        private svc: TopologyService,
+        private cdr: ChangeDetectorRef,
+    ) {}
 
     readonly filterTabs: { id: FilterTab; label: string }[] = [
         { id: 'all',              label: 'All' },
@@ -41,7 +48,6 @@ export class TemplatesComponent {
         { id: 'multi-vendor',     label: 'Multi-Vendor' },
     ]
 
-    constructor (private svc: TopologyService) {}
 
     get templates (): TopologyTemplate[] {
         let list = this.allTemplates
@@ -89,6 +95,23 @@ export class TemplatesComponent {
     close (): void { this.closed.emit() }
 
     trackById (_index: number, tpl: TopologyTemplate): string { return tpl.id }
+
+    onHover (id: string): void {
+        clearTimeout(this._hoverTimer)
+        this._hoverTimer = setTimeout(() => {
+            this.hovered = id
+            this.cdr.markForCheck()
+        }, 150)
+    }
+
+    onLeave (): void {
+        clearTimeout(this._hoverTimer)
+        this.hovered = null
+    }
+
+    ngOnDestroy (): void {
+        clearTimeout(this._hoverTimer)
+    }
 
     openBuilder (): void {
         this.closed.emit()

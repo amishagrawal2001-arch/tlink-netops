@@ -42,8 +42,8 @@
       .tpl-card(
         *ngFor='let tpl of templates; trackBy: trackById',
         [class.tpl-hovered]='hovered === tpl.id',
-        (mouseenter)='hovered = tpl.id',
-        (mouseleave)='hovered = null',
+        (mouseenter)='onHover(tpl.id)',
+        (mouseleave)='onLeave()',
         (click)='load(tpl)'
       )
         .tpl-card-icon {{ tpl.icon }}
@@ -58,3 +58,7 @@
             title='Download startup configs',
             (click)='downloadConfig(tpl, $event)'
           ) ⬇ Config
+        template-preview.tpl-preview-container(
+          *ngIf='hovered === tpl.id',
+          [template]='tpl'
+        )

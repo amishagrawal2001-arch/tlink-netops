@@ -9,6 +9,7 @@ import { NetopsCanvasComponent }   from './components/netops-canvas.component'
 import { NodePropertiesComponent } from './components/node-properties.component'
 import { LinkPropertiesComponent } from './components/link-properties.component'
 import { TemplatesComponent }      from './components/templates.component'
+import { TemplatePreviewComponent } from './components/template-preview.component'
 import { TopologyBuilderComponent } from './components/topology-builder.component'
 import { HelpViewComponent }        from './components/help-view.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
@@ -29,6 +30,7 @@ import { TAB_MANAGER }             from './api/tokens'
         NodePropertiesComponent,
         LinkPropertiesComponent,
         TemplatesComponent,
+        TemplatePreviewComponent,
         TopologyBuilderComponent,
         HelpViewComponent,
         SafeHtmlPipe,

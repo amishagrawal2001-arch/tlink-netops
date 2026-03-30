@@ -193,6 +193,7 @@ $radius:    10px;
     gap: 12px;
     padding: 12px 20px 20px;
     overflow-y: auto;
+    align-items: start;
 
     &::-webkit-scrollbar { width: 4px }
     &::-webkit-scrollbar-track { background: transparent }
@@ -271,5 +272,29 @@ $radius:    10px;
         background: var(--success-20);
         border-color: var(--success);
         color: var(--success);
+    }
+}
+
+// ─── Preview container ───────────────────────────────────────────────────────
+
+.tpl-preview-container {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    height: 140px;
+    overflow: hidden;
+    animation: preview-slide-in 0.2s ease-out;
+}
+
+@keyframes preview-slide-in {
+    from {
+        height: 0;
+        opacity: 0;
+        padding-top: 0;
+        margin-top: 0;
+    }
+    to {
+        height: 140px;
+        opacity: 1;
     }
 }
