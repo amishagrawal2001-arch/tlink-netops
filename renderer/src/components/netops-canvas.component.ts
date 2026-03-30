@@ -8798,14 +8798,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                                 .filter(p => p.ip)
 
                             if (overlayPeers.length) {
+                                const loopIpBare = loopIp?.split('/')[0] ?? ''
                                 bgpBlock.push('        group OVERLAY {')
                                 bgpBlock.push('            type internal;')
-                                bgpBlock.push(`            local-address ${loopIp};`)
+                                bgpBlock.push(`            local-address ${loopIpBare};`)
                                 bgpBlock.push('            family evpn {')
                                 bgpBlock.push('                signaling;')
                                 bgpBlock.push('            }')
                                 if (isSpine) {
-                                    bgpBlock.push(`            cluster ${loopIp};`)
+                                    bgpBlock.push(`            cluster ${loopIpBare};`)
                                 }
                                 for (const peer of overlayPeers) {
                                     bgpBlock.push(`            neighbor ${peer.ip} {`)
