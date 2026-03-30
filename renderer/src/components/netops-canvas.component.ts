@@ -8780,6 +8780,42 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                             }
                             bgpBlock.push('        }')
                         }
+
+                        // EVPN overlay group — iBGP sessions via loopback IPs
+                        if (this.topology.overlayEnabled) {
+                            const isSpine = node.role === 'spine' || node.role === 'super-spine'
+                            // Collect loopback IPs of the other role
+                            const overlayPeers = nodesForYaml
+                                .filter(n => {
+                                    if (n.id === node.id || n.asn == null) { return false }
+                                    if (isSpine) { return n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor' }
+                                    return n.role === 'spine' || n.role === 'super-spine'
+                                })
+                                .map(n => ({
+                                    ip: (n.loopbackIp ?? n.mgmtIp)?.split('/')[0]?.trim(),
+                                    name: nodeNameMap.get(n.id) || n.label,
+                                }))
+                                .filter(p => p.ip)
+
+                            if (overlayPeers.length) {
+                                bgpBlock.push('        group OVERLAY {')
+                                bgpBlock.push('            type internal;')
+                                bgpBlock.push(`            local-address ${loopIp};`)
+                                bgpBlock.push('            family evpn {')
+                                bgpBlock.push('                signaling;')
+                                bgpBlock.push('            }')
+                                if (isSpine) {
+                                    bgpBlock.push(`            cluster ${loopIp};`)
+                                }
+                                for (const peer of overlayPeers) {
+                                    bgpBlock.push(`            neighbor ${peer.ip} {`)
+                                    bgpBlock.push(`                description "${peer.name} EVPN";`)
+                                    bgpBlock.push('            }')
+                                }
+                                bgpBlock.push('        }')
+                            }
+                        }
+
                         bgpBlock.push('    }')
                         protoBlocks.push(bgpBlock.join('\n'))
                     }
