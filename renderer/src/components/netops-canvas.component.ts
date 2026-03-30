@@ -9270,7 +9270,23 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     if (this._clabInspectTimer) { clearTimeout(this._clabInspectTimer) }
                     if (this._clabEnableTimer)  { clearTimeout(this._clabEnableTimer) }
                     this._clabInspectTimer = setTimeout(() => this.inspectContainerlab(), 15_000)
-                    this._clabEnableTimer = setTimeout(() => this._autoEnableInterfaces(), 120_000)
+                    // Show countdown for interface enable wait
+                    let msEnableCountdown = 120
+                    const msEnableTimer = setInterval(() => {
+                        msEnableCountdown--
+                        if (msEnableCountdown > 0) {
+                            this.clabPostDeployMsg = `Waiting for containers — enabling interfaces in ${msEnableCountdown}s…`
+                            this.cdr.markForCheck()
+                        } else {
+                            clearInterval(msEnableTimer)
+                        }
+                    }, 1_000)
+                    this._clabEnableTimer = setTimeout(() => {
+                        clearInterval(msEnableTimer)
+                        this.clabPostDeployMsg = 'Enabling interfaces and loading configs…'
+                        this.cdr.markForCheck()
+                        this._autoEnableInterfaces()
+                    }, 120_000)
                 } else {
                     this.showClabDialog = true
                 }
@@ -9322,7 +9338,29 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         this.cdr.markForCheck()
                         this.inspectContainerlab()
                     }, 15_000)
-                    this._clabEnableTimer = setTimeout(() => this._autoEnableInterfaces(), 120_000)
+                    // Determine wait time based on node kinds — SONiC needs 120s, cRPD/cEOS/SRL need 30s
+                    const hasSonic = this.topology.nodes.some(n => {
+                        const k = this._vendorToClabKind(n.vendor, n.model, n.switchFamily)
+                        return k === 'sonic-vs' || k === 'sonic'
+                    })
+                    const enableWaitSec = hasSonic ? 120 : 30
+                    // Show countdown for interface enable wait
+                    let enableCountdown = enableWaitSec
+                    const enableCountdownTimer = setInterval(() => {
+                        enableCountdown--
+                        if (enableCountdown > 0) {
+                            this.clabPostDeployMsg = `Waiting for containers to initialize — enabling interfaces & pushing configs in ${enableCountdown}s…`
+                            this.cdr.markForCheck()
+                        } else {
+                            clearInterval(enableCountdownTimer)
+                        }
+                    }, 1_000)
+                    this._clabEnableTimer = setTimeout(() => {
+                        clearInterval(enableCountdownTimer)
+                        this.clabPostDeployMsg = 'Enabling interfaces and pushing startup configs…'
+                        this.cdr.markForCheck()
+                        this._autoEnableInterfaces()
+                    }, enableWaitSec * 1_000)
                 } else {
                     this.showClabDialog = true
                     this.clabDialogError = `Deploy failed: ${deployResult.message}`
@@ -9557,16 +9595,21 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
             // Auto-push startup configs after interfaces are enabled
             if (this.autoConfigPushEnabled) {
-                this.clabPostDeployMsg = 'Auto-pushing startup configs...'
+                this.clabPostDeployMsg = 'Auto-pushing startup configs to all nodes…'
+                this.statusMsg = this.clabPostDeployMsg
                 this.cdr.markForCheck()
                 try {
-                    await this.pushAllConfigs()
-                    this.clabPostDeployMsg = 'Configs pushed successfully'
+                    await this.pushAllConfigs({ skipConfirm: true })
+                    this.clabPostDeployMsg = '✓ Configs pushed — starting live polling'
+                    this.statusMsg = this.clabPostDeployMsg
                 } catch (_e) {
-                    this.clabPostDeployMsg = 'Config push completed with errors'
+                    this.clabPostDeployMsg = '⚠ Config push completed with errors'
+                    this.statusMsg = this.clabPostDeployMsg
                 }
                 this.cdr.markForCheck()
-                setTimeout(() => { this.clabPostDeployMsg = ''; this.cdr.markForCheck() }, 5000)
+                // Start live polling after config push
+                if (!this.livePollingActive) { this.startLivePolling() }
+                setTimeout(() => { this.clabPostDeployMsg = ''; this.cdr.markForCheck() }, 8000)
             }
         }
     }
@@ -12142,7 +12185,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     configPushAllRunning = false
 
-    async pushAllConfigs (): Promise<void> {
+    async pushAllConfigs (opts?: { skipConfirm?: boolean }): Promise<void> {
         const nodes = this.topology.nodes.filter(n => n.startupConfig?.trim() && n.vendor)
         if (!nodes.length) {
             this.statusMsg = 'No configs to push'
@@ -12175,13 +12218,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return
         }
 
-        const confirm = window.confirm(
-            `Push configs to ${pushableCount} node(s)?\n\n` +
-            `• ${containerNodes.length} via container (docker exec)\n` +
-            `• ${sshNodes.length} via SSH\n\n` +
-            `This will apply startup configs to running devices.`
-        )
-        if (!confirm) { return }
+        if (!opts?.skipConfirm) {
+            const confirmed = window.confirm(
+                `Push configs to ${pushableCount} node(s)?\n\n` +
+                `• ${containerNodes.length} via container (docker exec)\n` +
+                `• ${sshNodes.length} via SSH\n\n` +
+                `This will apply startup configs to running devices.`
+            )
+            if (!confirmed) { return }
+        }
 
         this.configPushAllRunning = true
         this.operationProgress = `Pushing configs to ${pushableCount} device${pushableCount === 1 ? '' : 's'}...`
