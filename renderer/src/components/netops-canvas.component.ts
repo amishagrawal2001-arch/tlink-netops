@@ -177,6 +177,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     clabDeployed = false
     autoConfigPushEnabled = true  // auto-push startup configs after deploy + interface enable
     showTerminalPanel = false    // embedded terminal panel visibility
+    clabJuniperMode: 'crpd' | 'vm' | 'ask' = 'ask'  // how to map Juniper models to clab kinds
     clabPostDeployMsg = ''   // floating banner message shown after deploy until lab status appears
     clabFilePath: string | null = null
     clabInspecting = false
@@ -1625,6 +1626,9 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         }
         if (v === 'nokia')   { return 'srl' }
         if (v === 'juniper') {
+            // In 'crpd' mode, always use lightweight crpd (works without KVM)
+            if (this.clabJuniperMode === 'crpd') { return 'crpd' }
+            // In 'vm' mode, map to full VM kinds (requires KVM/nested virtualization)
             const m = (model ?? '').trim().toUpperCase()
             if (m.startsWith('QFX') || sf === 'QFX')  { return 'juniper_vqfx' }
             if (m.startsWith('EX') || sf === 'EX')    { return 'juniper_vjunosswitch' }
@@ -9127,6 +9131,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 return
             }
 
+            // Step 1b: Ask about Juniper deployment mode if needed
+            const hasJuniper = this.topology.nodes.some(n => (n.vendor ?? '').toLowerCase() === 'juniper')
+            if (hasJuniper && this.clabJuniperMode === 'ask') {
+                const useCrpd = confirm(
+                    'Juniper nodes detected.\n\n' +
+                    '• "OK" = Use cRPD (lightweight, no KVM required, works on macOS)\n' +
+                    '• "Cancel" = Use full VM mode (vQFX/vJunos, requires KVM/nested virtualization)\n\n' +
+                    'Recommended: OK (cRPD) for most environments.'
+                )
+                this.clabJuniperMode = useCrpd ? 'crpd' : 'vm'
+            }
+
             // Step 2: Regenerate startup configs for all vendor nodes so they're up-to-date
             this.svc.regenerateConfigs(true)
 
@@ -9273,6 +9289,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             this.clabDialogError = `Deploy error: ${(err as Error).message}`
             this.clabDeploying = false
         }
+        // Reset Juniper mode to 'ask' for next deploy
+        this.clabJuniperMode = 'ask'
         this.cdr.markForCheck()
     }
 
