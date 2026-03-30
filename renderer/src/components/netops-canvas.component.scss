@@ -1491,6 +1491,65 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   .qa-icon { font-size: 16px; }
 }
 
+// ─── Lab control buttons (bottom-right) ──────────────────────────────────────
+
+.canvas-lab-controls {
+  position: absolute;
+  bottom: 80px;
+  right: 16px;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  z-index: 100;
+}
+
+.lab-ctrl-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-panel, #1a1a2e);
+  color: #ccc;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s, border-color 0.12s;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .lc-icon { font-size: 13px; }
+  .lc-label { font-weight: 500; }
+
+  &.lc-deploy {
+    border-color: #22c55e;
+    &:hover:not(:disabled) { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  }
+  &.lc-inspect {
+    border-color: #3b82f6;
+    &:hover:not(:disabled) { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+  }
+  &.lc-live {
+    border-color: #f59e0b;
+    &:hover:not(:disabled) { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    &.lc-active { border-color: #22c55e; color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+  }
+  &.lc-destroy {
+    border-color: #ef4444;
+    &:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+  }
+}
+
 // ─── Troubleshoot dialog ──────────────────────────────────────────────────────
 
 .ts-overlay {

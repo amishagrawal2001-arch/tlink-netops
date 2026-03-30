@@ -3653,6 +3653,42 @@
       span.qa-icon 📋
       span.qa-label Export
 
+  //- ── Lab control buttons (bottom-right floating) ─────────────────────────
+  .canvas-lab-controls(*ngIf='topology?.nodes?.length')
+    button.lab-ctrl-btn.lc-deploy(
+      type='button',
+      title='Deploy Lab',
+      [disabled]='clabDeploying || clabDeployed',
+      (click)='openClabDialog()'
+    )
+      span.lc-icon ▶
+      span.lc-label Deploy
+    button.lab-ctrl-btn.lc-inspect(
+      type='button',
+      title='Inspect Lab Status',
+      [disabled]='!clabDeployed || clabInspecting',
+      (click)='inspectContainerlab()'
+    )
+      span.lc-icon 🔍
+      span.lc-label Inspect
+    button.lab-ctrl-btn.lc-live(
+      type='button',
+      [title]='livePollingActive ? "Stop Live Polling" : "Start Live Polling"',
+      [disabled]='!clabDeployed',
+      [class.lc-active]='livePollingActive',
+      (click)='livePollingActive ? stopLivePolling() : startLivePolling()'
+    )
+      span.lc-icon {{ livePollingActive ? '⏸' : '📡' }}
+      span.lc-label {{ livePollingActive ? 'Stop' : 'Live' }}
+    button.lab-ctrl-btn.lc-destroy(
+      type='button',
+      title='Destroy Lab',
+      [disabled]='!clabDeployed || clabDeploying',
+      (click)='destroyContainerlab()'
+    )
+      span.lc-icon ⏹
+      span.lc-label Destroy
+
   //- ── Operation progress banner ──────────────────────────────────────────
   .operation-progress(*ngIf='operationProgress')
     .op-spinner
