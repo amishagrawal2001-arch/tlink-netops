@@ -724,63 +724,63 @@
               span.lc-icon ⏹
               span.lc-label Destroy
           .canvas-view-bar
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showIpLabels',
-            (click)='toggleIpVisibility()',
-            title='Show IP Labels'
-          ) IP
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showInterfaceLabels',
-            (click)='toggleInterfaceLabels()',
-            title='Show Interface Labels'
-          ) Intf
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showIpv6Labels',
-            (click)='showIpv6Labels = !showIpv6Labels; cdr.markForCheck()',
-            title='Show IPv6 Labels'
-          ) IPv6
-          .view-bar-sep
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showVlanView',
-            (click)='toggleVlanView()',
-            title='VLAN View'
-          ) VLAN
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showBgpView',
-            (click)='toggleBgpView()',
-            title='BGP View'
-          ) BGP
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showTrafficFlowView',
-            (click)='toggleTrafficFlowView()',
-            title='Traffic Flows'
-          ) Flows
-          .view-bar-sep
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showRouteView',
-            (click)='toggleRouteView()',
-            title='Route Table'
-          ) Routes
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showCounterView',
-            (click)='toggleCounterView()',
-            title='Interface Counters'
-          ) Counters
-          .view-bar-sep
-          button.view-bar-btn(
-            type='button',
-            [class.active]='showMinimap',
-            (click)='showMinimap = !showMinimap; cdr.markForCheck()',
-            title='Minimap'
-          ) Map
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showIpLabels',
+              (click)='toggleIpVisibility()',
+              title='Show IP Labels'
+            ) IP
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showInterfaceLabels',
+              (click)='toggleInterfaceLabels()',
+              title='Show Interface Labels'
+            ) Intf
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showIpv6Labels',
+              (click)='showIpv6Labels = !showIpv6Labels; cdr.markForCheck()',
+              title='Show IPv6 Labels'
+            ) IPv6
+            .view-bar-sep
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showVlanView',
+              (click)='toggleVlanView()',
+              title='VLAN View'
+            ) VLAN
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showBgpView',
+              (click)='toggleBgpView()',
+              title='BGP View'
+            ) BGP
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showTrafficFlowView',
+              (click)='toggleTrafficFlowView()',
+              title='Traffic Flows'
+            ) Flows
+            .view-bar-sep
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showRouteView',
+              (click)='toggleRouteView()',
+              title='Route Table'
+            ) Routes
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showCounterView',
+              (click)='toggleCounterView()',
+              title='Interface Counters'
+            ) Counters
+            .view-bar-sep
+            button.view-bar-btn(
+              type='button',
+              [class.active]='showMinimap',
+              (click)='showMinimap = !showMinimap; cdr.markForCheck()',
+              title='Minimap'
+            ) Map
 
         //- ── Minimap overlay ──────────────────────────────────────────
         svg.canvas-minimap(
