@@ -1495,13 +1495,13 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
 .canvas-lab-controls {
   position: absolute;
-  bottom: 140px;
-  // right is set dynamically via [style.right.px] binding to account for sidebar width
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: row;
   gap: 8px;
-  z-index: 100;
-  transition: right 0.2s ease;
+  z-index: 10;
 }
 
 .lab-ctrl-btn {
