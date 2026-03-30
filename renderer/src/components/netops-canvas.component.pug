@@ -3853,6 +3853,7 @@
 
   //- ── Embedded Terminal Panel ────────────────────────────────────────────────
   terminal-panel(
+    *ngIf='showTerminalPanel',
     #terminalPanel='',
     [visible]='showTerminalPanel',
     (visibleChange)='showTerminalPanel = $event'
