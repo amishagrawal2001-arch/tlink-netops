@@ -3654,7 +3654,7 @@
       span.qa-label Export
 
   //- ── Lab control buttons (bottom-right floating) ─────────────────────────
-  .canvas-lab-controls(*ngIf='topology?.nodes?.length')
+  .canvas-lab-controls(*ngIf='topology?.nodes?.length', [style.right.px]='(selectedNodeId || selectedLinkId || selectedShapeId) ? 356 : 16')
     button.lab-ctrl-btn.lc-deploy(
       type='button',
       title='Deploy Lab',
