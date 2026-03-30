@@ -8724,6 +8724,25 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     }
                 }
 
+                // ── policy-options block (export loopback routes for eBGP) ──
+                if (node.asn != null && loopIp) {
+                    cfgLines.push('policy-options {')
+                    cfgLines.push('    policy-statement EXPORT-LO {')
+                    cfgLines.push('        term loopback {')
+                    cfgLines.push('            from {')
+                    cfgLines.push('                protocol direct;')
+                    cfgLines.push('                route-filter 0.0.0.0/0 prefix-length-range /32-/32;')
+                    cfgLines.push('            }')
+                    cfgLines.push('            then accept;')
+                    cfgLines.push('        }')
+                    cfgLines.push('        term connected {')
+                    cfgLines.push('            from protocol direct;')
+                    cfgLines.push('            then accept;')
+                    cfgLines.push('        }')
+                    cfgLines.push('    }')
+                    cfgLines.push('}')
+                }
+
                 // ── protocols block ────────────────────────────────────────
                 const protoBlocks: string[] = []
 
@@ -8773,6 +8792,12 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                             const g = bgpGroups[gn]
                             bgpBlock.push(`        group ${gn} {`)
                             bgpBlock.push(`            type ${g.type};`)
+                            if (g.type === 'external') {
+                                bgpBlock.push('            export EXPORT-LO;')
+                                bgpBlock.push('            multipath {')
+                                bgpBlock.push('                multiple-as;')
+                                bgpBlock.push('            }')
+                            }
                             for (const nb of g.neighbors) {
                                 bgpBlock.push(`            neighbor ${nb.ip} {`)
                                 bgpBlock.push(`                peer-as ${nb.peerAs};`)
