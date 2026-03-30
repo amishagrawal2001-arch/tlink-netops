@@ -1495,7 +1495,7 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
 .canvas-lab-controls {
   position: absolute;
-  bottom: 80px;
+  bottom: 140px;
   // right is set dynamically via [style.right.px] binding to account for sidebar width
   display: flex;
   flex-direction: row;
