@@ -8506,6 +8506,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const configFileName = `${safeName}-config.json`
                 extraFiles.push({ name: configFileName, content: configContent })
                 lines.push(`      startup-config: ${configFileName}`)
+                lines.push('      enforce-startup-config: true')
 
                 // Generate FRR config + daemons file so bgpd actually runs
                 if (node.asn != null) {
@@ -8863,6 +8864,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const cfgFileName = `${safeName}-startup.cfg`
                 extraFiles.push({ name: cfgFileName, content: cfgLines.join('\n') })
                 lines.push(`      startup-config: ${cfgFileName}`)
+                lines.push('      enforce-startup-config: true')
             } else if (kind.startsWith('cisco_')) {
                 // Cisco IOS-XR / IOS-XE / NX-OS startup config
                 const cfgLines: string[] = []
@@ -8933,11 +8935,13 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const cfgFileName = `${safeName}-startup.cfg`
                 extraFiles.push({ name: cfgFileName, content: cfgLines.join('\n') })
                 lines.push(`      startup-config: ${cfgFileName}`)
+                lines.push('      enforce-startup-config: true')
             } else if (node.startupConfig?.trim()) {
                 // Other vendors — write startup config as-is (containerlab can apply CLI configs)
                 const userConfigFile = `${safeName}-startup.cfg`
                 extraFiles.push({ name: userConfigFile, content: node.startupConfig.trim() })
                 lines.push(`      startup-config: ${userConfigFile}`)
+                lines.push('      enforce-startup-config: true')
             }
 
             // For linux kind (servers, PCs, hosts): configure IPs via exec commands
