@@ -4861,7 +4861,7 @@ ipcMain.handle('clab-poll-live-status', async (_event, rawPayload: unknown) => {
             if (bgpCmd) {
                 bgpPromises.push({
                     idx: i,
-                    promise: _spawnAsync('docker', ['exec', c.name, ...bgpCmd], { timeout: 5_000, env: dockerEnv }),
+                    promise: _spawnAsync('docker', ['exec', c.name, ...bgpCmd], { timeout: 15_000, env: dockerEnv }),
                 })
             }
         }
