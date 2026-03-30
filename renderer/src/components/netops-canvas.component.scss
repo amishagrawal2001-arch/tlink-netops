@@ -1502,7 +1502,6 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
 .canvas-lab-controls {
   display: flex;
-  flex-direction: row;
   align-items: center;
   gap: 2px;
   padding: 4px 6px;
@@ -1513,13 +1512,10 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .lab-ctrl-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   padding: 4px 10px;
+  border: none;
   border-radius: 5px;
-  border: 1px solid var(--border, #333);
-  background: var(--bg-toolbar, #1e1e2e);
+  background: transparent;
   color: var(--text-muted, #888);
   font-size: 11px;
   font-weight: 500;
@@ -1528,8 +1524,8 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   transition: all 0.15s;
 
   &:hover:not(:disabled) {
-    color: var(--text, #e0e0e0);
     background: var(--bg-hover, #2a2a3e);
+    color: var(--text, #e0e0e0);
   }
 
   &:disabled {
@@ -1537,23 +1533,11 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     cursor: not-allowed;
   }
 
-  .lc-icon { font-size: 12px; }
+  .lc-icon { margin-right: 3px; }
 
-  &.lc-deploy {
-    color: #22c55e; border-color: #22c55e;
-    &:hover:not(:disabled) { background: #22c55e; color: #fff; }
-  }
-  &.lc-inspect {
-    &:hover:not(:disabled) { background: #3b82f6; color: #fff; }
-  }
-  &.lc-live {
-    &:hover:not(:disabled) { background: #f59e0b; color: #fff; }
-    &.lc-active { background: #22c55e; color: #fff; }
-  }
-  &.lc-destroy {
-    color: #ef4444; border-color: #ef4444;
-    &:hover:not(:disabled) { background: #ef4444; color: #fff; }
-  }
+  &.lc-deploy { color: #22c55e; &:hover:not(:disabled) { background: #22c55e; color: #fff; } }
+  &.lc-destroy { color: #ef4444; &:hover:not(:disabled) { background: #ef4444; color: #fff; } }
+  &.lc-active { background: var(--accent, #4fc3f7); color: #111; }
 }
 
 // ─── Troubleshoot dialog ──────────────────────────────────────────────────────
