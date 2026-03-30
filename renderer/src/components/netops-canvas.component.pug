@@ -696,16 +696,14 @@
               [disabled]='clabDeploying || clabDeployed',
               (click)='openClabDialog()'
             )
-              span.lc-icon ▶
-              span.lc-label Deploy
+              | ▶ Deploy
             button.lab-ctrl-btn.lc-inspect(
               type='button',
               title='Inspect Lab Status',
               [disabled]='!clabDeployed || clabInspecting',
               (click)='inspectContainerlab()'
             )
-              span.lc-icon 🔍
-              span.lc-label Inspect
+              | Inspect
             button.lab-ctrl-btn.lc-live(
               type='button',
               [title]='livePollingActive ? "Stop Live Polling" : "Start Live Polling"',
@@ -713,16 +711,14 @@
               [class.lc-active]='livePollingActive',
               (click)='livePollingActive ? stopLivePolling() : startLivePolling()'
             )
-              span.lc-icon {{ livePollingActive ? '⏸' : '📡' }}
-              span.lc-label {{ livePollingActive ? 'Stop' : 'Live' }}
+              | {{ livePollingActive ? '⏸ Stop' : 'Live' }}
             button.lab-ctrl-btn.lc-destroy(
               type='button',
               title='Destroy Lab',
               [disabled]='!clabDeployed || clabDeploying',
               (click)='destroyContainerlab()'
             )
-              span.lc-icon ⏹
-              span.lc-label Destroy
+              | ⏹ Destroy
           .canvas-view-bar
             button.view-bar-btn(
               type='button',
