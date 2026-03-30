@@ -5078,14 +5078,14 @@ function _pushConfigCrpd (containerName: string, configLines: string[]): PushRes
     }
 
     // Step 2: Load config via cli.
-    // Delete key config hierarchies first to prevent duplicate errors (e.g. BGP peers)
-    // when config was already loaded from clab startup. Selective delete avoids the
-    // interactive "delete everything?" prompt that plain "delete" triggers.
+    // Delete routing config hierarchies first to prevent duplicate BGP peer errors
+    // when config was already loaded from clab startup. Do NOT delete interfaces —
+    // cRPD uses Linux ethN names configured at deploy time, and the generated config
+    // may use JunOS physical names (et-0/0/0) that don't apply in cRPD.
     const cliInput = [
         'configure',
         'delete protocols',
         'delete routing-options',
-        'delete interfaces',
         'delete policy-options',
         'delete routing-instances',
         `load set ${tmpFile}`,
