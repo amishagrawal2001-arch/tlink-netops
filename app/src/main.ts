@@ -5092,16 +5092,12 @@ function _pushConfigCrpd (containerName: string, configLines: string[]): PushRes
     }
 
     // Step 2: Load config via cli.
-    // Delete routing config hierarchies first to prevent duplicate BGP peer errors
-    // when config was already loaded from clab startup. Do NOT delete interfaces —
-    // cRPD uses Linux ethN names configured at deploy time, and the generated config
-    // may use JunOS physical names (et-0/0/0) that don't apply in cRPD.
+    // Use "load merge" instead of deleting config and reloading — this preserves
+    // the overlay BGP group and interface config set by containerlab startup,
+    // while merging in any updated set commands from the vendor config builder.
+    // Duplicate entries are harmless with "load merge" on set-format files.
     const cliInput = [
         'configure',
-        'delete protocols',
-        'delete routing-options',
-        'delete policy-options',
-        'delete routing-instances',
         `load set ${tmpFile}`,
         'commit and-quit',
     ].join('\n') + '\n'
