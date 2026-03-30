@@ -5077,40 +5077,23 @@ function _pushConfigCrpd (containerName: string, configLines: string[]): PushRes
         return { ok: false, message: `Failed to write config to container: ${(writeR.stderr || '').trim()}` }
     }
 
-    // Step 2: Try loading config — attempt multiple CLI approaches for cRPD compatibility
-    // Approach 1: cli (standard JunOS CLI)
-    const cliInput = `configure\nload set ${tmpFile}\ncommit and-quit\n`
-    let r = spawnSync('docker', ['exec', '-i', containerName, 'cli'], {
+    // Step 2: Load config via cli.
+    // Delete key config hierarchies first to prevent duplicate errors (e.g. BGP peers)
+    // when config was already loaded from clab startup. Selective delete avoids the
+    // interactive "delete everything?" prompt that plain "delete" triggers.
+    const cliInput = [
+        'configure',
+        'delete protocols',
+        'delete routing-options',
+        'delete interfaces',
+        'delete policy-options',
+        'delete routing-instances',
+        `load set ${tmpFile}`,
+        'commit and-quit',
+    ].join('\n') + '\n'
+    const r = spawnSync('docker', ['exec', '-i', containerName, 'cli'], {
         input: cliInput, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
     })
-
-    // Approach 2: If cli fails (e.g. not found), try direct cli -c with batch mode
-    if (r.status !== 0 && (r.stderr || '').includes('not found')) {
-        r = spawnSync('docker', [
-            'exec', containerName, 'sh', '-c',
-            `cli -c "configure; load set ${tmpFile}; commit and-quit"`,
-        ], {
-            stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
-        })
-    }
-
-    // Approach 3: If still fails, try using clic (cRPD variant)
-    if (r.status !== 0) {
-        r = spawnSync('docker', ['exec', '-i', containerName, 'clic'], {
-            input: cliInput, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
-        })
-    }
-
-    // Approach 4: Last resort — apply set commands one-by-one via cli -c
-    if (r.status !== 0) {
-        const batchCmds = setLines.map(l => l.trim()).join('; ')
-        r = spawnSync('docker', [
-            'exec', containerName, 'sh', '-c',
-            `cli << 'CLEOF'\nconfigure\n${setLines.join('\n')}\ncommit and-quit\nCLEOF`,
-        ], {
-            stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 90_000, env: _dockerEnv(),
-        })
-    }
 
     const output = (r.stdout || '') + (r.stderr || '')
     // Check for real errors (not just warnings or "0 errors")
