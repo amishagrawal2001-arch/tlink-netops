@@ -8799,12 +8799,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
                             if (overlayPeers.length) {
                                 const loopIpBare = loopIp?.split('/')[0] ?? ''
+                                // Use a common overlay ASN (65000) for iBGP EVPN sessions
+                                // when underlay is eBGP (each node has different ASN).
+                                // local-as presents this ASN to overlay peers without affecting underlay.
+                                const overlayAsn = 65000
                                 bgpBlock.push('        group OVERLAY {')
                                 bgpBlock.push('            type internal;')
                                 bgpBlock.push(`            local-address ${loopIpBare};`)
+                                bgpBlock.push(`            local-as ${overlayAsn};`)
                                 bgpBlock.push('            family evpn {')
                                 bgpBlock.push('                signaling;')
                                 bgpBlock.push('            }')
+                                bgpBlock.push('            multipath;')
                                 if (isSpine) {
                                     bgpBlock.push(`            cluster ${loopIpBare};`)
                                 }
