@@ -5069,54 +5069,26 @@ function _pushConfigSrl (containerName: string, configLines: string[]): PushResu
     return { ok: r.status === 0 || !!output, message: `Config pushed to ${containerName}`, output: output.trim() || '(no output)' }
 }
 
-function _pushConfigCrpd (containerName: string, configLines: string[]): PushResult {
-    // Filter to actual set/delete commands (skip comments, blanks, and "commit and-quit")
-    const setLines = configLines.filter(l => {
-        const t = l.trim()
-        return t && !t.startsWith('#') && !t.startsWith('!') && t !== 'commit and-quit'
+function _pushConfigCrpd (containerName: string, _configLines: string[]): PushResult {
+    // cRPD containers use enforce-startup-config: true in containerlab YAML,
+    // which loads the curly-brace startup config at deploy time. The startup
+    // config includes the complete underlay + overlay BGP config, interfaces,
+    // routing-options, and policy-options.
+    //
+    // Pushing vendor-config-builder set-format commands on top would conflict
+    // (duplicate BGP peers, wrong interface names like et-0/0/0 vs ethN).
+    // So we skip the push and just verify the config is loaded.
+    const r = spawnSync('docker', ['exec', containerName, 'cli', '-c', 'show configuration protocols bgp | display set | count'], {
+        stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 10_000, env: _dockerEnv(),
     })
-    if (!setLines.length) {
-        return { ok: false, message: 'No config lines to push' }
-    }
-
-    // Write config to a temp file inside the container, then load it.
-    const tmpFile = '/tmp/_pushed_config.txt'
-    const fileContent = setLines.join('\n') + '\n'
-
-    // Step 1: Write config file into the container
-    const writeR = spawnSync('docker', ['exec', '-i', containerName, 'sh', '-c', `cat > ${tmpFile}`], {
-        input: fileContent, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 30_000, env: _dockerEnv(),
-    })
-    if (writeR.status !== 0) {
-        return { ok: false, message: `Failed to write config to container: ${(writeR.stderr || '').trim()}` }
-    }
-
-    // Step 2: Load config via cli.
-    // Use "load merge" instead of deleting config and reloading — this preserves
-    // the overlay BGP group and interface config set by containerlab startup,
-    // while merging in any updated set commands from the vendor config builder.
-    // Duplicate entries are harmless with "load merge" on set-format files.
-    const cliInput = [
-        'configure',
-        `load set ${tmpFile}`,
-        'commit and-quit',
-    ].join('\n') + '\n'
-    const r = spawnSync('docker', ['exec', '-i', containerName, 'cli'], {
-        input: cliInput, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, env: _dockerEnv(),
-    })
-
-    const output = (r.stdout || '') + (r.stderr || '')
-    // Check for real errors (not just warnings or "0 errors")
-    const lowerOutput = output.toLowerCase()
-    const hasError = r.status !== 0 || (
-        lowerOutput.includes('error') &&
-        !lowerOutput.includes('0 errors') &&
-        !lowerOutput.includes('commit complete')
-    )
+    const output = (r.stdout || '').trim()
+    const lineCount = parseInt(output.match(/Count: (\d+)/)?.[1] ?? '0', 10)
     return {
-        ok: !hasError,
-        message: hasError ? `Config push failed for ${containerName}` : `Config pushed to ${containerName}`,
-        output: output.trim() || '(no output)',
+        ok: lineCount > 0,
+        message: lineCount > 0
+            ? `Config verified on ${containerName} (${lineCount} BGP config lines)`
+            : `Config may not be loaded on ${containerName}`,
+        output,
     }
 }
 
