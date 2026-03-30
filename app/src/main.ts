@@ -3854,6 +3854,12 @@ ipcMain.handle('clab-save-topology', async (_event, rawPayload: unknown) => {
 
     try {
         const labPath  = path.join(labDir, labName)
+        // Remove stale containerlab persistent directory so deploy uses fresh startup configs.
+        // Without this, clab --reconfigure mounts the old config from the previous deploy.
+        const clabDir = path.join(labPath, `clab-${labName}`)
+        if (fs.existsSync(clabDir)) {
+            fs.rmSync(clabDir, { recursive: true, force: true })
+        }
         fs.mkdirSync(labPath, { recursive: true })
         const filePath = path.join(labPath, `${labName}.clab.yml`)
         fs.writeFileSync(filePath, content, 'utf8')
