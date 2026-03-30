@@ -1451,9 +1451,9 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 // ─── Quick action buttons (floating) ──────────────────────────────────────────
 
 .canvas-quick-actions {
-  position: fixed;
-  bottom: 120px;
-  left: 140px;
+  position: absolute;
+  bottom: 80px;
+  // left is set dynamically via [style.left.px] binding to account for palette width
   display: flex;
   flex-direction: column;
   gap: 6px;

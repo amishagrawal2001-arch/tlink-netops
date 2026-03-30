@@ -3621,7 +3621,7 @@
     span {{ clabPostDeployMsg }}
 
   //- ── Quick action buttons (bottom-left floating) ───────────────────────
-  .canvas-quick-actions(*ngIf='hasConfigs')
+  .canvas-quick-actions(*ngIf='hasConfigs', [style.left.px]='paletteCollapsed ? 16 : paletteWidth + 16')
     button.quick-action-btn.qa-pull(
       type='button',
       title='Pull running configs from devices & save',
