@@ -738,12 +738,19 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 // ─── Minimap ─────────────────────────────────────────────────────────────────
 
 // ── Canvas view toggle bar ──────────────────────────────────────
-.canvas-view-bar {
+.canvas-bottom-stack {
   position: absolute;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-view-bar {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1494,10 +1501,6 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 // ─── Lab control buttons (bottom-right) ──────────────────────────────────────
 
 .canvas-lab-controls {
-  position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -1507,7 +1510,6 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   border: 1px solid var(--border, #333);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  z-index: 10;
 }
 
 .lab-ctrl-btn {
