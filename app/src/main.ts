@@ -4788,14 +4788,22 @@ function _parseBgpSummary (kind: string, stdout: string): ParsedBgpNeighbor[] {
         const lines = stdout.split('\n')
         // Common pattern: <IP>  <ASN>  <state>  <uptime>  <prefixes>
         const ipRe = /(\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+(?:::[0-9a-fA-F]+)+)/
-        const stateWords = ['established', 'active', 'connect', 'idle', 'openconfirm', 'opensent']
+        // JunOS truncates "Established" to "Establ" in column output
+        const statePatterns: Array<[string, string]> = [
+            ['establ', 'established'],
+            ['active', 'active'],
+            ['connect', 'connect'],
+            ['idle', 'idle'],
+            ['openconfirm', 'openconfirm'],
+            ['opensent', 'opensent'],
+        ]
         for (const line of lines) {
             const ipMatch = line.match(ipRe)
             if (!ipMatch) { continue }
             const lower = line.toLowerCase()
             let state = 'unknown'
-            for (const sw of stateWords) {
-                if (lower.includes(sw)) { state = sw; break }
+            for (const [pattern, name] of statePatterns) {
+                if (lower.includes(pattern)) { state = name; break }
             }
             if (state === 'unknown' && !lower.includes('neighbor')) { continue }
             const asnMatch = line.match(/\b(\d{4,6})\b/)
