@@ -8770,7 +8770,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         const peerIp = peerPort?.ipAddress?.split('/')[0]?.trim()
                         if (!peerIp) { continue }
 
-                        const groupName = peerNode.asn === node.asn ? 'ibgp' : 'ebgp'
+                        const groupName = peerNode.asn === node.asn ? 'IBGP' : 'EBGP'
                         if (!bgpGroups[groupName]) {
                             bgpGroups[groupName] = {
                                 type: peerNode.asn === node.asn ? 'internal' : 'external',
