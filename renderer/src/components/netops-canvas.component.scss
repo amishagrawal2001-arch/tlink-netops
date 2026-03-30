@@ -740,34 +740,34 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 // ── Canvas view toggle bar ──────────────────────────────────────
 .canvas-bottom-stack {
   position: absolute;
-  bottom: 12px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .canvas-view-bar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 1px;
+  padding: 2px 4px;
   background: var(--bg-toolbar, #1e1e2e);
   border: 1px solid var(--border, #333);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
 }
 
 .view-bar-btn {
-  padding: 4px 10px;
+  padding: 2px 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted, #888);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -1503,21 +1503,21 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 .canvas-lab-controls {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 1px;
+  padding: 2px 4px;
   background: var(--bg-toolbar, #1e1e2e);
   border: 1px solid var(--border, #333);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
 }
 
 .lab-ctrl-btn {
-  padding: 4px 10px;
+  padding: 2px 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted, #888);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
