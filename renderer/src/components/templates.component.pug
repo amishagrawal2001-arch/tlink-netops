@@ -52,6 +52,12 @@
         .tpl-card-meta
           span.tpl-badge {{ tpl.nodes.length }} nodes
           span.tpl-badge {{ tpl.links.length }} links
+          button.tpl-deploy-btn(
+            *ngIf='hasVendorNodes(tpl)',
+            type='button',
+            title='Deploy as containerlab lab',
+            (click)='deployLab(tpl, $event)'
+          ) ▶ Deploy
           button.tpl-download-btn(
             *ngIf='hasVendorNodes(tpl)',
             type='button',

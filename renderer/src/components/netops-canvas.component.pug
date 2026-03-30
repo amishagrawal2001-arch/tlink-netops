@@ -1780,6 +1780,11 @@
           ) Open Console
           button.ctx-item(
             type='button',
+            [disabled]='!ctxNodeCanOpenConsole',
+            (click)='$event.stopPropagation(); ctxOpenInlineTerminal(ctxNodeId!)'
+          ) Open Terminal (Inline)
+          button.ctx-item(
+            type='button',
             [disabled]='!ctxNodeHasConfig',
             (click)='$event.stopPropagation(); ctxViewConfig(ctxNodeId!)'
           ) View Config
@@ -2576,7 +2581,7 @@
         button.btn-ghost(type='button', (click)='dismissPollSync()') Dismiss
 
   //- ── Templates overlay ──────────────────────────────────────────────────
-  topology-templates(*ngIf='showTemplates', (closed)='closeTemplates()', (switchToBuilder)='closeTemplates(); openBuilder()')
+  topology-templates(*ngIf='showTemplates', (closed)='closeTemplates()', (switchToBuilder)='closeTemplates(); openBuilder()', (deployRequested)='deployAfterTemplateLoad()')
 
   //- ── Topology Builder overlay ─────────────────────────────────────────
   topology-builder(*ngIf='showBuilder', (closed)='closeBuilder()')
@@ -3845,6 +3850,13 @@
         span.help-footer-version v1.0.0
         span.help-footer-sep ·
         a.help-footer-link(href='javascript:void(0)') Report a Bug
+
+  //- ── Embedded Terminal Panel ────────────────────────────────────────────────
+  terminal-panel(
+    #terminalPanel='',
+    [visible]='showTerminalPanel',
+    (visibleChange)='showTerminalPanel = $event'
+  )
 
   //- ── Splash Screen ──────────────────────────────────────────────────────────
   .splash-overlay(*ngIf='showSplashScreen')

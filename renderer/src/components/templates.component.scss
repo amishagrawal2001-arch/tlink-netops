@@ -275,6 +275,28 @@ $radius:    10px;
     }
 }
 
+.tpl-deploy-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    background: transparent;
+    border-radius: 4px;
+    padding: 1px 8px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+
+    &:hover {
+        background: rgba(59, 130, 246, 0.15);
+        border-color: var(--accent);
+        color: #fff;
+    }
+}
+
 // ─── Preview container ───────────────────────────────────────────────────────
 
 .tpl-preview-container {

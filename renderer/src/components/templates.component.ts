@@ -20,6 +20,7 @@ export class TemplatesComponent implements OnDestroy {
 
     @Output() closed = new EventEmitter<void>()
     @Output() switchToBuilder = new EventEmitter<void>()
+    @Output() deployRequested = new EventEmitter<void>()
 
     readonly allTemplates = TOPOLOGY_TEMPLATES
     hovered: string | null = null
@@ -90,6 +91,14 @@ export class TemplatesComponent implements OnDestroy {
         if (hasNodes && !confirm(`Replace current topology with "${tpl.name}"?`)) { return }
         this.svc.loadTemplate(tpl)
         this.closed.emit()
+    }
+
+    deployLab (tpl: TopologyTemplate, $event: Event): void {
+        $event.stopPropagation()
+        if (!confirm(`Deploy "${tpl.name}" as a containerlab lab? This will load the template and start deployment.`)) { return }
+        this.svc.loadTemplate(tpl)
+        this.closed.emit()
+        this.deployRequested.emit()
     }
 
     close (): void { this.closed.emit() }

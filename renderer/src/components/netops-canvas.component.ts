@@ -39,6 +39,7 @@ let _nextInstanceId = 0
 export class NetopsCanvasComponent implements OnInit, OnDestroy {
 
     @ViewChild('svgCanvas', { static: true }) svgRef!: ElementRef<SVGSVGElement>
+    @ViewChild('terminalPanel') terminalPanelRef: any
     // Terminal opens in a separate window — no embedded panel needed
 
     /** Unique instance ID for SVG pattern/filter IDs to avoid cross-tab conflicts */
@@ -174,6 +175,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     clabLabDir = ''
     clabDeploying = false
     clabDeployed = false
+    autoConfigPushEnabled = true  // auto-push startup configs after deploy + interface enable
+    showTerminalPanel = false    // embedded terminal panel visibility
     clabPostDeployMsg = ''   // floating banner message shown after deploy until lab status appears
     clabFilePath: string | null = null
     clabInspecting = false
@@ -7936,6 +7939,52 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    /** Open inline terminal panel for a container node */
+    async ctxOpenInlineTerminal (nodeId: string): Promise<void> {
+        this.closeCtxMenu()
+        const node = this.topology.nodes.find(n => n.id === nodeId)
+        if (!node) { return }
+
+        const container = this._findContainerForNode(node)
+        if (!container || container.state !== 'running') {
+            this.statusMsg = container
+                ? `${node.label}: container is ${container.state}, not running`
+                : `${node.label}: no matching container — run Inspect Lab Status first`
+            this.cdr.markForCheck()
+            return
+        }
+
+        const api = (window as any).netopsAPI
+        if (!api?.ptyCreate) { return }
+
+        // Determine CLI command by kind
+        const kind = ((container as any).kind || '').toLowerCase()
+        let cmd = 'sh'
+        if (kind.includes('sonic') || kind.includes('frr')) { cmd = 'vtysh' }
+        else if (kind.includes('srl') || kind.includes('nokia')) { cmd = 'sr_cli' }
+        else if (kind.includes('ceos') || kind.includes('arista')) { cmd = 'Cli' }
+        else if (kind.includes('crpd') || kind.includes('juniper') || kind.includes('junos')) { cmd = 'cli' }
+
+        const sessionId = `inline-${container.name}-${Date.now()}`
+        try {
+            await api.ptyCreate({
+                id: sessionId,
+                label: node.label,
+                command: 'docker',
+                args: ['exec', '-it', container.name, cmd],
+            })
+            this.showTerminalPanel = true
+            this.cdr.markForCheck()
+            // Add session to the terminal panel component
+            setTimeout(() => {
+                this.terminalPanelRef?.addSession(sessionId, node.label)
+            }, 50)
+        } catch (err) {
+            this.statusMsg = `Failed to open terminal: ${(err as Error).message}`
+            this.cdr.markForCheck()
+        }
+    }
+
     // ── Undo / Redo ──────────────────────────────────────────────────────────
 
     undo (): void {
@@ -9037,6 +9086,12 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // ── Containerlab deploy / destroy / inspect ─────────────────────────
 
+    /** Called by template modal when user clicks "Deploy Lab" — waits a tick for template to load then deploys */
+    deployAfterTemplateLoad (): void {
+        this.closeTemplates()
+        setTimeout(() => this.deployContainerlab(), 200)
+    }
+
     async deployContainerlab (): Promise<void> {
         const api = (window as any).netopsAPI
         if (!api?.clabCheckPrereqs || !api?.clabSaveTopology || !api?.clabDeploy) {
@@ -9438,6 +9493,20 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
         if (this.clabContainers.length) {
             await this._enableContainerInterfaces(this.clabContainers)
+
+            // Auto-push startup configs after interfaces are enabled
+            if (this.autoConfigPushEnabled) {
+                this.clabPostDeployMsg = 'Auto-pushing startup configs...'
+                this.cdr.markForCheck()
+                try {
+                    await this.pushAllConfigs()
+                    this.clabPostDeployMsg = 'Configs pushed successfully'
+                } catch (_e) {
+                    this.clabPostDeployMsg = 'Config push completed with errors'
+                }
+                this.cdr.markForCheck()
+                setTimeout(() => { this.clabPostDeployMsg = ''; this.cdr.markForCheck() }, 5000)
+            }
         }
     }
 
