@@ -74,7 +74,7 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
             this._updateSelection()
         }
         if (changes['currentTheme']) {
-            this.scene.background = new THREE.Color(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5')
+            this.scene.background = new THREE.Color('#0a0e1a')
         }
     }
 
@@ -248,16 +248,18 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
         const h = container.clientHeight || 600
 
         this.scene = new THREE.Scene()
-        this.scene.background = new THREE.Color(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5')
-        this.scene.fog = new THREE.FogExp2(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5', 0.001)
+        this.scene.background = new THREE.Color('#0a0e1a')
+        this.scene.fog = new THREE.FogExp2('#0a0e1a', 0.0006)
 
-        this.camera = new THREE.PerspectiveCamera(60, w / h, 1, 5000)
-        this.camera.position.set(0, 120, 250)
+        this.camera = new THREE.PerspectiveCamera(55, w / h, 1, 5000)
+        this.camera.position.set(0, 180, 320)
         this.camera.lookAt(0, 0, 0)
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
         this.renderer.setPixelRatio(window.devicePixelRatio)
         this.renderer.setSize(w, h)
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+        this.renderer.toneMappingExposure = 1.2
         container.appendChild(this.renderer.domElement)
 
         this.scene.add(this.particleGroup)
@@ -273,19 +275,23 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     }
 
     private _initLights (): void {
-        const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+        const ambient = new THREE.AmbientLight(0xffffff, 0.8)
         this.scene.add(ambient)
 
-        const directional = new THREE.DirectionalLight(0xffffff, 0.8)
-        directional.position.set(100, 200, 100)
+        const directional = new THREE.DirectionalLight(0xffffff, 1.0)
+        directional.position.set(150, 300, 150)
         this.scene.add(directional)
 
-        const fill = new THREE.DirectionalLight(0x4488ff, 0.3)
-        fill.position.set(-100, 50, -100)
+        const fill = new THREE.DirectionalLight(0x6688ff, 0.5)
+        fill.position.set(-150, 100, -150)
         this.scene.add(fill)
 
-        // Subtle grid for spatial reference
-        const grid = new THREE.GridHelper(600, 30, 0x1a2a3a, 0x111827)
+        const rim = new THREE.DirectionalLight(0xff8844, 0.2)
+        rim.position.set(0, -50, 200)
+        this.scene.add(rim)
+
+        // Subtle dark grid for spatial reference
+        const grid = new THREE.GridHelper(800, 40, 0x1a2040, 0x0f1525)
         grid.position.y = -60
         this.scene.add(grid)
     }
@@ -358,10 +364,10 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
             // Update position
             mesh.position.set(pos.x, pos.z, pos.y)  // swap y/z for Three.js (Y is up)
             const label = this.nodeLabels.get(node.id)
-            if (label) { label.position.set(pos.x, pos.z + 14, pos.y) }
+            if (label) { label.position.set(pos.x, pos.z + 18, pos.y) }
             const statusMesh = this.nodeStatus.get(node.id)
             if (statusMesh) {
-                statusMesh.position.set(pos.x + 8, pos.z + 8, pos.y)
+                statusMesh.position.set(pos.x + 10, pos.z + 10, pos.y)
                 const statusColor = node.status === 'running' ? 0x22c55e : node.status === 'suspended' ? 0xf59e0b : 0xef4444
                 ;(statusMesh.material as THREE.MeshStandardMaterial).color.setHex(statusColor)
                 ;(statusMesh.material as THREE.MeshStandardMaterial).emissive.setHex(statusColor)
@@ -388,9 +394,10 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
             if (!line) {
                 const geometry = new THREE.BufferGeometry()
                 const material = new THREE.LineBasicMaterial({
-                    color: link.linkColor || (this.currentTheme === 'dark' ? 0x475569 : 0x94a3b8),
+                    color: link.linkColor || 0x4488cc,
                     transparent: true,
-                    opacity: 0.6,
+                    opacity: 0.7,
+                    linewidth: 1,  // Note: only works on some platforms, but set anyway
                 })
                 line = new THREE.Line(geometry, material)
                 this.scene.add(line)
@@ -424,27 +431,33 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
         let geometry: THREE.BufferGeometry
         switch (node.type) {
             case 'router':
-                geometry = new THREE.SphereGeometry(8, 20, 20)
+                geometry = new THREE.SphereGeometry(10, 24, 24)
                 break
             case 'switch':
-                geometry = new THREE.BoxGeometry(14, 6, 14)
+                geometry = new THREE.BoxGeometry(18, 7, 18)
                 break
             case 'firewall':
-                geometry = new THREE.OctahedronGeometry(9)
+                geometry = new THREE.OctahedronGeometry(12)
                 break
             case 'server':
-                geometry = new THREE.BoxGeometry(7, 14, 7)
+                geometry = new THREE.BoxGeometry(10, 18, 10)
+                break
+            case 'pc':
+                geometry = new THREE.ConeGeometry(8, 14, 4)
+                break
+            case 'cloud':
+                geometry = new THREE.IcosahedronGeometry(10)
                 break
             default:
-                geometry = new THREE.SphereGeometry(6, 14, 14)
+                geometry = new THREE.SphereGeometry(8, 16, 16)
         }
 
         const material = new THREE.MeshStandardMaterial({
             color,
-            metalness: 0.3,
-            roughness: 0.6,
+            metalness: 0.2,
+            roughness: 0.4,
             emissive: color,
-            emissiveIntensity: 0.15,
+            emissiveIntensity: 0.3,
         })
 
         return new THREE.Mesh(geometry, material)
@@ -452,28 +465,47 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
 
     private _createLabel (text: string): THREE.Sprite {
         const canvas = document.createElement('canvas')
-        canvas.width = 256
-        canvas.height = 64
+        canvas.width = 512
+        canvas.height = 128
         const ctx = canvas.getContext('2d')!
-        ctx.clearRect(0, 0, 256, 64)
-        ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, sans-serif'
+
+        // Background pill
+        const displayText = text.length > 16 ? text.slice(0, 15) + '…' : text
+        ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, sans-serif'
+        const metrics = ctx.measureText(displayText)
+        const textW = metrics.width + 32
+        const pillX = (512 - textW) / 2
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.85)'
+        ctx.beginPath()
+        ctx.roundRect(pillX, 20, textW, 56, 14)
+        ctx.fill()
+
+        // Border
+        ctx.strokeStyle = 'rgba(100, 140, 200, 0.4)'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.roundRect(pillX, 20, textW, 56, 14)
+        ctx.stroke()
+
+        // Text
         ctx.textAlign = 'center'
-        ctx.fillStyle = '#e0e0e0'
-        ctx.fillText(text.length > 14 ? text.slice(0, 13) + '…' : text, 128, 40)
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#ffffff'
+        ctx.fillText(displayText, 256, 48)
 
         const texture = new THREE.CanvasTexture(canvas)
         texture.needsUpdate = true
         const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
         const sprite = new THREE.Sprite(material)
-        sprite.scale.set(24, 6, 1)
+        sprite.scale.set(32, 8, 1)
         return sprite
     }
 
     private _createStatusMesh (status: string): THREE.Mesh {
-        const geometry = new THREE.SphereGeometry(2, 8, 8)
-        const color = status === 'running' ? 0x22c55e : status === 'suspended' ? 0xf59e0b : 0xef4444
+        const geometry = new THREE.SphereGeometry(1.5, 8, 8)
+        const color = status === 'running' ? 0x22c55e : status === 'suspended' ? 0xf59e0b : 0x666666
         const material = new THREE.MeshStandardMaterial({
-            color, emissive: color, emissiveIntensity: 0.8,
+            color, emissive: color, emissiveIntensity: status === 'running' ? 1.0 : 0.3,
         })
         return new THREE.Mesh(geometry, material)
     }
@@ -521,10 +553,10 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 
             const material = new THREE.PointsMaterial({
-                color: 0x00d2ff,
-                size: 2,
+                color: 0x00e5ff,
+                size: 3,
                 transparent: true,
-                opacity: 0.7,
+                opacity: 0.9,
                 sizeAttenuation: true,
             })
 
