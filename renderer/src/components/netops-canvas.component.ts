@@ -61,7 +61,10 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // ── Digital Twin state ─────────────────────────────────────────────────
     digitalTwinActive = false
     twinNodeHealth = new Map<string, { cpu: number; mem: number; alarms: number }>()
-    twinConfigDrift = new Map<string, { hasDrift: boolean; addedCount: number; removedCount: number }>()
+    twinConfigDrift = new Map<string, { hasDrift: boolean; addedCount: number; removedCount: number; addedLines: string[]; removedLines: string[] }>()
+    showDriftViewer = false
+    driftViewerNodeId = ''
+    driftViewerNodeLabel = ''
     twinActiveAlarms = new Map<string, Array<{ severity: string; message: string }>>()
     showTwinDashboard = false
     showDeviceMapper = false
@@ -5029,6 +5032,59 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.svc.selectNode(nodeId ?? null as any)
     }
 
+    /** Build topology from LLDP discovery result — creates nodes + links automatically */
+    buildTopologyFromDiscovery (devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }>,
+                                links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>): void {
+        // Create nodes with grid layout
+        const nodeMap = new Map<string, string>() // hostname → nodeId
+        let x = 100, y = 100
+        const cols = Math.ceil(Math.sqrt(devices.length))
+        for (let i = 0; i < devices.length; i++) {
+            const dev = devices[i]
+            const type = dev.vendor.toLowerCase().includes('firewall') ? 'firewall' as const : 'router' as const
+            const node = this.svc.addNode(type, x, y)
+            this.svc.updateNodeConfig(node.id, {
+                label: dev.hostname,
+                vendor: dev.vendor,
+                model: dev.model,
+                mgmtIp: dev.mgmtIp,
+                mapped: true,
+                mappedBy: 'hostname',
+            } as any)
+            nodeMap.set(dev.hostname, node.id)
+            x += 200
+            if ((i + 1) % cols === 0) { x = 100; y += 180 }
+        }
+
+        // Create links
+        for (const link of links) {
+            const srcId = nodeMap.get(link.srcHost)
+            const tgtId = nodeMap.get(link.dstHost)
+            if (!srcId || !tgtId || srcId === tgtId) { continue }
+            // Check if link already exists
+            const exists = this.topology.links.some(l =>
+                (l.sourceNodeId === srcId && l.targetNodeId === tgtId) ||
+                (l.sourceNodeId === tgtId && l.targetNodeId === srcId)
+            )
+            if (exists) { continue }
+            const srcNode = this.topology.nodes.find(n => n.id === srcId)
+            const tgtNode = this.topology.nodes.find(n => n.id === tgtId)
+            if (!srcNode || !tgtNode) { continue }
+            const srcPort = srcNode.ports.find(p => !this.topology.links.some(l =>
+                (l.sourceNodeId === srcId && l.sourcePortId === p.id) || (l.targetNodeId === srcId && l.targetPortId === p.id)
+            ))
+            const tgtPort = tgtNode.ports.find(p => !this.topology.links.some(l =>
+                (l.sourceNodeId === tgtId && l.sourcePortId === p.id) || (l.targetNodeId === tgtId && l.targetPortId === p.id)
+            ))
+            if (srcPort && tgtPort) {
+                this.svc.addLink(srcId, srcPort.id, tgtId, tgtPort.id)
+            }
+        }
+
+        this.statusMsg = `Built topology: ${devices.length} devices, ${links.length} links from LLDP discovery`
+        this.cdr.markForCheck()
+    }
+
     onMappingApplied (mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string }>): void {
         // Apply mapping to topology nodes
         for (const [nodeId, entry] of mappings) {
@@ -5061,6 +5117,29 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     onNodeMoved3D (event: { nodeId: string; x: number; y: number }): void {
         this.svc.moveNode(event.nodeId, event.x, event.y)
+    }
+
+    onLinkCreated3D (event: { sourceNodeId: string; targetNodeId: string }): void {
+        const srcNode = this.topology.nodes.find(n => n.id === event.sourceNodeId)
+        const tgtNode = this.topology.nodes.find(n => n.id === event.targetNodeId)
+        if (!srcNode || !tgtNode) { return }
+        // Find first available port on each node
+        const srcPort = srcNode.ports.find(p => !this.topology.links.some(l =>
+            (l.sourceNodeId === srcNode.id && l.sourcePortId === p.id) ||
+            (l.targetNodeId === srcNode.id && l.targetPortId === p.id)
+        ))
+        const tgtPort = tgtNode.ports.find(p => !this.topology.links.some(l =>
+            (l.sourceNodeId === tgtNode.id && l.sourcePortId === p.id) ||
+            (l.targetNodeId === tgtNode.id && l.targetPortId === p.id)
+        ))
+        if (!srcPort || !tgtPort) {
+            this.statusMsg = 'No available ports for new link'
+            this.cdr.markForCheck()
+            return
+        }
+        this.svc.addLink(event.sourceNodeId, srcPort.id, event.targetNodeId, tgtPort.id)
+        this.statusMsg = `Link created: ${srcNode.label} ↔ ${tgtNode.label}`
+        this.cdr.markForCheck()
     }
 
     // ── Digital Twin ──────────────────────────────────────────────────────
@@ -5139,8 +5218,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
-    private _computeConfigDrift (generated: string, running: string): { hasDrift: boolean; addedCount: number; removedCount: number } {
-        // Normalize: extract set-style lines, sort, strip comments
+    private _computeConfigDrift (generated: string, running: string): { hasDrift: boolean; addedCount: number; removedCount: number; addedLines: string[]; removedLines: string[] } {
         const normalize = (cfg: string): Set<string> => {
             return new Set(
                 cfg.split('\n')
@@ -5152,18 +5230,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const genLines = normalize(generated)
         const runLines = normalize(running)
 
-        let added = 0
-        let removed = 0
+        const addedLines: string[] = []
+        const removedLines: string[] = []
         for (const line of runLines) {
-            if (!genLines.has(line)) { added++ }
+            if (!genLines.has(line)) { addedLines.push(line) }
         }
         for (const line of genLines) {
-            if (!runLines.has(line)) { removed++ }
+            if (!runLines.has(line)) { removedLines.push(line) }
         }
 
-        // Allow small drift tolerance (timestamps, dynamic entries)
-        const hasDrift = (added + removed) > 5
-        return { hasDrift, addedCount: added, removedCount: removed }
+        const hasDrift = (addedLines.length + removedLines.length) > 5
+        return { hasDrift, addedCount: addedLines.length, removedCount: removedLines.length, addedLines, removedLines }
     }
 
     getTwinAlarmSeverity (nodeId: string): string {
@@ -5176,6 +5253,20 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     getTwinCpu (nodeId: string): number { return this.twinNodeHealth.get(nodeId)?.cpu ?? -1 }
     getTwinMem (nodeId: string): number { return this.twinNodeHealth.get(nodeId)?.mem ?? -1 }
+
+    getNodeBgpCount (nodeId: string): string {
+        const node = this.topology?.nodes?.find(n => n.id === nodeId)
+        if (!node) { return '—' }
+        const safeName = node.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
+        // Find container matching this node
+        for (const [ctnName, neighbors] of this.liveBgpState) {
+            if (ctnName.endsWith('-' + safeName)) {
+                const up = neighbors.filter(n => n.state === 'established').length
+                return `${up}/${neighbors.length}`
+            }
+        }
+        return '—'
+    }
 
     // ── Traffic Flow Visualization ─────────────────────────────────────
 

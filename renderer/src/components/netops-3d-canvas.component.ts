@@ -24,6 +24,7 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     @Output() nodeDoubleClicked = new EventEmitter<string>()
     @Output() nodeAdded = new EventEmitter<{ type: string; x: number; y: number }>()
     @Output() nodeMoved = new EventEmitter<{ nodeId: string; x: number; y: number }>()
+    @Output() linkCreated = new EventEmitter<{ sourceNodeId: string; targetNodeId: string }>()
 
     @ViewChild('canvasContainer', { static: true }) containerRef!: ElementRef<HTMLDivElement>
 
@@ -51,6 +52,11 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     private _dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0) // horizontal plane
     private _dragOffset = new THREE.Vector3()
     private _mouseDownPos = new THREE.Vector2()
+
+    // Link creation drag (Shift+drag from node to node)
+    private _linkDragging = false
+    private _linkSourceNodeId: string | null = null
+    private _linkPreviewLine: THREE.Line | null = null
 
     // Traffic animation
     private particleGroup = new THREE.Group()
@@ -117,7 +123,7 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     }
 
     onMouseDown (event: MouseEvent): void {
-        if (event.button !== 0) { return } // left click only
+        if (event.button !== 0) { return }
         this._mouseDownPos.set(event.clientX, event.clientY)
         this._updateMouse(event)
         const intersects = this._intersectNodes()
@@ -127,25 +133,46 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
             const nodeId = (mesh.userData as any)?.nodeId
             if (!nodeId) { return }
 
-            // Start drag — disable orbit controls
-            this._dragging = true
-            this._dragNodeId = nodeId
-            this._dragMesh = mesh
-
-            // Set drag plane at the mesh's Y height
-            this._dragPlane.set(new THREE.Vector3(0, 1, 0), -mesh.position.y)
-
-            // Compute offset between click point and mesh center
-            const worldPt = new THREE.Vector3()
-            this.raycaster.ray.intersectPlane(this._dragPlane, worldPt)
-            this._dragOffset.subVectors(mesh.position, worldPt)
-
-            this.controls.enabled = false
+            if (event.shiftKey) {
+                // Shift+drag from node = create link
+                this._linkDragging = true
+                this._linkSourceNodeId = nodeId
+                const geometry = new THREE.BufferGeometry().setFromPoints([mesh.position.clone(), mesh.position.clone()])
+                const material = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 1, transparent: true, opacity: 0.8 })
+                this._linkPreviewLine = new THREE.Line(geometry, material)
+                this.scene.add(this._linkPreviewLine)
+                this.controls.enabled = false
+            } else {
+                // Normal drag = move node
+                this._dragging = true
+                this._dragNodeId = nodeId
+                this._dragMesh = mesh
+                this._dragPlane.set(new THREE.Vector3(0, 1, 0), -mesh.position.y)
+                const worldPt = new THREE.Vector3()
+                this.raycaster.ray.intersectPlane(this._dragPlane, worldPt)
+                this._dragOffset.subVectors(mesh.position, worldPt)
+                this.controls.enabled = false
+            }
             this.nodeSelected.emit(nodeId)
         }
     }
 
     onMouseMove (event: MouseEvent): void {
+        // Link creation preview
+        if (this._linkDragging && this._linkPreviewLine && this._linkSourceNodeId) {
+            this._dragPlane.set(new THREE.Vector3(0, 1, 0), 0)
+            const worldPt = this._getWorldPoint(event)
+            if (worldPt) {
+                const srcMesh = this.nodeMeshes.get(this._linkSourceNodeId)
+                if (srcMesh) {
+                    const points = [srcMesh.position.clone(), worldPt]
+                    this._linkPreviewLine.geometry.dispose()
+                    this._linkPreviewLine.geometry = new THREE.BufferGeometry().setFromPoints(points)
+                }
+            }
+            return
+        }
+
         if (!this._dragging || !this._dragMesh || !this._dragNodeId) { return }
 
         const worldPt = this._getWorldPoint(event)
@@ -177,16 +204,41 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     }
 
     onMouseUp (event: MouseEvent): void {
+        // Link creation completion
+        if (this._linkDragging && this._linkSourceNodeId) {
+            // Remove preview line
+            if (this._linkPreviewLine) {
+                this.scene.remove(this._linkPreviewLine)
+                this._linkPreviewLine.geometry.dispose()
+                ;(this._linkPreviewLine.material as THREE.Material).dispose()
+                this._linkPreviewLine = null
+            }
+
+            // Check if released on a target node
+            this._updateMouse(event)
+            const intersects = this._intersectNodes()
+            if (intersects.length > 0) {
+                const targetNodeId = (intersects[0].object.userData as any)?.nodeId
+                if (targetNodeId && targetNodeId !== this._linkSourceNodeId) {
+                    this.linkCreated.emit({ sourceNodeId: this._linkSourceNodeId, targetNodeId })
+                }
+            }
+
+            this._linkDragging = false
+            this._linkSourceNodeId = null
+            this.controls.enabled = true
+            return
+        }
+
         if (this._dragging && this._dragNodeId && this._dragMesh) {
-            // Emit move event — convert 3D back to 2D coordinates
             const SCALE = 0.5
             const newX = this._dragMesh.position.x / SCALE
-            const newY = -this._dragMesh.position.z / SCALE  // flip Y back
+            const newY = -this._dragMesh.position.z / SCALE
             this.nodeMoved.emit({ nodeId: this._dragNodeId, x: newX, y: newY })
         }
 
         // If mouse barely moved, treat as click (select)
-        if (!this._dragging) {
+        if (!this._dragging && !this._linkDragging) {
             const dx = event.clientX - this._mouseDownPos.x
             const dy = event.clientY - this._mouseDownPos.y
             if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
@@ -618,6 +670,14 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
         this.rafId = requestAnimationFrame(this._animate)
         this.controls.update()
         this._animateParticles()
+
+        // Scale labels to maintain readable size regardless of camera distance
+        const camDist = this.camera.position.distanceTo(this.controls.target)
+        const labelScale = Math.max(0.5, Math.min(2.0, camDist / 200))
+        for (const sprite of this.nodeLabels.values()) {
+            sprite.scale.set(32 * labelScale, 8 * labelScale, 1)
+        }
+
         this.renderer.render(this.scene, this.camera)
     }
 }

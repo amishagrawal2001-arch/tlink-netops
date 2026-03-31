@@ -870,7 +870,8 @@
           (nodeSelected)='onNodeSelect3D($event)',
           (nodeDoubleClicked)='openNodeProperties($event)',
           (nodeAdded)='onNodeAdded3D($event)',
-          (nodeMoved)='onNodeMoved3D($event)'
+          (nodeMoved)='onNodeMoved3D($event)',
+          (linkCreated)='onLinkCreated3D($event)'
         )
 
         //- ── 2D SVG Canvas (hidden when in 3D mode, kept in DOM for ViewChild) ──
@@ -1074,13 +1075,14 @@
                   [class.major]='getTwinAlarmSeverity(node.id) === "major"',
                   [class.minor]='getTwinAlarmSeverity(node.id) === "minor"'
                 )
-                //- Config drift indicator
+                //- Config drift indicator (click to view diff)
                 text.twin-drift-icon(
                   *ngIf='digitalTwinActive && twinConfigDrift.has(node.id)',
                   [attr.x]='nodeW(node) - 2',
                   y='-4',
                   text-anchor='end',
-                  title='Config drift detected'
+                  title='Config drift detected — click to view diff',
+                  (click)='$event.stopPropagation(); showDriftViewer = true; driftViewerNodeId = node.id; driftViewerNodeLabel = node.label; cdr.markForCheck()'
                 ) ⚠
                 //- CPU gauge badge
                 g.twin-health-badge(
@@ -3954,6 +3956,25 @@
         span.help-footer-sep ·
         a.help-footer-link(href='javascript:void(0)') Report a Bug
 
+  //- ── Config Drift Viewer ──────────────────────────────────────────────────
+  .drift-viewer-overlay(*ngIf='showDriftViewer && twinConfigDrift.has(driftViewerNodeId)', (click)='showDriftViewer = false; cdr.markForCheck()')
+    .drift-viewer-dialog((click)='$event.stopPropagation()')
+      .drift-viewer-header
+        h3.drift-viewer-title Config Drift — {{ driftViewerNodeLabel }}
+        span.drift-viewer-summary
+          span.drift-added + {{ twinConfigDrift.get(driftViewerNodeId)?.addedCount }} added
+          span.drift-removed - {{ twinConfigDrift.get(driftViewerNodeId)?.removedCount }} removed
+        button.drift-viewer-close(type='button', (click)='showDriftViewer = false; cdr.markForCheck()') ✕
+      .drift-viewer-body
+        .drift-section(*ngIf='twinConfigDrift.get(driftViewerNodeId)?.addedLines?.length')
+          h4.drift-section-title Lines in running config but NOT in generated (added on device):
+          pre.drift-lines.drift-lines-added
+            | {{ twinConfigDrift.get(driftViewerNodeId)?.addedLines?.join('\n') }}
+        .drift-section(*ngIf='twinConfigDrift.get(driftViewerNodeId)?.removedLines?.length')
+          h4.drift-section-title Lines in generated config but NOT in running (missing on device):
+          pre.drift-lines.drift-lines-removed
+            | {{ twinConfigDrift.get(driftViewerNodeId)?.removedLines?.join('\n') }}
+
   //- ── Device Mapper Overlay ────────────────────────────────────────────────
   device-mapper(
     *ngIf='showDeviceMapper',
@@ -3999,7 +4020,7 @@
             td
               span(*ngIf='getTwinMem(node.id) >= 0', [style.color]='getTwinMem(node.id) > 80 ? "#ef4444" : getTwinMem(node.id) > 50 ? "#f59e0b" : "#22c55e"') {{ getTwinMem(node.id) }}%
               span(*ngIf='getTwinMem(node.id) < 0') —
-            td {{ liveSummary.bgpUp }}/{{ liveSummary.bgpTotal }}
+            td {{ getNodeBgpCount(node.id) }}
             td
               span.twin-alarm-count(*ngIf='twinActiveAlarms.has(node.id)') {{ twinActiveAlarms.get(node.id)?.length }}
               span(*ngIf='!twinActiveAlarms.has(node.id)') 0

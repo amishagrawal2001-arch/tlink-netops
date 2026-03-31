@@ -44,12 +44,22 @@ export class DeviceMapperComponent implements OnInit {
     close (): void { this.closed.emit() }
 
     async startDiscovery (): Promise<void> {
-        const host = prompt('Seed device IP address:')
+        const api = (window as any).netopsAPI
+
+        // Load saved credentials
+        const savedHost = await api?.prefGet?.('discovery-host') ?? ''
+        const savedUser = await api?.prefGet?.('discovery-user') ?? ''
+
+        const host = prompt('Seed device IP address:', savedHost)
         if (!host) { return }
-        const username = prompt('SSH username:')
+        const username = prompt('SSH username:', savedUser)
         if (!username) { return }
         const password = prompt('SSH password:')
         if (!password) { return }
+
+        // Save credentials for next time (not password)
+        api?.prefSet?.('discovery-host', host)
+        api?.prefSet?.('discovery-user', username)
 
         this.discovering = true
         this.cdr.markForCheck()
