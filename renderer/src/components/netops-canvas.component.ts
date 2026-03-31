@@ -64,6 +64,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     twinConfigDrift = new Map<string, { hasDrift: boolean; addedCount: number; removedCount: number }>()
     twinActiveAlarms = new Map<string, Array<{ severity: string; message: string }>>()
     showTwinDashboard = false
+    showDeviceMapper = false
+    discoveredDevicesList: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }> = []
     private _twinPollTimer: any = null
 
     showAlarmOverlay = false
@@ -5025,6 +5027,30 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     onNodeSelect3D (nodeId: string | null): void {
         this.svc.selectNode(nodeId ?? null as any)
+    }
+
+    onMappingApplied (mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string }>): void {
+        // Apply mapping to topology nodes
+        for (const [nodeId, entry] of mappings) {
+            const node = this.topology.nodes.find(n => n.id === nodeId)
+            if (!node) { continue }
+            this.svc.updateNodeConfig(nodeId, {
+                mapped: true,
+                mappedBy: 'hostname',
+                mgmtIp: entry.mgmtIp,
+                vendor: entry.vendor || node.vendor,
+                model: entry.model || node.model,
+            } as any)
+        }
+
+        this.statusMsg = `Mapped ${mappings.size} nodes to physical devices`
+        this.cdr.markForCheck()
+
+        // Prompt to push configs
+        if (mappings.size > 0) {
+            const push = confirm(`${mappings.size} nodes mapped. Push configs to physical devices now?`)
+            if (push) { this.pushAllConfigs({ skipConfirm: true }) }
+        }
     }
 
     onNodeAdded3D (event: { type: string; x: number; y: number }): void {

@@ -12,6 +12,7 @@ import { TemplatesComponent }      from './components/templates.component'
 import { TemplatePreviewComponent } from './components/template-preview.component'
 import { TerminalPanelComponent }   from './components/terminal-panel.component'
 import { Netops3dCanvasComponent }  from './components/netops-3d-canvas.component'
+import { DeviceMapperComponent }    from './components/device-mapper.component'
 import { TopologyBuilderComponent } from './components/topology-builder.component'
 import { HelpViewComponent }        from './components/help-view.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
@@ -35,6 +36,7 @@ import { TAB_MANAGER }             from './api/tokens'
         TemplatePreviewComponent,
         TerminalPanelComponent,
         Netops3dCanvasComponent,
+        DeviceMapperComponent,
         TopologyBuilderComponent,
         HelpViewComponent,
         SafeHtmlPipe,

@@ -987,3 +987,410 @@ export function parseInterfaceCounters (vendor: string, output: string): Map<str
 
     return results
 }
+
+// ─── LLDP Neighbor Parsing ──────────────────────────────────────────────────
+
+export interface ParsedLldpNeighbor {
+    localPort: string
+    neighborHostname: string
+    neighborPort: string
+    neighborMgmtIp?: string
+    neighborSystemDesc?: string
+}
+
+function parseCiscoLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Cisco/Dell/HPE/Extreme: `show lldp neighbors detail`
+    // Blocks separated by dashes or blank lines, containing:
+    //   Local Intf: Gi0/0/0
+    //   System Name: switch2
+    //   Port Description: eth0
+    //   Management Addresses:
+    //       IP: 10.0.0.2
+    const results: ParsedLldpNeighbor[] = []
+    const blocks = output.split(/(?:^-{3,}$|\n\n)/m)
+    for (const block of blocks) {
+        const localPort = firstMatch(block, /[Ll]ocal\s+(?:Intf|Interface|Port)\s*:\s*(\S+)/)
+        const hostname = firstMatch(block, /[Ss]ystem\s+[Nn]ame\s*:\s*(.+)/)
+        const port = firstMatch(block, /[Pp]ort\s+(?:[Dd]escription|[Ii][Dd])\s*:\s*(.+)/)
+        if (localPort && hostname) {
+            results.push({
+                localPort,
+                neighborHostname: hostname,
+                neighborPort: port ?? '',
+                neighborMgmtIp: firstMatch(block, /[Mm]anagement\s+[Aa]ddress(?:es)?\s*:?\s*(?:IP:\s*)?(\d+\.\d+\.\d+\.\d+)/)
+                    ?? firstMatch(block, /(\d+\.\d+\.\d+\.\d+)/),
+                neighborSystemDesc: firstMatch(block, /[Ss]ystem\s+[Dd]escription\s*:\s*(.+)/),
+            })
+        }
+    }
+    return results
+}
+
+function parseJuniperLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Juniper: `show lldp neighbors` — tabular:
+    //   Local Interface  Parent Interface  Chassis Id  Port info  System Name
+    //   ge-0/0/0         -                 aa:bb:cc    eth0       spine1
+    const results: ParsedLldpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        // Skip headers and separator lines
+        if (/Local Interface/i.test(line) || /^[-=\s]+$/.test(line.trim())) { continue }
+        const m = line.match(/^\s*(\S+)\s+\S+\s+\S+\s+(\S+(?:\s+\S+)*?)\s{2,}(\S+.*)/)
+        if (m) {
+            results.push({
+                localPort: m[1],
+                neighborPort: m[2].trim(),
+                neighborHostname: m[3].trim(),
+            })
+            continue
+        }
+        // Simpler: just local-intf + port-info + system-name
+        const m2 = line.match(/^\s*(\S+)\s+.*?\s+(\S+)\s+(\S+)\s*$/)
+        if (m2 && !/^[-=]/.test(line.trim())) {
+            results.push({
+                localPort: m2[1],
+                neighborPort: m2[2],
+                neighborHostname: m2[3],
+            })
+        }
+    }
+    return results
+}
+
+function parseAristaLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Arista: JSON format with lldpNeighbors key
+    const results: ParsedLldpNeighbor[] = []
+    try {
+        const json = JSON.parse(output)
+        const neighbors = json.lldpNeighbors ?? json.result?.[0]?.lldpNeighbors ?? {}
+        for (const [localPort, entries] of Object.entries(neighbors)) {
+            for (const entry of (entries as any[])) {
+                results.push({
+                    localPort,
+                    neighborHostname: entry.neighborDevice ?? entry.systemName ?? '',
+                    neighborPort: entry.neighborPort ?? entry.portId ?? '',
+                    neighborMgmtIp: entry.managementAddress ?? entry.managementIp,
+                    neighborSystemDesc: entry.systemDescription,
+                })
+            }
+        }
+    } catch {
+        // Fallback: try text parsing if not valid JSON
+        return parseCiscoLldpNeighbors(output)
+    }
+    return results
+}
+
+function parseNokiaSrlLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Nokia SRL: `show system lldp neighbor` — tabular
+    //   Interface  Neighbor System Name  Neighbor Port  ...
+    //   ethernet-1/1  spine1  ethernet-1/2
+    const results: ParsedLldpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        if (/Interface|Neighbor/i.test(line) && /System/i.test(line)) { continue }
+        if (/^[-=+\s]+$/.test(line.trim())) { continue }
+        const m = line.match(/^\s*(\S+)\s+(\S+)\s+(\S+)/)
+        if (m && /ethernet|e\d|mgmt/i.test(m[1])) {
+            results.push({
+                localPort: m[1],
+                neighborHostname: m[2],
+                neighborPort: m[3],
+            })
+        }
+    }
+    return results
+}
+
+function parseSonicLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // SONiC: `show lldp table` — tabular:
+    //   Interface  Neighbor  Neighbor-Port  Neighbor-Interface
+    //   Ethernet0  spine1    eth0           Ethernet0
+    const results: ParsedLldpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        if (/Interface/i.test(line) && /Neighbor/i.test(line)) { continue }
+        if (/^[-=+\s]+$/.test(line.trim())) { continue }
+        const m = line.match(/^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/)
+        if (m && /Ethernet|PortChannel/i.test(m[1])) {
+            results.push({
+                localPort: m[1],
+                neighborHostname: m[2],
+                neighborPort: m[4] || m[3],
+            })
+        }
+    }
+    return results
+}
+
+function parseHuaweiLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Huawei: `display lldp neighbor brief` — tabular:
+    //   Local Intf  Neighbor Dev  Neighbor Intf  ExpTime(s)
+    //   GE0/0/1     switch2       GE0/0/1        120
+    const results: ParsedLldpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        if (/Local/i.test(line) && /Neighbor/i.test(line)) { continue }
+        if (/^[-=+\s]+$/.test(line.trim())) { continue }
+        const m = line.match(/^\s*(\S+)\s+(\S+)\s+(\S+)/)
+        if (m && /GE|XGE|Eth|[0-9]\/[0-9]/i.test(m[1])) {
+            results.push({
+                localPort: m[1],
+                neighborHostname: m[2],
+                neighborPort: m[3],
+            })
+        }
+    }
+    return results
+}
+
+function parseMikrotikLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // MikroTik: `/ip neighbor print detail` — key=value pairs:
+    //   interface=ether1 address=10.0.0.2 identity=spine1 ...
+    const results: ParsedLldpNeighbor[] = []
+    const blocks = output.split(/(?:^\s*\d+\s+)/m)
+    for (const block of blocks) {
+        const iface = firstMatch(block, /interface=(\S+)/)
+        const identity = firstMatch(block, /identity=(\S+)/)
+        const port = firstMatch(block, /interface-name=(\S+)/)
+        const mgmtIp = firstMatch(block, /address=(\d+\.\d+\.\d+\.\d+)/)
+        if (iface && identity) {
+            results.push({
+                localPort: iface,
+                neighborHostname: identity,
+                neighborPort: port ?? '',
+                neighborMgmtIp: mgmtIp,
+            })
+        }
+    }
+    return results
+}
+
+function parseGenericLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    const results: ParsedLldpNeighbor[] = []
+    // Try block-based parsing first (detail output)
+    const blocks = output.split(/(?:^-{3,}$|\n\n)/m)
+    for (const block of blocks) {
+        const localPort = firstMatch(block, /[Ll]ocal\s+(?:Intf|Interface|Port)\s*:?\s*(\S+)/)
+        const hostname = firstMatch(block, /[Ss]ystem\s+[Nn]ame\s*:?\s*(\S+)/)
+            ?? firstMatch(block, /[Nn]eighbor\s*:?\s*(\S+)/)
+        const port = firstMatch(block, /[Pp]ort\s+(?:[Dd]escription|[Ii][Dd])\s*:?\s*(\S+)/)
+        if (localPort && hostname) {
+            results.push({
+                localPort,
+                neighborHostname: hostname,
+                neighborPort: port ?? '',
+                neighborMgmtIp: firstMatch(block, /(\d+\.\d+\.\d+\.\d+)/),
+            })
+        }
+    }
+    if (results.length > 0) { return results }
+
+    // Fallback: tabular with at least 3 columns
+    for (const line of output.split('\n')) {
+        const m = line.match(/^\s*(\S+)\s+(\S+)\s+(\S+)/)
+        if (m && !/^[-=+#]/.test(line.trim()) && !/Interface|Local|Neighbor/i.test(line)) {
+            results.push({
+                localPort: m[1],
+                neighborHostname: m[2],
+                neighborPort: m[3],
+            })
+        }
+    }
+    return results
+}
+
+export function parseLldpNeighbors (vendor: string, output: string): ParsedLldpNeighbor[] {
+    if (!output || !output.trim()) { return [] }
+    const v = (vendor ?? '').trim().toLowerCase()
+    switch (v) {
+        case 'cisco': case 'dell': case 'hpe': case 'extreme':
+            return parseCiscoLldpNeighbors(output)
+        case 'juniper':
+            return parseJuniperLldpNeighbors(output)
+        case 'arista':
+            return parseAristaLldpNeighbors(output)
+        case 'nokia':
+            return parseNokiaSrlLldpNeighbors(output)
+        case 'sonic':
+            return parseSonicLldpNeighbors(output)
+        case 'huawei':
+            return parseHuaweiLldpNeighbors(output)
+        case 'mikrotik':
+            return parseMikrotikLldpNeighbors(output)
+        default:
+            return parseGenericLldpNeighbors(output)
+    }
+}
+
+// ─── BGP Summary Parsing ────────────────────────────────────────────────────
+
+export interface ParsedBgpNeighbor {
+    neighborIp: string
+    state: string
+    asn: number
+    prefixCount: number
+}
+
+function parseCiscoBgpSummary (output: string): ParsedBgpNeighbor[] {
+    // Cisco/SONiC/FRR: text table:
+    //   Neighbor        V  AS  MsgRcvd  MsgSent  TblVer  InQ  OutQ  Up/Down  State/PfxRcd
+    //   10.0.0.1        4  65001  1234  1234  0  0  0  01:00:00  5
+    //   10.0.0.2        4  65002  1234  1234  0  0  0  01:00:00  Active
+    const results: ParsedBgpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        // Match lines starting with an IP address
+        const m = line.match(/^\s*(\d+\.\d+\.\d+\.\d+)\s+\d+\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\S+\s+(\S+)/)
+        if (m) {
+            const stateOrPfx = m[3]
+            const pfxNum = parseInt(stateOrPfx, 10)
+            const isEstablished = Number.isFinite(pfxNum) && pfxNum >= 0
+            results.push({
+                neighborIp: m[1],
+                asn: parseInt(m[2], 10),
+                state: isEstablished ? 'Established' : stateOrPfx,
+                prefixCount: isEstablished ? pfxNum : 0,
+            })
+        }
+    }
+    return results
+}
+
+function parseJuniperBgpSummary (output: string): ParsedBgpNeighbor[] {
+    // Juniper: text table:
+    //   Peer          AS  InPkt  OutPkt  OutQ  Flaps  Last Up/Dwn  State|#Active/Received/Accepted/Damped...
+    //   10.0.0.1    65001  1234  1234  0  0  1:00:00  Establ
+    //   10.0.0.2    65002  1234  1234  0  0  1:00:00  3/5/3/0
+    const results: ParsedBgpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        const m = line.match(/^\s*(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\d+\s+\S+\s+(\S+)/)
+        if (m) {
+            const stateField = m[3]
+            // "Establ" is Juniper's truncation of "Established"
+            const isEstablished = /^Establ/i.test(stateField) || /^\d+\/\d+\/\d+/.test(stateField)
+            let prefixCount = 0
+            if (/^\d+\//.test(stateField)) {
+                // Format: active/received/accepted/damped
+                prefixCount = parseInt(stateField.split('/')[0], 10) || 0
+            }
+            results.push({
+                neighborIp: m[1],
+                asn: parseInt(m[2], 10),
+                state: isEstablished ? 'Established' : stateField,
+                prefixCount,
+            })
+        }
+    }
+    return results
+}
+
+function parseAristaBgpSummary (output: string): ParsedBgpNeighbor[] {
+    // Arista: JSON with vrfs.default.peers
+    const results: ParsedBgpNeighbor[] = []
+    try {
+        const json = JSON.parse(output)
+        const peers = json.vrfs?.default?.peers ?? json.result?.[0]?.vrfs?.default?.peers ?? {}
+        for (const [ip, data] of Object.entries(peers)) {
+            const peer = data as any
+            results.push({
+                neighborIp: ip,
+                asn: peer.asn ?? peer.peerAsn ?? 0,
+                state: peer.peerState ?? peer.state ?? 'Unknown',
+                prefixCount: peer.prefixAccepted ?? peer.prefixReceived ?? peer.prefixesReceived ?? 0,
+            })
+        }
+    } catch {
+        // Fallback to Cisco-style text parsing
+        return parseCiscoBgpSummary(output)
+    }
+    return results
+}
+
+function parseNokiaBgpSummary (output: string): ParsedBgpNeighbor[] {
+    // Nokia SRL/SROS: text with neighbor IP, state, ASN
+    //   10.0.0.1  65001  established  5  ...
+    const results: ParsedBgpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        // Match IP + ASN + state pattern
+        const m = line.match(/(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+(\S+)\s+(\d+)/)
+            ?? line.match(/(\d+\.\d+\.\d+\.\d+)\s+.*?(\d+)\s+.*(established|active|idle|connect|openconfirm|opensent)/i)
+        if (m) {
+            const pfx = parseInt(m[4], 10)
+            results.push({
+                neighborIp: m[1],
+                asn: parseInt(m[2], 10),
+                state: m[3].charAt(0).toUpperCase() + m[3].slice(1).toLowerCase(),
+                prefixCount: Number.isFinite(pfx) ? pfx : 0,
+            })
+        }
+    }
+    return results
+}
+
+function parseHuaweiBgpSummary (output: string): ParsedBgpNeighbor[] {
+    // Huawei: `display bgp peer` — tabular:
+    //   Peer    V  AS  MsgRcvd  MsgSent  OutQ  Up/Down  State/PfxRcd
+    //   10.0.0.1  4  65001  100  100  0  01:00:00  5
+    const results: ParsedBgpNeighbor[] = []
+    for (const line of output.split('\n')) {
+        const m = line.match(/^\s*(\d+\.\d+\.\d+\.\d+)\s+\d+\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\S+\s+(\S+)/)
+        if (m) {
+            const stateOrPfx = m[3]
+            const pfxNum = parseInt(stateOrPfx, 10)
+            const isEstablished = Number.isFinite(pfxNum) && pfxNum >= 0
+            results.push({
+                neighborIp: m[1],
+                asn: parseInt(m[2], 10),
+                state: isEstablished ? 'Established' : stateOrPfx,
+                prefixCount: isEstablished ? pfxNum : 0,
+            })
+        }
+    }
+    return results
+}
+
+function parseGenericBgpSummary (output: string): ParsedBgpNeighbor[] {
+    const results: ParsedBgpNeighbor[] = []
+    const STATE_KEYWORDS = /established|active|idle|connect|openconfirm|opensent/i
+    for (const line of output.split('\n')) {
+        // Try: IP + anything + ASN + anything + state-keyword-or-number
+        const m = line.match(/(\d+\.\d+\.\d+\.\d+)/)
+        if (!m) { continue }
+        const ip = m[1]
+        // Find ASN (standalone number after IP)
+        const asnMatch = line.slice(line.indexOf(ip) + ip.length).match(/\b(\d{1,10})\b/)
+        if (!asnMatch) { continue }
+        const asn = parseInt(asnMatch[1], 10)
+        if (asn < 1 || asn > 4294967295) { continue }
+
+        // Find state: either a keyword or last column number
+        const rest = line.trim()
+        const lastCol = rest.split(/\s+/).pop() ?? ''
+        const pfxNum = parseInt(lastCol, 10)
+        const isEstablished = Number.isFinite(pfxNum) && pfxNum >= 0 && !STATE_KEYWORDS.test(lastCol)
+        const stateMatch = rest.match(STATE_KEYWORDS)
+
+        results.push({
+            neighborIp: ip,
+            asn,
+            state: isEstablished ? 'Established' : (stateMatch?.[0] ?? lastCol),
+            prefixCount: isEstablished ? pfxNum : 0,
+        })
+    }
+    return results
+}
+
+export function parseBgpSummary (vendor: string, output: string): ParsedBgpNeighbor[] {
+    if (!output || !output.trim()) { return [] }
+    const v = (vendor ?? '').trim().toLowerCase()
+    switch (v) {
+        case 'cisco': case 'dell': case 'hpe': case 'sonic': case 'extreme':
+            return parseCiscoBgpSummary(output)
+        case 'juniper':
+            return parseJuniperBgpSummary(output)
+        case 'arista':
+            return parseAristaBgpSummary(output)
+        case 'nokia':
+            return parseNokiaBgpSummary(output)
+        case 'huawei':
+            return parseHuaweiBgpSummary(output)
+        default:
+            return parseGenericBgpSummary(output)
+    }
+}

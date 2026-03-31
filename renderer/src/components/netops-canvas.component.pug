@@ -719,6 +719,13 @@
               (click)='destroyContainerlab()'
             )
               | ⏹ Destroy
+            .view-bar-sep
+            button.lab-ctrl-btn(
+              type='button',
+              title='Discover & map physical devices',
+              (click)='showDeviceMapper = true; cdr.markForCheck()'
+            )
+              | 🔗 Map
           .canvas-view-bar
             button.view-bar-btn(
               type='button',
@@ -3946,6 +3953,15 @@
         span.help-footer-version v1.0.0
         span.help-footer-sep ·
         a.help-footer-link(href='javascript:void(0)') Report a Bug
+
+  //- ── Device Mapper Overlay ────────────────────────────────────────────────
+  device-mapper(
+    *ngIf='showDeviceMapper',
+    [topology]='topology',
+    [discoveredDevices]='discoveredDevicesList',
+    (closed)='showDeviceMapper = false; cdr.markForCheck()',
+    (mappingApplied)='onMappingApplied($event)'
+  )
 
   //- ── Digital Twin Dashboard Panel ──────────────────────────────────────────
   .twin-dashboard-panel(*ngIf='showTwinDashboard && digitalTwinActive')

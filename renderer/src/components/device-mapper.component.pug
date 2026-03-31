@@ -1,0 +1,64 @@
+.mapper-overlay((click)='close()')
+  .mapper-dialog((click)='$event.stopPropagation()')
+    .mapper-header
+      h3.mapper-title Device Mapper
+      span.mapper-subtitle Map topology nodes to physical devices
+      button.mapper-close(type='button', (click)='close()') ✕
+
+    .mapper-actions-bar
+      button.mapper-btn.mapper-btn-discover(
+        type='button',
+        [disabled]='discovering',
+        (click)='startDiscovery()'
+      ) {{ discovering ? 'Discovering...' : '🔍 Discover Network' }}
+      button.mapper-btn.mapper-btn-auto(
+        type='button',
+        [disabled]='!discoveredDevices.length',
+        (click)='autoMatch()'
+      ) ⚡ Auto-Match
+      span.mapper-status(*ngIf='discoveredDevices.length') {{ discoveredDevices.length }} devices found
+
+    .mapper-table-wrap
+      table.mapper-table
+        thead
+          tr
+            th Topology Node
+            th Vendor / Model
+            th Role
+            th ➜
+            th Physical Device
+            th IP Address
+            th Status
+        tbody
+          tr.mapper-row(
+            *ngFor='let node of topologyNodes',
+            [class.mapped]='mappings.has(node.id)'
+          )
+            td.mapper-cell-name {{ node.label }}
+            td {{ node.vendor || '—' }} {{ node.model ? '/ ' + node.model : '' }}
+            td {{ node.role || node.type }}
+            td.mapper-cell-arrow {{ mappings.has(node.id) ? '✓' : '→' }}
+            td
+              select.mapper-select(
+                [value]='mappings.get(node.id)?.hostname || ""',
+                (change)='onMapChange(node.id, $event)'
+              )
+                option(value='') — Select device —
+                option(
+                  *ngFor='let dev of discoveredDevices',
+                  [value]='dev.hostname'
+                ) {{ dev.hostname }} ({{ dev.vendor }})
+            td {{ mappings.get(node.id)?.mgmtIp || '—' }}
+            td
+              span.mapper-status-dot([class.mapped]='mappings.has(node.id)')
+              | {{ mappings.has(node.id) ? 'Mapped' : 'Unmapped' }}
+
+    .mapper-footer
+      span.mapper-summary {{ mappings.size }}/{{ topologyNodes.length }} nodes mapped
+      .mapper-footer-actions
+        button.mapper-btn(type='button', (click)='close()') Cancel
+        button.mapper-btn.mapper-btn-apply(
+          type='button',
+          [disabled]='!mappings.size',
+          (click)='applyMapping()'
+        ) Apply Mapping & Push Configs
