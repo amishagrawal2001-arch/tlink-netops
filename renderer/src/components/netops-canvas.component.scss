@@ -715,6 +715,14 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   &.open.shape-only { width: 260px; }
 }
 
+netops-3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 
 .netops-canvas-wrap {

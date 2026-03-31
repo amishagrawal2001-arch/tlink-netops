@@ -1,0 +1,471 @@
+import {
+    AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef,
+    Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy,
+    Output, SimpleChanges, ViewChild,
+} from '@angular/core'
+import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { Topology, TopologyNode, TopologyLink, NODE_TYPE_META, NodeType } from '../api/interfaces'
+import { from2DLayout, LayoutPosition3D } from '../services/layout-helpers-3d'
+
+@Component({
+    selector: 'netops-3d-canvas',
+    templateUrl: './netops-3d-canvas.component.pug',
+    styleUrls: ['./netops-3d-canvas.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDestroy {
+
+    @Input() topology!: Topology
+    @Input() selectedNodeId: string | null = null
+    @Input() currentTheme: 'dark' | 'light' = 'dark'
+
+    @Output() nodeSelected = new EventEmitter<string | null>()
+    @Output() nodeDoubleClicked = new EventEmitter<string>()
+
+    @ViewChild('canvasContainer', { static: true }) containerRef!: ElementRef<HTMLDivElement>
+
+    private scene!: THREE.Scene
+    private camera!: THREE.PerspectiveCamera
+    private renderer!: THREE.WebGLRenderer
+    private controls!: OrbitControls
+    private rafId = 0
+    private resizeObserver?: ResizeObserver
+
+    private nodeMeshes = new Map<string, THREE.Mesh>()
+    private nodeLabels = new Map<string, THREE.Sprite>()
+    private nodeStatus = new Map<string, THREE.Mesh>()
+    private linkLines = new Map<string, THREE.Line>()
+    private positions = new Map<string, LayoutPosition3D>()
+
+    private raycaster = new THREE.Raycaster()
+    private mouse = new THREE.Vector2()
+    private _prevSelectedMesh: THREE.Mesh | null = null
+
+    // Traffic animation
+    private particleGroup = new THREE.Group()
+    private particleT: number[] = []
+
+    ngAfterViewInit (): void {
+        this._initScene()
+        this._initControls()
+        this._initLights()
+        this._initResize()
+        this._buildTopology()
+        this._animate()
+    }
+
+    ngOnChanges (changes: SimpleChanges): void {
+        if (!this.scene) { return }
+        if (changes['topology']) {
+            this._buildTopology()
+        }
+        if (changes['selectedNodeId']) {
+            this._updateSelection()
+        }
+        if (changes['currentTheme']) {
+            this.scene.background = new THREE.Color(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5')
+        }
+    }
+
+    ngOnDestroy (): void {
+        cancelAnimationFrame(this.rafId)
+        this.resizeObserver?.disconnect()
+        this.controls?.dispose()
+
+        // Dispose all Three.js resources
+        this.nodeMeshes.forEach(m => { m.geometry.dispose(); (m.material as THREE.Material).dispose() })
+        this.nodeLabels.forEach(s => { (s.material as THREE.SpriteMaterial).map?.dispose(); (s.material as THREE.Material).dispose() })
+        this.nodeStatus.forEach(m => { m.geometry.dispose(); (m.material as THREE.Material).dispose() })
+        this.linkLines.forEach(l => { l.geometry.dispose(); (l.material as THREE.Material).dispose() })
+        this.particleGroup.children.forEach(c => {
+            if (c instanceof THREE.Points) { c.geometry.dispose(); (c.material as THREE.Material).dispose() }
+        })
+
+        this.renderer?.dispose()
+    }
+
+    // ── Click handlers ────────────────────────────────────────────────────
+
+    onClick (event: MouseEvent): void {
+        const rect = this.containerRef.nativeElement.getBoundingClientRect()
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+        this.raycaster.setFromCamera(this.mouse, this.camera)
+        const meshes = Array.from(this.nodeMeshes.values())
+        const intersects = this.raycaster.intersectObjects(meshes)
+
+        if (intersects.length > 0) {
+            const mesh = intersects[0].object as THREE.Mesh
+            const nodeId = (mesh.userData as any)?.nodeId
+            if (nodeId) { this.nodeSelected.emit(nodeId) }
+        } else {
+            this.nodeSelected.emit(null)
+        }
+    }
+
+    onDblClick (event: MouseEvent): void {
+        const rect = this.containerRef.nativeElement.getBoundingClientRect()
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+        this.raycaster.setFromCamera(this.mouse, this.camera)
+        const meshes = Array.from(this.nodeMeshes.values())
+        const intersects = this.raycaster.intersectObjects(meshes)
+
+        if (intersects.length > 0) {
+            const nodeId = (intersects[0].object.userData as any)?.nodeId
+            if (nodeId) { this.nodeDoubleClicked.emit(nodeId) }
+        }
+    }
+
+    // ── Scene initialization ──────────────────────────────────────────────
+
+    private _initScene (): void {
+        const container = this.containerRef.nativeElement
+        const w = container.clientWidth || 800
+        const h = container.clientHeight || 600
+
+        this.scene = new THREE.Scene()
+        this.scene.background = new THREE.Color(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5')
+        this.scene.fog = new THREE.FogExp2(this.currentTheme === 'dark' ? '#0d1117' : '#f5f5f5', 0.001)
+
+        this.camera = new THREE.PerspectiveCamera(60, w / h, 1, 5000)
+        this.camera.position.set(0, 120, 250)
+        this.camera.lookAt(0, 0, 0)
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+        this.renderer.setPixelRatio(window.devicePixelRatio)
+        this.renderer.setSize(w, h)
+        container.appendChild(this.renderer.domElement)
+
+        this.scene.add(this.particleGroup)
+    }
+
+    private _initControls (): void {
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement)
+        this.controls.enableDamping = true
+        this.controls.dampingFactor = 0.08
+        this.controls.minDistance = 50
+        this.controls.maxDistance = 2000
+        this.controls.maxPolarAngle = Math.PI * 0.85
+    }
+
+    private _initLights (): void {
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+        this.scene.add(ambient)
+
+        const directional = new THREE.DirectionalLight(0xffffff, 0.8)
+        directional.position.set(100, 200, 100)
+        this.scene.add(directional)
+
+        const fill = new THREE.DirectionalLight(0x4488ff, 0.3)
+        fill.position.set(-100, 50, -100)
+        this.scene.add(fill)
+
+        // Subtle grid for spatial reference
+        const grid = new THREE.GridHelper(600, 30, 0x1a2a3a, 0x111827)
+        grid.position.y = -60
+        this.scene.add(grid)
+    }
+
+    private _initResize (): void {
+        this.resizeObserver = new ResizeObserver(() => {
+            const container = this.containerRef.nativeElement
+            const w = container.clientWidth
+            const h = container.clientHeight
+            if (w && h) {
+                this.camera.aspect = w / h
+                this.camera.updateProjectionMatrix()
+                this.renderer.setSize(w, h)
+            }
+        })
+        this.resizeObserver.observe(this.containerRef.nativeElement)
+    }
+
+    // ── Build topology (nodes + links) ────────────────────────────────────
+
+    private _buildTopology (): void {
+        if (!this.topology?.nodes) { return }
+
+        // Compute 3D positions from 2D layout
+        const pos3d = from2DLayout(this.topology.nodes)
+        this.positions.clear()
+        for (const p of pos3d) { this.positions.set(p.id, p) }
+
+        // Reconcile nodes
+        const currentNodeIds = new Set(this.topology.nodes.map(n => n.id))
+
+        // Remove stale
+        for (const [id, mesh] of this.nodeMeshes) {
+            if (!currentNodeIds.has(id)) {
+                this.scene.remove(mesh)
+                mesh.geometry.dispose()
+                ;(mesh.material as THREE.Material).dispose()
+                this.nodeMeshes.delete(id)
+
+                const label = this.nodeLabels.get(id)
+                if (label) { this.scene.remove(label); this.nodeLabels.delete(id) }
+                const status = this.nodeStatus.get(id)
+                if (status) { this.scene.remove(status); this.nodeStatus.delete(id) }
+            }
+        }
+
+        // Add/update nodes
+        for (const node of this.topology.nodes) {
+            const pos = this.positions.get(node.id)
+            if (!pos) { continue }
+
+            let mesh = this.nodeMeshes.get(node.id)
+            if (!mesh) {
+                mesh = this._createNodeMesh(node)
+                mesh.userData = { nodeId: node.id }
+                this.scene.add(mesh)
+                this.nodeMeshes.set(node.id, mesh)
+
+                // Label
+                const label = this._createLabel(node.label)
+                this.scene.add(label)
+                this.nodeLabels.set(node.id, label)
+
+                // Status indicator
+                const statusMesh = this._createStatusMesh(node.status)
+                this.scene.add(statusMesh)
+                this.nodeStatus.set(node.id, statusMesh)
+            }
+
+            // Update position
+            mesh.position.set(pos.x, pos.z, pos.y)  // swap y/z for Three.js (Y is up)
+            const label = this.nodeLabels.get(node.id)
+            if (label) { label.position.set(pos.x, pos.z + 14, pos.y) }
+            const statusMesh = this.nodeStatus.get(node.id)
+            if (statusMesh) {
+                statusMesh.position.set(pos.x + 8, pos.z + 8, pos.y)
+                const statusColor = node.status === 'running' ? 0x22c55e : node.status === 'suspended' ? 0xf59e0b : 0xef4444
+                ;(statusMesh.material as THREE.MeshStandardMaterial).color.setHex(statusColor)
+                ;(statusMesh.material as THREE.MeshStandardMaterial).emissive.setHex(statusColor)
+            }
+        }
+
+        // Reconcile links
+        const currentLinkIds = new Set(this.topology.links.map(l => l.id))
+        for (const [id, line] of this.linkLines) {
+            if (!currentLinkIds.has(id)) {
+                this.scene.remove(line)
+                line.geometry.dispose()
+                ;(line.material as THREE.Material).dispose()
+                this.linkLines.delete(id)
+            }
+        }
+
+        for (const link of this.topology.links) {
+            const srcPos = this.positions.get(link.sourceNodeId)
+            const tgtPos = this.positions.get(link.targetNodeId)
+            if (!srcPos || !tgtPos) { continue }
+
+            let line = this.linkLines.get(link.id)
+            if (!line) {
+                const geometry = new THREE.BufferGeometry()
+                const material = new THREE.LineBasicMaterial({
+                    color: link.linkColor || (this.currentTheme === 'dark' ? 0x475569 : 0x94a3b8),
+                    transparent: true,
+                    opacity: 0.6,
+                })
+                line = new THREE.Line(geometry, material)
+                this.scene.add(line)
+                this.linkLines.set(link.id, line)
+            }
+
+            const points = [
+                new THREE.Vector3(srcPos.x, srcPos.z, srcPos.y),
+                new THREE.Vector3(tgtPos.x, tgtPos.z, tgtPos.y),
+            ]
+            line.geometry.dispose()
+            line.geometry = new THREE.BufferGeometry().setFromPoints(points)
+        }
+
+        // Build traffic particles
+        this._buildParticles()
+
+        // Update selection highlight
+        this._updateSelection()
+
+        // Auto-center camera
+        this._autoCenterCamera()
+    }
+
+    // ── Node mesh factory ─────────────────────────────────────────────────
+
+    private _createNodeMesh (node: TopologyNode): THREE.Mesh {
+        const meta = NODE_TYPE_META[node.type] ?? NODE_TYPE_META['router']
+        const color = new THREE.Color(meta.borderColor)
+
+        let geometry: THREE.BufferGeometry
+        switch (node.type) {
+            case 'router':
+                geometry = new THREE.SphereGeometry(8, 20, 20)
+                break
+            case 'switch':
+                geometry = new THREE.BoxGeometry(14, 6, 14)
+                break
+            case 'firewall':
+                geometry = new THREE.OctahedronGeometry(9)
+                break
+            case 'server':
+                geometry = new THREE.BoxGeometry(7, 14, 7)
+                break
+            default:
+                geometry = new THREE.SphereGeometry(6, 14, 14)
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+            color,
+            metalness: 0.3,
+            roughness: 0.6,
+            emissive: color,
+            emissiveIntensity: 0.15,
+        })
+
+        return new THREE.Mesh(geometry, material)
+    }
+
+    private _createLabel (text: string): THREE.Sprite {
+        const canvas = document.createElement('canvas')
+        canvas.width = 256
+        canvas.height = 64
+        const ctx = canvas.getContext('2d')!
+        ctx.clearRect(0, 0, 256, 64)
+        ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillStyle = '#e0e0e0'
+        ctx.fillText(text.length > 14 ? text.slice(0, 13) + '…' : text, 128, 40)
+
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.needsUpdate = true
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
+        const sprite = new THREE.Sprite(material)
+        sprite.scale.set(24, 6, 1)
+        return sprite
+    }
+
+    private _createStatusMesh (status: string): THREE.Mesh {
+        const geometry = new THREE.SphereGeometry(2, 8, 8)
+        const color = status === 'running' ? 0x22c55e : status === 'suspended' ? 0xf59e0b : 0xef4444
+        const material = new THREE.MeshStandardMaterial({
+            color, emissive: color, emissiveIntensity: 0.8,
+        })
+        return new THREE.Mesh(geometry, material)
+    }
+
+    // ── Selection highlight ───────────────────────────────────────────────
+
+    private _updateSelection (): void {
+        // Remove previous highlight
+        if (this._prevSelectedMesh) {
+            const mat = this._prevSelectedMesh.material as THREE.MeshStandardMaterial
+            mat.emissiveIntensity = 0.15
+            this._prevSelectedMesh = null
+        }
+
+        if (this.selectedNodeId) {
+            const mesh = this.nodeMeshes.get(this.selectedNodeId)
+            if (mesh) {
+                const mat = mesh.material as THREE.MeshStandardMaterial
+                mat.emissiveIntensity = 0.7
+                this._prevSelectedMesh = mesh
+            }
+        }
+    }
+
+    // ── Traffic particles ─────────────────────────────────────────────────
+
+    private _buildParticles (): void {
+        // Clear existing
+        while (this.particleGroup.children.length) {
+            const c = this.particleGroup.children[0]
+            if (c instanceof THREE.Points) { c.geometry.dispose(); (c.material as THREE.Material).dispose() }
+            this.particleGroup.remove(c)
+        }
+        this.particleT = []
+
+        // Create particles for each link
+        for (const link of (this.topology?.links ?? [])) {
+            const srcPos = this.positions.get(link.sourceNodeId)
+            const tgtPos = this.positions.get(link.targetNodeId)
+            if (!srcPos || !tgtPos) { continue }
+
+            const count = 3
+            const positions = new Float32Array(count * 3)
+            const geometry = new THREE.BufferGeometry()
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+            const material = new THREE.PointsMaterial({
+                color: 0x00d2ff,
+                size: 2,
+                transparent: true,
+                opacity: 0.7,
+                sizeAttenuation: true,
+            })
+
+            const points = new THREE.Points(geometry, material)
+            points.userData = {
+                src: new THREE.Vector3(srcPos.x, srcPos.z, srcPos.y),
+                tgt: new THREE.Vector3(tgtPos.x, tgtPos.z, tgtPos.y),
+            }
+            this.particleGroup.add(points)
+
+            // Initialize t values staggered
+            for (let i = 0; i < count; i++) {
+                this.particleT.push(i / count)
+            }
+        }
+    }
+
+    private _animateParticles (): void {
+        let tIdx = 0
+        for (const child of this.particleGroup.children) {
+            if (!(child instanceof THREE.Points)) { continue }
+            const { src, tgt } = child.userData as { src: THREE.Vector3; tgt: THREE.Vector3 }
+            const posAttr = child.geometry.getAttribute('position') as THREE.BufferAttribute
+            const count = posAttr.count
+
+            for (let i = 0; i < count; i++) {
+                this.particleT[tIdx] = (this.particleT[tIdx] + 0.008) % 1
+                const t = this.particleT[tIdx]
+                posAttr.setXYZ(i,
+                    src.x + (tgt.x - src.x) * t,
+                    src.y + (tgt.y - src.y) * t,
+                    src.z + (tgt.z - src.z) * t,
+                )
+                tIdx++
+            }
+            posAttr.needsUpdate = true
+        }
+    }
+
+    // ── Auto-center camera ────────────────────────────────────────────────
+
+    private _autoCenterCamera (): void {
+        if (!this.positions.size) { return }
+        let cx = 0, cy = 0, cz = 0
+        for (const p of this.positions.values()) {
+            cx += p.x; cy += p.z; cz += p.y
+        }
+        const n = this.positions.size
+        cx /= n; cy /= n; cz /= n
+
+        this.controls.target.set(cx, cy, cz)
+        this.camera.position.set(cx, cy + 150, cz + 300)
+        this.controls.update()
+    }
+
+    // ── Animation loop ────────────────────────────────────────────────────
+
+    private _animate = (): void => {
+        this.rafId = requestAnimationFrame(this._animate)
+        this.controls.update()
+        this._animateParticles()
+        this.renderer.render(this.scene, this.camera)
+    }
+}

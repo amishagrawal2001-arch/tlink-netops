@@ -56,6 +56,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     readonly minScale = 0.1
     readonly maxScale = 4
     showMinimap = true
+    viewMode: '2d' | '3d' = '2d'
     showAlarmOverlay = false
     showGrid = true
     gridSize: 'small' | 'medium' | 'large' = 'medium'
@@ -5007,6 +5008,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
     toggleInterfaceLabels (): void { this.showInterfaceLabels = !this.showInterfaceLabels; this.cdr.markForCheck() }
+
+    toggle3DView (): void {
+        this.viewMode = this.viewMode === '2d' ? '3d' : '2d'
+        this.cdr.markForCheck()
+    }
+
+    onNodeSelect3D (nodeId: string | null): void {
+        this.svc.selectNode(nodeId ?? null as any)
+    }
 
     // ── Traffic Flow Visualization ─────────────────────────────────────
 

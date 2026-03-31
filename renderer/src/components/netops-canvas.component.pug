@@ -777,6 +777,13 @@
               (click)='showMinimap = !showMinimap; cdr.markForCheck()',
               title='Minimap'
             ) Map
+            .view-bar-sep
+            button.view-bar-btn(
+              type='button',
+              [class.active]='viewMode === "3d"',
+              (click)='toggle3DView()',
+              title='3D Topology View'
+            ) 3D
 
         //- ── Minimap overlay ──────────────────────────────────────────
         svg.canvas-minimap(
@@ -834,7 +841,18 @@
           button.align-btn(type='button', title='Distribute Horizontally', (click)='distributeShapes("horizontal")') ⇔
           button.align-btn(type='button', title='Distribute Vertically', (click)='distributeShapes("vertical")') ⇕
 
-        svg#svgCanvas.netops-svg(#svgCanvas='')
+        //- ── 3D Canvas (shown when viewMode === '3d') ──────────────────
+        netops-3d-canvas(
+          *ngIf='viewMode === "3d"',
+          [topology]='topology',
+          [selectedNodeId]='selectedNodeId',
+          [currentTheme]='currentTheme',
+          (nodeSelected)='onNodeSelect3D($event)',
+          (nodeDoubleClicked)='openNodeProperties($event)'
+        )
+
+        //- ── 2D SVG Canvas (shown when viewMode === '2d') ────────────
+        svg#svgCanvas.netops-svg(#svgCanvas='', *ngIf='viewMode === "2d"')
           defs
             pattern([attr.id]='uid + "-grid"', [attr.width]='gridCellSize', [attr.height]='gridCellSize', patternUnits='userSpaceOnUse')
               path([attr.d]='"M " + gridCellSize + " 0 L 0 0 0 " + gridCellSize', fill='none', stroke='#1e2a3a', stroke-width='0.5')
