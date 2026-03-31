@@ -4986,8 +4986,22 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // ── Menu bar ─────────────────────────────────────────────────────────────
 
-    toggleMenu (name: string): void {
+    menuDropdownStyle: Record<string, string> = {}
+
+    toggleMenu (eventOrName: MouseEvent | string, nameOrUndef?: string): void {
+        const event = eventOrName instanceof MouseEvent ? eventOrName : undefined
+        const name = typeof eventOrName === 'string' ? eventOrName : nameOrUndef ?? ''
         this.openMenu = this.openMenu === name ? null : name
+        if (this.openMenu && event) {
+            const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
+            if (trigger) {
+                const rect = trigger.getBoundingClientRect()
+                this.menuDropdownStyle = {
+                    top: rect.bottom + 'px',
+                    left: rect.left + 'px',
+                }
+            }
+        }
         this.cdr.markForCheck()
     }
 
@@ -5003,9 +5017,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     }
 
     /** When a menu is already open, hovering another trigger switches to it. */
-    onMenuEnter (name: string): void {
+    onMenuEnter (eventOrName: MouseEvent | string, name?: string): void {
+        const event = eventOrName instanceof MouseEvent ? eventOrName : undefined
+        if (!name && typeof eventOrName === 'string') { name = eventOrName }
         if (this.openMenu && this.openMenu !== name) {
-            this.openMenu = name
+            this.openMenu = name ?? null
+            if (event) {
+                const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
+                if (trigger) {
+                    const rect = trigger.getBoundingClientRect()
+                    this.menuDropdownStyle = { top: rect.bottom + 'px', left: rect.left + 'px' }
+                }
+            }
             this.cdr.markForCheck()
         }
     }

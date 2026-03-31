@@ -13,7 +13,7 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .netops-shell {
-  position: relative;             // anchor for file-drop-overlay
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -21,7 +21,7 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   background: var(--bg-app);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
-  overflow: clip;                 // clip prevents scrollbars but allows absolute/fixed descendants to escape
+  overflow: hidden;
   user-select: none;
 }
 
@@ -287,12 +287,9 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .menu-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
+  position: fixed;
   min-width: 240px;
-  max-height: calc(100vh - 60px);
-  max-height: calc(100dvh - 60px);
+  max-height: calc(100vh - 70px);
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-menu);
