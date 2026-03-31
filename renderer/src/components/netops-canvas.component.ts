@@ -24,6 +24,7 @@ import { getVendorCommands } from '../services/vendor-command-map'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
 import { LayoutAlgorithm, forceDirectedLayout, hierarchicalLayout, radialLayout, gridLayout } from '../services/layout-helpers'
 import { LicenseService } from '../services/license.service'
+import { TopologyExportService } from '../services/topology-export.service'
 
 interface PendingLink { sourceNodeId: string; sourcePortId: string; sourceAnnotationId?: string; anchorX?: number; anchorY?: number }
 interface PortPickerOption { port: NodePort; available: boolean; displayLabel?: string }
@@ -1544,6 +1545,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         @Inject(IS_ACTIVE_TAB) private _isActive$: BehaviorSubject<boolean>,
         private graphSvc: TopologyGraphService,
         public licenseSvc: LicenseService,
+        private topoExportSvc: TopologyExportService,
     ) {}
 
     ngOnInit (): void {
@@ -8439,20 +8441,23 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     // ── Export formats ───────────────────────────────────────────────────────
 
     exportAnsibleInventory (): void {
-        const lines: string[] = ['all:', '  hosts:']
-        for (const node of this.topology.nodes) {
-            const safe = node.label.replace(/\s+/g, '_')
-            lines.push(`    ${safe}:`)
-            if (node.mgmtIp)     { lines.push(`      ansible_host: ${node.mgmtIp}`) }
-            if (node.vendor)     { lines.push(`      vendor: ${node.vendor}`) }
-            if (node.model)      { lines.push(`      model: ${node.model}`) }
-            if (node.serialNumber){ lines.push(`      serial: ${node.serialNumber}`) }
-            for (const p of node.ports) {
-                if (p.ipAddress) { lines.push(`      ${p.label.replace(/\s+/g, '_')}: ${p.ipAddress}`) }
-            }
-        }
-        this._downloadText(lines.join('\n'), `${this.topology.name.replace(/\s+/g, '_')}_inventory.yml`, 'text/yaml')
+        const yaml = this.topoExportSvc.exportAnsibleInventory(this.topology)
+        this._downloadText(yaml, `${this.topology.name.replace(/\s+/g, '_')}_ansible_inventory.yml`, 'text/yaml')
         this.statusMsg = `Exported Ansible inventory (${this.topology.nodes.length} hosts)`
+        this.cdr.markForCheck()
+    }
+
+    exportAnsiblePlaybook (): void {
+        const yaml = this.topoExportSvc.exportAnsiblePlaybook(this.topology)
+        this._downloadText(yaml, `${this.topology.name.replace(/\s+/g, '_')}_playbook.yml`, 'text/yaml')
+        this.statusMsg = 'Exported Ansible playbook'
+        this.cdr.markForCheck()
+    }
+
+    exportTerraformConfig (): void {
+        const hcl = this.topoExportSvc.exportTerraform(this.topology)
+        this._downloadText(hcl, `${this.topology.name.replace(/\s+/g, '_')}_main.tf`, 'text/plain')
+        this.statusMsg = 'Exported Terraform configuration'
         this.cdr.markForCheck()
     }
 
@@ -12063,6 +12068,22 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     get hasConfigs (): boolean {
         return this.topology?.nodes.some(n => !!n.startupConfig?.trim()) ?? false
+    }
+
+    // ── Firmware Upgrade Planner ───────────────────────────────────────
+
+    generateUpgradePlan (): void {
+        const { FirmwarePlannerService } = require('../services/firmware-planner.service')
+        const planner = new FirmwarePlannerService()
+        const plan = planner.generateUpgradePlan(this.topology, this.invSvc.store.deviceVersions)
+        if (plan.devicesNeedingUpgrade === 0) {
+            this.statusMsg = `All ${plan.totalDevices} devices are on current firmware`
+            this.cdr.markForCheck(); return
+        }
+        const md = planner.exportPlanAsMarkdown(plan)
+        this._downloadText(md, `${this.topology.name.replace(/\s+/g, '_')}_upgrade_plan.md`, 'text/markdown')
+        this.statusMsg = `Upgrade plan: ${plan.devicesNeedingUpgrade}/${plan.totalDevices} need upgrade (${plan.phases.length} phases)`
+        this.cdr.markForCheck()
     }
 
     exportHtmlReport (): void {

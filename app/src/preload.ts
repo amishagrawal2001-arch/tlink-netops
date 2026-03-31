@@ -72,6 +72,13 @@ contextBridge.exposeInMainWorld('netopsAPI', {
         ipcRenderer.invoke('ssh-run-commands', params),
     sshShellSession: (params: SshMultiCommandRequest & { delayMs?: number }): Promise<SshResult> =>
         ipcRenderer.invoke('ssh-shell-session', params),
+    sshShellSessionViaBastion: (params: {
+        bastion: { host: string; port?: number; username: string; password: string }
+        target: { host: string; port?: number; username: string; password: string }
+        commands: string[]
+        delayMs?: number
+    }): Promise<SshResult> =>
+        ipcRenderer.invoke('ssh-shell-session-via-bastion', params),
     sshExecMulti: (params: SshMultiCommandRequest): Promise<SshResult> =>
         ipcRenderer.invoke('ssh-exec-multi', params),
     inventorySave: (json: string, filePath: string): Promise<{ ok: boolean; message?: string }> =>

@@ -115,6 +115,13 @@ export interface TopologyNode {
     sshPort?: number
     sshUsername?: string
     sshPassword?: string
+
+    // Bastion / jump host for multi-hop SSH
+    bastionHost?: string
+    bastionPort?: number
+    bastionUsername?: string
+    bastionPassword?: string
+
     vendor?: string
     desiredPortCount?: number
     portSuffix?: string

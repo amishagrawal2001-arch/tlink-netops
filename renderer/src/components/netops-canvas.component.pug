@@ -412,6 +412,19 @@
         button.menu-item(type='button', (click)='exportAlarmHistory(); closeMenus()')
           span.mi-icon ⤓
           span.mi-label Export Alarms (CSV)
+        .menu-sep
+        button.menu-item(type='button', (click)='exportAnsibleInventory(); closeMenus()')
+          span.mi-icon 📦
+          span.mi-label Export Ansible Inventory
+        button.menu-item(type='button', (click)='exportAnsiblePlaybook(); closeMenus()')
+          span.mi-icon 📜
+          span.mi-label Export Ansible Playbook
+        button.menu-item(type='button', (click)='exportTerraformConfig(); closeMenus()')
+          span.mi-icon ⚙
+          span.mi-label Export Terraform
+        button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
+          span.mi-icon 🔄
+          span.mi-label Firmware Upgrade Plan
 
     //- ── Simulate ─────────────────────────
     .menu-item-wrap
@@ -489,6 +502,10 @@
         .menu-sep
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportAnsibleInventory(); closeMenus()')
           span.mi-label Ansible Inventory
+        button.menu-item(type='button', [disabled]='!hasConfigs', (click)='exportAnsiblePlaybook(); closeMenus()')
+          span.mi-label Ansible Playbook
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportTerraformConfig(); closeMenus()')
+          span.mi-label Terraform Config
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportGns3(); closeMenus()')
           span.mi-label GNS3 Project
         button.menu-item(type='button', (click)='openClabDialog(); closeMenus()')

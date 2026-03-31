@@ -771,6 +771,147 @@ ipcMain.handle('ssh-shell-session', async (_event, rawPayload: unknown): Promise
     return _runSshShellSession(parsed.value, commands, delayMs)
 })
 
+ipcMain.handle('ssh-shell-session-via-bastion', async (_event, rawPayload: unknown): Promise<SshResult> => {
+    if (!rawPayload || typeof rawPayload !== 'object') {
+        return { ok: false, message: 'Invalid payload' }
+    }
+    const obj = rawPayload as Record<string, unknown>
+
+    // Validate bastion credentials
+    const bastionRaw = obj['bastion']
+    if (!bastionRaw || typeof bastionRaw !== 'object') {
+        return { ok: false, message: 'Bastion configuration is required' }
+    }
+    const bastionParsed = _parseSshPayload(bastionRaw)
+    if (!bastionParsed.ok) { return { ok: false, message: `Bastion: ${(bastionParsed as { ok: false; message: string }).message}` } }
+    const bastion = (bastionParsed as { ok: true; value: SshPayload }).value
+
+    // Validate target credentials
+    const targetRaw = obj['target']
+    if (!targetRaw || typeof targetRaw !== 'object') {
+        return { ok: false, message: 'Target configuration is required' }
+    }
+    const targetParsed = _parseSshPayload(targetRaw)
+    if (!targetParsed.ok) { return { ok: false, message: `Target: ${(targetParsed as { ok: false; message: string }).message}` } }
+    const target = (targetParsed as { ok: true; value: SshPayload }).value
+
+    const commands = Array.isArray(obj['commands']) ? obj['commands'].map(String) : []
+    if (!commands.length) { return { ok: false, message: 'Commands array is required' } }
+    const delayMs = typeof obj['delayMs'] === 'number' ? obj['delayMs'] : 500
+
+    return new Promise(resolve => {
+        const bastionConn = new Client()
+        let settled = false
+        let output = ''
+
+        const connTimer = setTimeout(
+            () => done({ ok: false, message: `Bastion SSH connection timeout after ${bastion.timeoutMs} ms` }),
+            bastion.timeoutMs,
+        )
+
+        function done (result: SshResult): void {
+            if (settled) { return }
+            settled = true
+            clearTimeout(connTimer)
+            try { bastionConn.end() } catch { /* no-op */ }
+            resolve(result)
+        }
+
+        bastionConn.on('error', (err: Error) => {
+            done({ ok: false, message: `Bastion SSH error: ${err.message}` })
+        })
+
+        bastionConn.on('ready', () => {
+            clearTimeout(connTimer)
+
+            // Use TCP forwarding through the bastion to reach the target
+            bastionConn.forwardOut('127.0.0.1', 0, target.host, target.port, (fwdErr, channel) => {
+                if (fwdErr) {
+                    done({ ok: false, message: `Bastion port-forward failed: ${fwdErr.message}` })
+                    return
+                }
+
+                // Connect a second SSH client through the forwarded channel
+                const targetConn = new Client()
+
+                targetConn.on('error', (err: Error) => {
+                    done({ ok: false, message: `Target SSH error via bastion: ${err.message}` })
+                })
+
+                targetConn.on('ready', () => {
+                    targetConn.shell((shellErr, stream) => {
+                        if (shellErr) {
+                            done({ ok: false, message: `Target shell failed: ${shellErr.message}` })
+                            return
+                        }
+
+                        stream.on('data', (chunk: Buffer | string) => { output += chunk.toString() })
+                        stream.stderr.on('data', (chunk: Buffer | string) => { output += chunk.toString() })
+
+                        stream.on('close', () => {
+                            try { targetConn.end() } catch { /* no-op */ }
+                            done({
+                                ok: true,
+                                message: `Shell session completed on ${target.host} via bastion ${bastion.host}`,
+                                output: output.trim() || '(no output)',
+                            })
+                        })
+
+                        stream.on('error', (streamErr: Error) => {
+                            done({ ok: false, message: `Target shell stream error: ${streamErr.message}`, output })
+                        })
+
+                        // Send commands sequentially with delays (mirrors _runSshShellSession)
+                        let index = 0
+                        function sendNext (): void {
+                            if (settled) { return }
+                            if (index >= commands.length) {
+                                setTimeout(() => {
+                                    try { stream.end('exit\n') } catch { /* no-op */ }
+                                    setTimeout(() => {
+                                        if (!settled) {
+                                            try { targetConn.end() } catch { /* no-op */ }
+                                            done({
+                                                ok: true,
+                                                message: `Shell session completed on ${target.host} via bastion ${bastion.host}`,
+                                                output: output.trim() || '(no output)',
+                                            })
+                                        }
+                                    }, 10000)
+                                }, delayMs * 2)
+                                return
+                            }
+                            const cmd = commands[index++]
+                            try {
+                                if (cmd.length === 1 && cmd.charCodeAt(0) < 32) {
+                                    stream.write(cmd)
+                                } else {
+                                    stream.write(cmd + '\n')
+                                }
+                            } catch (writeErr) {
+                                done({ ok: false, message: `Failed to write command: ${(writeErr as Error).message}`, output })
+                                return
+                            }
+                            setTimeout(sendNext, delayMs)
+                        }
+                        sendNext()
+                    })
+                })
+
+                targetConn.connect({
+                    sock: channel,
+                    username: target.username,
+                    password: target.password,
+                    readyTimeout: target.timeoutMs,
+                    keepaliveInterval: 0,
+                })
+            })
+        })
+
+        bastionConn.connect(_connectConfig(bastion))
+    })
+})
+
 ipcMain.handle('ssh-exec-multi', async (_event, rawPayload: unknown): Promise<SshResult> => {
     if (!rawPayload || typeof rawPayload !== 'object') {
         return { ok: false, message: 'Invalid payload' }
