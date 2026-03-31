@@ -861,7 +861,9 @@
           [selectedNodeId]='selectedNodeId',
           [currentTheme]='currentTheme',
           (nodeSelected)='onNodeSelect3D($event)',
-          (nodeDoubleClicked)='openNodeProperties($event)'
+          (nodeDoubleClicked)='openNodeProperties($event)',
+          (nodeAdded)='onNodeAdded3D($event)',
+          (nodeMoved)='onNodeMoved3D($event)'
         )
 
         //- ── 2D SVG Canvas (hidden when in 3D mode, kept in DOM for ViewChild) ──

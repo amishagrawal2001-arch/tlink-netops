@@ -22,6 +22,8 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
 
     @Output() nodeSelected = new EventEmitter<string | null>()
     @Output() nodeDoubleClicked = new EventEmitter<string>()
+    @Output() nodeAdded = new EventEmitter<{ type: string; x: number; y: number }>()
+    @Output() nodeMoved = new EventEmitter<{ nodeId: string; x: number; y: number }>()
 
     @ViewChild('canvasContainer', { static: true }) containerRef!: ElementRef<HTMLDivElement>
 
@@ -41,6 +43,14 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
     private raycaster = new THREE.Raycaster()
     private mouse = new THREE.Vector2()
     private _prevSelectedMesh: THREE.Mesh | null = null
+
+    // Drag state
+    private _dragging = false
+    private _dragNodeId: string | null = null
+    private _dragMesh: THREE.Mesh | null = null
+    private _dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0) // horizontal plane
+    private _dragOffset = new THREE.Vector3()
+    private _mouseDownPos = new THREE.Vector2()
 
     // Traffic animation
     private particleGroup = new THREE.Group()
@@ -85,39 +95,149 @@ export class Netops3dCanvasComponent implements AfterViewInit, OnChanges, OnDest
         this.renderer?.dispose()
     }
 
-    // ── Click handlers ────────────────────────────────────────────────────
+    // ── Mouse handlers (select, drag-move, click) ──────────────────────
 
-    onClick (event: MouseEvent): void {
+    private _updateMouse (event: MouseEvent): void {
         const rect = this.containerRef.nativeElement.getBoundingClientRect()
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+    }
 
+    private _intersectNodes (): THREE.Intersection[] {
         this.raycaster.setFromCamera(this.mouse, this.camera)
-        const meshes = Array.from(this.nodeMeshes.values())
-        const intersects = this.raycaster.intersectObjects(meshes)
+        return this.raycaster.intersectObjects(Array.from(this.nodeMeshes.values()))
+    }
+
+    private _getWorldPoint (event: MouseEvent): THREE.Vector3 | null {
+        this._updateMouse(event)
+        this.raycaster.setFromCamera(this.mouse, this.camera)
+        const target = new THREE.Vector3()
+        const hit = this.raycaster.ray.intersectPlane(this._dragPlane, target)
+        return hit ? target : null
+    }
+
+    onMouseDown (event: MouseEvent): void {
+        if (event.button !== 0) { return } // left click only
+        this._mouseDownPos.set(event.clientX, event.clientY)
+        this._updateMouse(event)
+        const intersects = this._intersectNodes()
 
         if (intersects.length > 0) {
             const mesh = intersects[0].object as THREE.Mesh
             const nodeId = (mesh.userData as any)?.nodeId
-            if (nodeId) { this.nodeSelected.emit(nodeId) }
-        } else {
-            this.nodeSelected.emit(null)
+            if (!nodeId) { return }
+
+            // Start drag — disable orbit controls
+            this._dragging = true
+            this._dragNodeId = nodeId
+            this._dragMesh = mesh
+
+            // Set drag plane at the mesh's Y height
+            this._dragPlane.set(new THREE.Vector3(0, 1, 0), -mesh.position.y)
+
+            // Compute offset between click point and mesh center
+            const worldPt = new THREE.Vector3()
+            this.raycaster.ray.intersectPlane(this._dragPlane, worldPt)
+            this._dragOffset.subVectors(mesh.position, worldPt)
+
+            this.controls.enabled = false
+            this.nodeSelected.emit(nodeId)
         }
     }
 
+    onMouseMove (event: MouseEvent): void {
+        if (!this._dragging || !this._dragMesh || !this._dragNodeId) { return }
+
+        const worldPt = this._getWorldPoint(event)
+        if (!worldPt) { return }
+
+        // Move mesh + label + status indicator
+        const newX = worldPt.x + this._dragOffset.x
+        const newZ = worldPt.z + this._dragOffset.z
+        this._dragMesh.position.x = newX
+        this._dragMesh.position.z = newZ
+
+        const label = this.nodeLabels.get(this._dragNodeId)
+        if (label) { label.position.x = newX; label.position.z = newZ }
+        const status = this.nodeStatus.get(this._dragNodeId)
+        if (status) { status.position.x = newX + 8; status.position.z = newZ }
+
+        // Update links connected to this node
+        for (const link of (this.topology?.links ?? [])) {
+            if (link.sourceNodeId !== this._dragNodeId && link.targetNodeId !== this._dragNodeId) { continue }
+            const line = this.linkLines.get(link.id)
+            if (!line) { continue }
+            const srcMesh = this.nodeMeshes.get(link.sourceNodeId)
+            const tgtMesh = this.nodeMeshes.get(link.targetNodeId)
+            if (!srcMesh || !tgtMesh) { continue }
+            const points = [srcMesh.position.clone(), tgtMesh.position.clone()]
+            line.geometry.dispose()
+            line.geometry = new THREE.BufferGeometry().setFromPoints(points)
+        }
+    }
+
+    onMouseUp (event: MouseEvent): void {
+        if (this._dragging && this._dragNodeId && this._dragMesh) {
+            // Emit move event — convert 3D back to 2D coordinates
+            const SCALE = 0.5
+            const newX = this._dragMesh.position.x / SCALE
+            const newY = -this._dragMesh.position.z / SCALE  // flip Y back
+            this.nodeMoved.emit({ nodeId: this._dragNodeId, x: newX, y: newY })
+        }
+
+        // If mouse barely moved, treat as click (select)
+        if (!this._dragging) {
+            const dx = event.clientX - this._mouseDownPos.x
+            const dy = event.clientY - this._mouseDownPos.y
+            if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+                this._updateMouse(event)
+                const intersects = this._intersectNodes()
+                if (intersects.length > 0) {
+                    const nodeId = (intersects[0].object.userData as any)?.nodeId
+                    if (nodeId) { this.nodeSelected.emit(nodeId) }
+                } else {
+                    this.nodeSelected.emit(null)
+                }
+            }
+        }
+
+        this._dragging = false
+        this._dragNodeId = null
+        this._dragMesh = null
+        this.controls.enabled = true
+    }
+
     onDblClick (event: MouseEvent): void {
-        const rect = this.containerRef.nativeElement.getBoundingClientRect()
-        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
-
-        this.raycaster.setFromCamera(this.mouse, this.camera)
-        const meshes = Array.from(this.nodeMeshes.values())
-        const intersects = this.raycaster.intersectObjects(meshes)
-
+        this._updateMouse(event)
+        const intersects = this._intersectNodes()
         if (intersects.length > 0) {
             const nodeId = (intersects[0].object.userData as any)?.nodeId
             if (nodeId) { this.nodeDoubleClicked.emit(nodeId) }
         }
+    }
+
+    // ── Drag-and-drop from palette (add new devices) ──────────────────
+
+    onDragOver (event: DragEvent): void {
+        event.preventDefault()
+        if (event.dataTransfer) { event.dataTransfer.dropEffect = 'copy' }
+    }
+
+    onDrop (event: DragEvent): void {
+        event.preventDefault()
+        const type = event.dataTransfer?.getData('nodeType')
+        if (!type) { return }
+
+        // Convert drop position to 3D world coordinates on the ground plane
+        this._dragPlane.set(new THREE.Vector3(0, 1, 0), 0)
+        const worldPt = this._getWorldPoint(event as any)
+        if (!worldPt) { return }
+
+        // Convert 3D back to 2D canvas coordinates
+        const SCALE = 0.5
+        const x = worldPt.x / SCALE
+        const y = -worldPt.z / SCALE  // flip Y back
+        this.nodeAdded.emit({ type, x, y })
     }
 
     // ── Scene initialization ──────────────────────────────────────────────

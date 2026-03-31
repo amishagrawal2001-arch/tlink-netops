@@ -1,5 +1,9 @@
 .netops-3d-container(
   #canvasContainer='',
-  (click)='onClick($event)',
-  (dblclick)='onDblClick($event)'
+  (mousedown)='onMouseDown($event)',
+  (mousemove)='onMouseMove($event)',
+  (mouseup)='onMouseUp($event)',
+  (dblclick)='onDblClick($event)',
+  (dragover)='onDragOver($event)',
+  (drop)='onDrop($event)'
 )

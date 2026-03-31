@@ -5027,6 +5027,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.svc.selectNode(nodeId ?? null as any)
     }
 
+    onNodeAdded3D (event: { type: string; x: number; y: number }): void {
+        const node = this.svc.addNode(event.type as any, event.x, event.y)
+        this.statusMsg = `Added ${node.label} in 3D view`
+        this.cdr.markForCheck()
+    }
+
+    onNodeMoved3D (event: { nodeId: string; x: number; y: number }): void {
+        this.svc.moveNode(event.nodeId, event.x, event.y)
+    }
+
     // ── Digital Twin ──────────────────────────────────────────────────────
 
     toggleDigitalTwin (): void {
