@@ -290,12 +290,17 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   top: 100%;
   left: 0;
   min-width: 240px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
   background: var(--bg-menu);
   border: 1px solid var(--border-menu);
   border-radius: 8px;
   padding: 4px 0;
   z-index: 500;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65);
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 }
 
 .menu-item {
