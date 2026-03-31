@@ -57,6 +57,15 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     readonly maxScale = 4
     showMinimap = true
     viewMode: '2d' | '3d' = '2d'
+
+    // ── Digital Twin state ─────────────────────────────────────────────────
+    digitalTwinActive = false
+    twinNodeHealth = new Map<string, { cpu: number; mem: number; alarms: number }>()
+    twinConfigDrift = new Map<string, { hasDrift: boolean; addedCount: number; removedCount: number }>()
+    twinActiveAlarms = new Map<string, Array<{ severity: string; message: string }>>()
+    showTwinDashboard = false
+    private _twinPollTimer: any = null
+
     showAlarmOverlay = false
     showGrid = true
     gridSize: 'small' | 'medium' | 'large' = 'medium'
@@ -5017,6 +5026,120 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     onNodeSelect3D (nodeId: string | null): void {
         this.svc.selectNode(nodeId ?? null as any)
     }
+
+    // ── Digital Twin ──────────────────────────────────────────────────────
+
+    toggleDigitalTwin (): void {
+        this.digitalTwinActive = !this.digitalTwinActive
+        if (this.digitalTwinActive) {
+            // Start all monitoring sources
+            if (!this.livePollingActive) { this.startLivePolling() }
+            this._pollTwinState()
+            this._twinPollTimer = setInterval(() => this._pollTwinState(), 30_000)
+        } else {
+            // Stop twin-specific polling (keep live polling if user started it independently)
+            if (this._twinPollTimer) { clearInterval(this._twinPollTimer); this._twinPollTimer = null }
+            this.twinNodeHealth.clear()
+            this.twinConfigDrift.clear()
+            this.twinActiveAlarms.clear()
+            this.showTwinDashboard = false
+        }
+        this.cdr.markForCheck()
+    }
+
+    private async _pollTwinState (): Promise<void> {
+        if (!this.digitalTwinActive) { return }
+        const api = (window as any).netopsAPI
+
+        // Collect alarms from inventory service
+        for (const node of this.topology.nodes) {
+            const nodeAlarms = this.invSvc.allAlarms
+                .filter(a => a.nodeId === node.id && !a.clearedAt)
+                .map(a => ({ severity: a.severity, message: a.message }))
+            if (nodeAlarms.length) {
+                this.twinActiveAlarms.set(node.id, nodeAlarms)
+            } else {
+                this.twinActiveAlarms.delete(node.id)
+            }
+        }
+
+        // Poll health for mapped nodes via SSH
+        for (const node of this.topology.nodes) {
+            if (!node.mapped || !node.mgmtIp || !node.sshUsername) { continue }
+            try {
+                await this.invSvc.pollDevice(node.id)
+                const devVer = this.invSvc.store.deviceVersions[node.id]
+                if (devVer) {
+                    this.twinNodeHealth.set(node.id, {
+                        cpu: devVer.cpuPercent ?? 0,
+                        mem: devVer.memoryUsedPercent ?? 0,
+                        alarms: this.twinActiveAlarms.get(node.id)?.length ?? 0,
+                    })
+                }
+            } catch { /* poll failed — keep previous state */ }
+        }
+
+        // Config drift detection for containerlab nodes
+        if (api?.clabFetchConfig && this.clabContainers?.length) {
+            for (const node of this.topology.nodes) {
+                if (!node.vendor || !node.startupConfig?.trim()) { continue }
+                const safeName = node.label.replace(/\s+/g, '-').toLowerCase()
+                const ctn = this.clabContainers.find(c => c.name.endsWith('-' + safeName) && c.state === 'running')
+                if (!ctn) { continue }
+                try {
+                    const result = await api.clabFetchConfig({ containerName: ctn.name, kind: ctn.kind })
+                    if (result.ok && result.output) {
+                        const drift = this._computeConfigDrift(node.startupConfig, result.output)
+                        if (drift.hasDrift) {
+                            this.twinConfigDrift.set(node.id, drift)
+                        } else {
+                            this.twinConfigDrift.delete(node.id)
+                        }
+                    }
+                } catch { /* fetch failed */ }
+            }
+        }
+
+        this.cdr.markForCheck()
+    }
+
+    private _computeConfigDrift (generated: string, running: string): { hasDrift: boolean; addedCount: number; removedCount: number } {
+        // Normalize: extract set-style lines, sort, strip comments
+        const normalize = (cfg: string): Set<string> => {
+            return new Set(
+                cfg.split('\n')
+                    .map(l => l.trim())
+                    .filter(l => l && !l.startsWith('#') && !l.startsWith('!') && !l.startsWith('/*'))
+                    .map(l => l.replace(/\s+/g, ' '))
+            )
+        }
+        const genLines = normalize(generated)
+        const runLines = normalize(running)
+
+        let added = 0
+        let removed = 0
+        for (const line of runLines) {
+            if (!genLines.has(line)) { added++ }
+        }
+        for (const line of genLines) {
+            if (!runLines.has(line)) { removed++ }
+        }
+
+        // Allow small drift tolerance (timestamps, dynamic entries)
+        const hasDrift = (added + removed) > 5
+        return { hasDrift, addedCount: added, removedCount: removed }
+    }
+
+    getTwinAlarmSeverity (nodeId: string): string {
+        const alarms = this.twinActiveAlarms.get(nodeId)
+        if (!alarms?.length) { return '' }
+        if (alarms.some(a => a.severity === 'critical')) { return 'critical' }
+        if (alarms.some(a => a.severity === 'major')) { return 'major' }
+        return 'minor'
+    }
+
+    getTwinCpu (nodeId: string): number { return this.twinNodeHealth.get(nodeId)?.cpu ?? -1 }
+    getTwinMem (nodeId: string): number { return this.twinNodeHealth.get(nodeId)?.mem ?? -1 }
 
     // ── Traffic Flow Visualization ─────────────────────────────────────
 

@@ -784,6 +784,19 @@
               (click)='toggle3DView()',
               title='3D Topology View'
             ) 3D
+            .view-bar-sep
+            button.view-bar-btn.twin-btn(
+              type='button',
+              [class.active]='digitalTwinActive',
+              (click)='toggleDigitalTwin()',
+              title='Digital Twin — live device state overlay'
+            ) Twin
+            button.view-bar-btn(
+              *ngIf='digitalTwinActive',
+              [class.active]='showTwinDashboard',
+              (click)='showTwinDashboard = !showTwinDashboard; cdr.markForCheck()',
+              title='Twin Dashboard'
+            ) Dashboard
 
         //- ── Minimap overlay ──────────────────────────────────────────
         svg.canvas-minimap(
@@ -1041,6 +1054,38 @@
                   x='10', y='13',
                   text-anchor='middle'
                 ) M
+                //- ── Digital Twin overlays ─────────────────────────────
+                //- Alarm pulse ring
+                circle.twin-alarm-ring(
+                  *ngIf='digitalTwinActive && getTwinAlarmSeverity(node.id)',
+                  [attr.cx]='nodeW(node) / 2',
+                  [attr.cy]='nodeH(node) / 2',
+                  [attr.r]='nodeW(node) / 2 + 6',
+                  [class.critical]='getTwinAlarmSeverity(node.id) === "critical"',
+                  [class.major]='getTwinAlarmSeverity(node.id) === "major"',
+                  [class.minor]='getTwinAlarmSeverity(node.id) === "minor"'
+                )
+                //- Config drift indicator
+                text.twin-drift-icon(
+                  *ngIf='digitalTwinActive && twinConfigDrift.has(node.id)',
+                  [attr.x]='nodeW(node) - 2',
+                  y='-4',
+                  text-anchor='end',
+                  title='Config drift detected'
+                ) ⚠
+                //- CPU gauge badge
+                g.twin-health-badge(
+                  *ngIf='digitalTwinActive && getTwinCpu(node.id) >= 0',
+                  [attr.transform]='"translate(" + (nodeW(node) + 4) + ", 2)"'
+                )
+                  rect(width='28', height='10', rx='3', fill='#1a1a2e', stroke='#333', stroke-width='0.5')
+                  rect.twin-gauge-fill(
+                    [attr.width]='getTwinCpu(node.id) / 100 * 26 + 1',
+                    height='8', x='1', y='1', rx='2',
+                    [attr.fill]='getTwinCpu(node.id) > 80 ? "#ef4444" : getTwinCpu(node.id) > 50 ? "#f59e0b" : "#22c55e"'
+                  )
+                  text(x='14', y='8', text-anchor='middle', fill='white', font-size='6') {{ getTwinCpu(node.id) }}%
+
                 text.node-type-icon(
                   text-anchor='middle',
                   dominant-baseline='middle',
@@ -3899,6 +3944,50 @@
         span.help-footer-version v1.0.0
         span.help-footer-sep ·
         a.help-footer-link(href='javascript:void(0)') Report a Bug
+
+  //- ── Digital Twin Dashboard Panel ──────────────────────────────────────────
+  .twin-dashboard-panel(*ngIf='showTwinDashboard && digitalTwinActive')
+    .twin-dashboard-header
+      span.twin-dashboard-title Digital Twin Dashboard
+      span.twin-dashboard-status
+        span.twin-dot(:class='livePollingActive ? "active" : ""')
+        | {{ livePollingActive ? 'Polling' : 'Idle' }}
+      button.twin-dashboard-close(type='button', (click)='showTwinDashboard = false; cdr.markForCheck()') ✕
+    .twin-dashboard-body
+      table.twin-table
+        thead
+          tr
+            th Node
+            th Status
+            th CPU
+            th Mem
+            th BGP
+            th Alarms
+            th Drift
+        tbody
+          tr.twin-row(
+            *ngFor='let node of topology?.nodes',
+            [class.twin-row-critical]='getTwinAlarmSeverity(node.id) === "critical"',
+            [class.twin-row-warning]='getTwinAlarmSeverity(node.id) === "major" || getTwinAlarmSeverity(node.id) === "minor"',
+            (click)='svc.selectNode(node.id)'
+          )
+            td.twin-cell-name {{ node.label }}
+            td
+              span.twin-status-dot([class.running]='node.status === "running"', [class.stopped]='node.status === "stopped"')
+              | {{ node.status }}
+            td
+              span(*ngIf='getTwinCpu(node.id) >= 0', [style.color]='getTwinCpu(node.id) > 80 ? "#ef4444" : getTwinCpu(node.id) > 50 ? "#f59e0b" : "#22c55e"') {{ getTwinCpu(node.id) }}%
+              span(*ngIf='getTwinCpu(node.id) < 0') —
+            td
+              span(*ngIf='getTwinMem(node.id) >= 0', [style.color]='getTwinMem(node.id) > 80 ? "#ef4444" : getTwinMem(node.id) > 50 ? "#f59e0b" : "#22c55e"') {{ getTwinMem(node.id) }}%
+              span(*ngIf='getTwinMem(node.id) < 0') —
+            td {{ liveSummary.bgpUp }}/{{ liveSummary.bgpTotal }}
+            td
+              span.twin-alarm-count(*ngIf='twinActiveAlarms.has(node.id)') {{ twinActiveAlarms.get(node.id)?.length }}
+              span(*ngIf='!twinActiveAlarms.has(node.id)') 0
+            td
+              span.twin-drift-badge(*ngIf='twinConfigDrift.has(node.id)') Drift
+              span(*ngIf='!twinConfigDrift.has(node.id)') ✓
 
   //- ── Embedded Terminal Panel ────────────────────────────────────────────────
   terminal-panel(
