@@ -1882,6 +1882,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     }
 
     private svgPt (ev: MouseEvent): { x: number; y: number } {
+        if (!this.svgRef?.nativeElement) { return { x: 0, y: 0 } }
         const r = this.svgRef.nativeElement.getBoundingClientRect()
         return {
             x: (ev.clientX - r.left - this.vpX) / this.vpScale,
@@ -1890,10 +1891,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     }
 
     onWheel (ev: WheelEvent): void {
+        if (this.viewMode !== '2d' || !this.svgRef?.nativeElement) { return }
         ev.preventDefault()
-        // Use deltaMode-aware exponential scaling:
-        // - trackpads (pixel mode) get enough sensitivity on small deltas
-        // - mouse wheels (line/page mode) stay predictable
         const unit = ev.deltaMode === 0 ? 45 : (ev.deltaMode === 1 ? 3 : 1)
         const scaledDelta = ev.deltaY / unit
         const clampedDelta = Math.max(-6, Math.min(6, scaledDelta))
@@ -1930,6 +1929,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
             if (a.y + ah > maxY) { maxY = a.y + ah }
         }
         if (!isFinite(minX)) { this.resetView(); return }
+        if (!this.svgRef?.nativeElement) { return }
         const svgR = this.svgRef.nativeElement.getBoundingClientRect()
         const contentW = maxX - minX + pad * 2
         const contentH = maxY - minY + pad * 2
