@@ -1,0 +1,253 @@
+// ── Shared overlay/dialog styles (needed due to Angular view encapsulation) ──
+
+:host { display: contents }
+
+.auto-ip-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 10, 16, 0.72);
+    z-index: 260;
+}
+
+.auto-ip-dialog {
+    width: min(460px, calc(100vw - 40px));
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    background: var(--bg-app);
+    border: 1px solid var(--border-panel);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auto-ip-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-heading);
+}
+
+.auto-ip-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.auto-ip-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+// Shared form styles
+.event-rule-empty { color: var(--text-muted); font-size: 12px; padding: 10px 0 }
+.event-rule-top { display: flex; align-items: center; gap: 8px }
+.event-rule-toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text); font-weight: 600; flex: 1; cursor: pointer;
+    input { cursor: pointer }
+}
+.event-rule-remove {
+    background: transparent; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer;
+    &:hover { color: var(--danger) }
+}
+.event-rule-detail { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10px }
+.event-rule-tag { background: var(--accent-10); color: var(--accent-light); padding: 1px 6px; border-radius: 3px; font-size: 10px }
+.event-rule-filter { color: var(--text-muted); font-size: 9px }
+.event-rules-sep { height: 1px; background: var(--border-panel); margin: 8px 0 }
+.event-rules-add-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px }
+.event-rules-form { display: flex; flex-direction: column; gap: 6px }
+.er-input {
+    background: var(--bg-input); border: 1px solid var(--border-panel); color: var(--text-heading);
+    border-radius: 6px; padding: 6px 8px; font-size: 12px; outline: none; width: 100%;
+    box-sizing: border-box; font-family: inherit;
+    &:focus { border-color: var(--accent-light) }
+}
+.er-row { display: flex; align-items: center; gap: 8px }
+.er-label { font-size: 11px; color: var(--text-muted); width: 70px; flex-shrink: 0 }
+.er-select {
+    flex: 1; background: var(--bg-input); border: 1px solid var(--border-panel);
+    color: var(--text-heading); border-radius: 6px; padding: 5px 8px; font-size: 12px;
+    outline: none; font-family: inherit;
+    &:focus { border-color: var(--accent-light) }
+}
+
+.btn-tool {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer;
+    &:hover { filter: brightness(1.1) }
+    &:disabled { opacity: 0.5; cursor: default }
+}
+.btn-ghost {
+    background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer;
+    &:hover { color: var(--text); border-color: var(--accent) }
+}
+
+// ── Compliance-specific styles ──────────────────────────────────────────────
+
+.compliance-dialog {
+    width: min(620px, calc(100vw - 40px));
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.compliance-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+}
+
+.compliance-tab {
+    flex: 1;
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-panel);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    &.active {
+        background: var(--bg-app);
+        color: var(--text-heading);
+        border-bottom-color: transparent;
+    }
+    &:hover:not(.active) { color: var(--text) }
+}
+
+.compliance-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 320px;
+    overflow-y: auto;
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+.compliance-rule-card {
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-panel);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.compliance-rule-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.compliance-rule-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    &:hover { color: var(--accent-light) }
+}
+
+.compliance-severity {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    &[data-severity='critical'] { background: #ef444422; color: #ef4444 }
+    &[data-severity='major']    { background: #f9731622; color: #f97316 }
+    &[data-severity='minor']    { background: #f59e0b22; color: #f59e0b }
+    &[data-severity='warning']  { background: #3b82f622; color: #3b82f6 }
+}
+
+.compliance-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+.compliance-edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+// ── Results ─────────────────────────────────────────────────────────────────
+
+.compliance-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 400px;
+    overflow-y: auto;
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+.compliance-checking {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 16px 0;
+    text-align: center;
+}
+
+.compliance-result-card {
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-panel);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.compliance-result-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.compliance-result-node {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-heading);
+}
+
+.compliance-result-score {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.score-green { background: #22c55e22; color: #22c55e }
+.score-amber { background: #f59e0b22; color: #f59e0b }
+.score-red   { background: #ef444422; color: #ef4444 }
+
+.compliance-result-detail {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+    font-size: 11px;
+}
+
+.compliance-result-stat {
+    &.stat-pass { color: #22c55e }
+    &.stat-fail { color: #ef4444 }
+}
+
+.compliance-failed-list {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.compliance-failed-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+}

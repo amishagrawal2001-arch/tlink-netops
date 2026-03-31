@@ -1,0 +1,87 @@
+.auto-ip-overlay((click)='close()')
+  .auto-ip-dialog.event-rules-dialog((click)='$event.stopPropagation()')
+    .auto-ip-title Event Rules
+    .auto-ip-subtitle Automate actions based on inventory events.
+
+    //- Existing rules list
+    .event-rules-list
+      .event-rule-empty(*ngIf='eventRules.length === 0') No event rules defined.
+      .event-rule-card(*ngFor='let r of eventRules')
+        .event-rule-top
+          label.event-rule-toggle
+            input(type='checkbox', [checked]='r.enabled', (change)='toggleRule(r.id)')
+            span {{ r.name }}
+          button.event-rule-remove(type='button', (click)='removeRule(r.id)') ✕
+        .event-rule-detail
+          span.event-rule-tag {{ r.trigger }}
+          span.event-rule-arrow →
+          span.event-rule-tag {{ r.action }}
+          span.event-rule-filter(*ngIf='r.nodeFilter && r.nodeFilter !== "*"') node: {{ r.nodeFilter }}
+          span.event-rule-filter(*ngIf='r.vendorFilter && r.vendorFilter !== "*"') vendor: {{ r.vendorFilter }}
+        .event-rule-detail(*ngIf='r.trigger === "command_check" && r.actionConfig.checkCommand')
+          span.event-rule-filter cmd: {{ r.actionConfig.checkCommand }}
+          span.event-rule-filter(*ngIf='r.actionConfig.checkPattern') match: {{ r.actionConfig.checkPattern }}
+        .event-rule-detail(*ngIf='r.action === "webhook" && r.actionConfig.webhookUrl')
+          span.event-rule-filter url: {{ r.actionConfig.webhookUrl }}
+
+    .event-rules-sep
+    .event-rules-add-title Add Rule
+    .event-rules-form
+      input.er-input(type='text', placeholder='Rule name', [(ngModel)]='newRuleName')
+      .er-row
+        label.er-label Trigger
+        select.er-select([(ngModel)]='newRuleTrigger')
+          option(*ngFor='let t of triggerOptions', [value]='t.value') {{ t.label }}
+      .er-row(*ngIf='newRuleTrigger === "command_check"')
+        label.er-label Check Cmd
+        input.er-input(type='text', placeholder='show system alarms', [(ngModel)]='newRuleCheckCommand')
+      .er-row(*ngIf='newRuleTrigger === "command_check"')
+        label.er-label Match
+        input.er-input(type='text', placeholder='Fan.*Degraded|Not Present', [(ngModel)]='newRuleCheckPattern')
+      .er-row
+        label.er-label Action
+        select.er-select([(ngModel)]='newRuleAction')
+          option(*ngFor='let a of actionOptions', [value]='a.value') {{ a.label }}
+      .er-row
+        label.er-label Node Filter
+        input.er-input(type='text', placeholder='* (all)', [(ngModel)]='newRuleNodeFilter')
+      .er-row
+        label.er-label Vendor
+        select.er-select([(ngModel)]='newRuleVendorFilter')
+          option(*ngFor='let v of vendorOptions', [value]='v') {{ v === '*' ? 'All vendors' : v }}
+
+      //- Action-specific config
+      .er-row(*ngIf='newRuleAction === "notify"')
+        label.er-label Message
+        input.er-input(type='text', placeholder='Alert message...', [(ngModel)]='newRuleMessage')
+      .er-row(*ngIf='newRuleAction === "run_command"')
+        label.er-label Command
+        input.er-input(type='text', placeholder='show version', [(ngModel)]='newRuleCommand')
+      .er-row(*ngIf='newRuleAction === "webhook"')
+        label.er-label URL
+        input.er-input(type='text', placeholder='https://hooks.example.com/...', [(ngModel)]='newRuleWebhookUrl')
+      .er-row(*ngIf='newRuleAction === "webhook"')
+        label.er-label Method
+        select.er-select([(ngModel)]='newRuleWebhookMethod')
+          option(value='POST') POST
+          option(value='PUT') PUT
+          option(value='PATCH') PATCH
+      .er-row(*ngIf='newRuleAction === "webhook"')
+        label.er-label Headers
+        input.er-input(type='text', placeholder='{"Authorization":"Bearer ..."}', [(ngModel)]='newRuleWebhookHeaders')
+
+    //- Event log
+    .event-rules-sep
+    .event-rules-add-title
+      | Recent Events
+      button.er-log-toggle(type='button', (click)='showEventLog = !showEventLog') {{ showEventLog ? '▾' : '▸' }}
+    .event-log-list(*ngIf='showEventLog')
+      .event-log-empty(*ngIf='recentEventLog.length === 0') No events yet.
+      .event-log-item(*ngFor='let ev of recentEventLog')
+        span.event-log-type {{ ev.type }}
+        span.event-log-device {{ getNodeLabel(ev.nodeId) }}
+        span.event-log-time {{ relativeTime(ev.timestamp) }}
+
+    .auto-ip-actions
+      button.btn-tool(type='button', [disabled]='!newRuleName.trim()', (click)='addRule()') Add Rule
+      button.btn-ghost(type='button', (click)='close()') Close

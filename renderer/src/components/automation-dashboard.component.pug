@@ -1,0 +1,70 @@
+.auto-dash-overlay((click)='close()')
+  .auto-dash-panel((click)='$event.stopPropagation()')
+    .auto-dash-header
+      h3.auto-dash-title Automation Dashboard
+      .auto-dash-header-right
+        span.auto-dash-last-poll Last poll: {{ lastPollTime }}
+        button.auto-dash-close(type='button', (click)='close()') ✕
+
+    .auto-dash-body
+      //- Quick actions bar
+      .auto-dash-actions
+        button.auto-dash-action-btn(type='button', (click)='backupAllNow()') 🗄 Backup All
+        button.auto-dash-action-btn(type='button', (click)='pollAllNow()') 📡 Poll All
+        button.auto-dash-action-btn(type='button', (click)='runComplianceCheck()') ✓ Compliance Check
+        .auto-dash-spacer
+        span.auto-dash-score Health: {{ healthScore }}%
+
+      //- Alarms section
+      .auto-dash-section
+        h4.auto-dash-section-title Active Alarms ({{ activeAlarms.length }})
+        .auto-dash-empty(*ngIf='!activeAlarms.length') No active alarms
+        table.auto-dash-table(*ngIf='activeAlarms.length')
+          thead
+            tr
+              th Severity
+              th Node
+              th Category
+              th Message
+              th Time
+              th
+          tbody
+            tr.auto-dash-alarm-row(
+              *ngFor='let alarm of activeAlarms',
+              [class.critical]='alarm.severity === "critical"',
+              [class.major]='alarm.severity === "major"'
+            )
+              td
+                span.alarm-severity-dot([class]='alarm.severity')
+                | {{ alarm.severity }}
+              td {{ getNodeLabel(alarm.nodeId) }}
+              td {{ alarm.category }}
+              td {{ alarm.message }}
+              td {{ formatTime(alarm.raisedAt) }}
+              td
+                button.auto-dash-small-btn(type='button', (click)='acknowledgeAlarm(alarm.id)') Ack
+                button.auto-dash-small-btn(type='button', (click)='clearAlarm(alarm.id)') Clear
+
+      //- Recent events section
+      .auto-dash-section
+        h4.auto-dash-section-title Recent Events ({{ recentEvents.length }})
+        .auto-dash-events
+          .auto-dash-event(*ngFor='let ev of recentEvents')
+            span.event-type-badge([class]='ev.type') {{ ev.type }}
+            span.event-node {{ getNodeLabel(ev.nodeId) }}
+            span.event-detail {{ ev.detail }}
+            span.event-time {{ formatTime(ev.timestamp) }}
+
+      //- Backups section
+      .auto-dash-section
+        h4.auto-dash-section-title Backup Status
+        .auto-dash-backup-grid
+          .auto-dash-backup-card(*ngFor='let node of backupNodes')
+            span.backup-node-name {{ node.label }}
+            span.backup-last {{ node.lastBackup || 'Never' }}
+            span.backup-drift([class.drift]='node.hasDrift') {{ node.hasDrift ? 'Drift' : 'OK' }}
+
+      //- Rules section
+      .auto-dash-section
+        h4.auto-dash-section-title Automation Rules
+        span.auto-dash-rule-count {{ activeRulesCount }} active / {{ totalRulesCount }} total

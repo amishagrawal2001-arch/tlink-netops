@@ -13,8 +13,12 @@ import { TemplatePreviewComponent } from './components/template-preview.componen
 import { TerminalPanelComponent }   from './components/terminal-panel.component'
 import { Netops3dCanvasComponent }  from './components/netops-3d-canvas.component'
 import { DeviceMapperComponent }    from './components/device-mapper.component'
+import { BackupHistoryComponent }   from './components/backup-history.component'
 import { TopologyBuilderComponent } from './components/topology-builder.component'
 import { HelpViewComponent }        from './components/help-view.component'
+import { CompliancePanelComponent } from './components/compliance-panel.component'
+import { EventRulesComponent }      from './components/event-rules.component'
+import { AutomationDashboardComponent } from './components/automation-dashboard.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
 import { TabManagerService }       from './services/tab-manager.service'
 import { LicenseService }          from './services/license.service'
@@ -37,8 +41,12 @@ import { TAB_MANAGER }             from './api/tokens'
         TerminalPanelComponent,
         Netops3dCanvasComponent,
         DeviceMapperComponent,
+        BackupHistoryComponent,
         TopologyBuilderComponent,
         HelpViewComponent,
+        CompliancePanelComponent,
+        EventRulesComponent,
+        AutomationDashboardComponent,
         SafeHtmlPipe,
     ],
     providers: [

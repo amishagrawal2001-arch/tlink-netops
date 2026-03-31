@@ -1,0 +1,269 @@
+// ── Event Rules Component Styles ─────────────────────────────────────────────
+// Self-contained styles (Angular view encapsulation requires each component
+// to define its own styles).
+
+:host { display: contents }
+
+.auto-ip-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 10, 16, 0.72);
+    z-index: 260;
+}
+
+.auto-ip-dialog {
+    width: min(460px, calc(100vw - 40px));
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    background: var(--bg-app);
+    border: 1px solid var(--border-panel);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auto-ip-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-heading);
+}
+
+.auto-ip-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.auto-ip-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.event-rules-dialog {
+    width: min(560px, calc(100vw - 40px));
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.event-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+.event-rule-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 10px 0;
+}
+
+.event-rule-card {
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-panel);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.event-rule-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.event-rule-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 600;
+    flex: 1;
+    cursor: pointer;
+    input { cursor: pointer }
+}
+
+.event-rule-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    &:hover { color: var(--danger) }
+}
+
+.event-rule-detail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 10px;
+}
+
+.event-rule-tag {
+    background: var(--accent-10);
+    color: var(--accent-light);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+.event-rule-arrow { color: var(--text-muted) }
+
+.event-rule-filter {
+    color: var(--text-muted);
+    font-size: 9px;
+}
+
+.event-rules-sep {
+    height: 1px;
+    background: var(--border-panel);
+    margin: 8px 0;
+}
+
+.event-rules-add-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.event-rules-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.er-input {
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    color: var(--text-heading);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    &:focus { border-color: var(--accent-light) }
+}
+
+.er-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.er-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 70px;
+    flex-shrink: 0;
+}
+
+.er-select {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border-panel);
+    color: var(--text-heading);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+    font-family: inherit;
+    &:focus { border-color: var(--accent-light) }
+}
+
+.er-log-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 1px 6px;
+    margin-left: 6px;
+    &:hover { color: var(--text); border-color: var(--accent) }
+}
+
+.event-log-list {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    &::-webkit-scrollbar { width: 4px }
+    &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px }
+}
+
+.event-log-empty {
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 8px 0;
+    text-align: center;
+}
+
+.event-log-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    font-size: 10px;
+    border-radius: 3px;
+    background: var(--bg-canvas);
+}
+
+.event-log-type {
+    background: var(--accent-15);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.event-log-device {
+    color: var(--text);
+    flex: 1;
+}
+
+.event-log-time {
+    color: var(--text-muted);
+    font-size: 9px;
+}
+
+// Buttons (shared pattern)
+.btn-tool {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    &:hover { filter: brightness(1.1) }
+    &:disabled { opacity: 0.5; cursor: default }
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    &:hover { color: var(--text); border-color: var(--accent) }
+}

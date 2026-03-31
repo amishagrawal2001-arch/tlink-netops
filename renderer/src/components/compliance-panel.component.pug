@@ -1,0 +1,115 @@
+.auto-ip-overlay((click)='close()')
+  .auto-ip-dialog.compliance-dialog((click)='$event.stopPropagation()')
+    .auto-ip-title Golden Config Compliance
+    .auto-ip-subtitle Check device configurations against compliance rules.
+
+    //- Tab bar
+    .compliance-tabs
+      button.compliance-tab(
+        type='button',
+        [class.active]='activeTab === "rules"',
+        (click)='setTab("rules")'
+      ) Rules ({{ rules.length }})
+      button.compliance-tab(
+        type='button',
+        [class.active]='activeTab === "results"',
+        (click)='setTab("results")'
+      ) Results ({{ results.length }})
+
+    //- ── Rules Tab ──────────────────────────────────────────────────────────
+    ng-container(*ngIf='activeTab === "rules"')
+      .compliance-rules-list
+        .event-rule-empty(*ngIf='rules.length === 0') No compliance rules defined. Click "Add Rule" to get started.
+        .compliance-rule-card(*ngFor='let r of rules')
+          ng-container(*ngIf='editingId !== r.id')
+            .event-rule-top
+              label.event-rule-toggle
+                input(type='checkbox', [checked]='r.enabled', (change)='toggleRule(r.id)')
+                span {{ r.name }}
+              .compliance-rule-actions
+                button.compliance-rule-btn(type='button', title='Edit', (click)='startEdit(r)') ✎
+                button.event-rule-remove(type='button', title='Delete', (click)='removeRule(r.id)') ✕
+            .event-rule-detail
+              span.event-rule-tag {{ r.vendor }}
+              span.compliance-severity([attr.data-severity]='r.severity') {{ r.severity }}
+              span.event-rule-filter pattern: {{ r.pattern }}
+            .event-rule-detail(*ngIf='r.description')
+              span.event-rule-filter {{ r.description }}
+
+          //- Inline edit form
+          ng-container(*ngIf='editingId === r.id')
+            .compliance-edit-form
+              .er-row
+                label.er-label Name
+                input.er-input(type='text', [(ngModel)]='editName')
+              .er-row
+                label.er-label Vendor
+                select.er-select([(ngModel)]='editVendor')
+                  option(*ngFor='let v of vendorOptions', [value]='v') {{ v === '*' ? 'All' : v }}
+              .er-row
+                label.er-label Role
+                input.er-input(type='text', placeholder='* (all)', [(ngModel)]='editRole')
+              .er-row
+                label.er-label Pattern
+                input.er-input(type='text', [(ngModel)]='editPattern')
+              .er-row
+                label.er-label Severity
+                select.er-select([(ngModel)]='editSeverity')
+                  option(*ngFor='let s of severityOptions', [value]='s') {{ s }}
+              .er-row
+                label.er-label Desc
+                input.er-input(type='text', [(ngModel)]='editDescription')
+              .compliance-edit-actions
+                button.btn-tool(type='button', (click)='saveEdit()') Save
+                button.btn-ghost(type='button', (click)='cancelEdit()') Cancel
+
+      //- Add rule form
+      .event-rules-sep
+      ng-container(*ngIf='!showAddForm')
+        button.btn-tool(type='button', (click)='toggleAddForm()') + Add Rule
+      ng-container(*ngIf='showAddForm')
+        .event-rules-add-title New Rule
+        .event-rules-form
+          input.er-input(type='text', placeholder='Rule name', [(ngModel)]='newName')
+          .er-row
+            label.er-label Vendor
+            select.er-select([(ngModel)]='newVendor')
+              option(*ngFor='let v of vendorOptions', [value]='v') {{ v === '*' ? 'All' : v }}
+          .er-row
+            label.er-label Role
+            input.er-input(type='text', placeholder='* (all)', [(ngModel)]='newRole')
+          .er-row
+            label.er-label Pattern
+            input.er-input(type='text', placeholder='Regex pattern', [(ngModel)]='newPattern')
+          .er-row
+            label.er-label Severity
+            select.er-select([(ngModel)]='newSeverity')
+              option(*ngFor='let s of severityOptions', [value]='s') {{ s }}
+          .er-row
+            label.er-label Description
+            input.er-input(type='text', placeholder='Why this matters', [(ngModel)]='newDescription')
+          .compliance-edit-actions
+            button.btn-tool(type='button', [disabled]='!newName.trim() || !newPattern.trim()', (click)='addRule()') Add
+            button.btn-ghost(type='button', (click)='toggleAddForm()') Cancel
+
+    //- ── Results Tab ────────────────────────────────────────────────────────
+    ng-container(*ngIf='activeTab === "results"')
+      .compliance-results-list
+        .event-rule-empty(*ngIf='results.length === 0 && !checking') No results yet. Click "Run Check" to evaluate compliance.
+        .compliance-checking(*ngIf='checking') Checking compliance...
+        .compliance-result-card(*ngFor='let r of results')
+          .compliance-result-top
+            span.compliance-result-node {{ r.nodeLabel }}
+            span.compliance-result-score([class]='scoreClass(r.score)') {{ r.score }}%
+          .compliance-result-detail
+            span.compliance-result-stat.stat-pass Passed: {{ r.passed.length }}
+            span.compliance-result-stat.stat-fail Failed: {{ r.failed.length }}
+          .compliance-failed-list(*ngIf='r.failed.length > 0')
+            .compliance-failed-item(*ngFor='let f of r.failed')
+              span.compliance-severity([attr.data-severity]='f.severity') {{ f.severity }}
+              span {{ f.name }}
+
+    //- Actions
+    .auto-ip-actions
+      button.btn-tool(type='button', [disabled]='checking', (click)='runCheck()') {{ checking ? 'Checking...' : 'Run Check' }}
+      button.btn-ghost(type='button', (click)='close()') Close

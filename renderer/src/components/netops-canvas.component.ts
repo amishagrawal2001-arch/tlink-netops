@@ -69,6 +69,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     twinActiveAlarms = new Map<string, Array<{ severity: string; message: string }>>()
     showTwinDashboard = false
     showDeviceMapper = false
+    showBackupHistory = false
     discoveredDevicesList: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }> = []
     private _twinPollTimer: any = null
 
@@ -403,6 +404,9 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showAlarmPanel = false
     showEventRulesDialog = false
     showUpgradesDialog = false
+    showCompliancePanel = false
+    showEventRulesPanel = false
+    showAutomationDashboard = false
     showConfigViewer = false
     configViewerContent = ''
     configViewerTitle = ''
@@ -13005,6 +13009,24 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    openCompliancePanel (): void {
+        this.showCompliancePanel = true
+        this.cdr.markForCheck()
+    }
+    closeCompliancePanel (): void {
+        this.showCompliancePanel = false
+        this.cdr.markForCheck()
+    }
+
+    openEventRulesPanel (): void {
+        this.showEventRulesPanel = true
+        this.cdr.markForCheck()
+    }
+    closeEventRulesPanel (): void {
+        this.showEventRulesPanel = false
+        this.cdr.markForCheck()
+    }
+
     // ── Help Window (separate Electron BrowserWindow) ─────────────────────
 
     openHelpDialog (): void {
@@ -13829,6 +13851,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     newRuleCommand = ''
     newRuleCheckCommand = ''
     newRuleCheckPattern = ''
+    newRuleWebhookUrl = ''
+    newRuleWebhookMethod = 'POST'
     readonly vendorOptions = ['*', 'cisco', 'juniper', 'arista', 'nokia', 'sonic', 'huawei', 'hpe', 'dell', 'mikrotik', 'extreme']
     showEventLog = false
 
@@ -13850,6 +13874,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 command: this.newRuleCommand || undefined,
                 checkCommand: this.newRuleCheckCommand || undefined,
                 checkPattern: this.newRuleCheckPattern || undefined,
+                webhookUrl: this.newRuleWebhookUrl || undefined,
+                webhookMethod: this.newRuleWebhookMethod !== 'POST' ? this.newRuleWebhookMethod : undefined,
             },
         })
         this.newRuleName = ''
@@ -13857,6 +13883,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.newRuleCommand = ''
         this.newRuleCheckCommand = ''
         this.newRuleCheckPattern = ''
+        this.newRuleWebhookUrl = ''
+        this.newRuleWebhookMethod = 'POST'
         this.cdr.markForCheck()
     }
 

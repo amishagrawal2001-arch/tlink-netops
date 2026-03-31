@@ -388,6 +388,12 @@
         button.menu-item(type='button', (click)='openEventRulesDialog(); closeMenus()')
           span.mi-icon ⚡
           span.mi-label Event Rules…
+        button.menu-item(type='button', (click)='openCompliancePanel(); closeMenus()')
+          span.mi-icon ✓
+          span.mi-label Compliance Check
+        button.menu-item(type='button', (click)='openEventRulesPanel(); closeMenus()')
+          span.mi-icon ⚙
+          span.mi-label Event Rules (Full)…
         button.menu-item(type='button', (click)='openUpgradesDialog(); closeMenus()')
           span.mi-icon ↑
           span.mi-label Upgrade Plans…
@@ -412,6 +418,12 @@
         button.menu-item(type='button', (click)='exportAlarmHistory(); closeMenus()')
           span.mi-icon ⤓
           span.mi-label Export Alarms (CSV)
+        button.menu-item(type='button', (click)='showBackupHistory = true; closeMenus()')
+          span.mi-icon 🗄
+          span.mi-label Backup History
+        button.menu-item(type='button', (click)='showAutomationDashboard = true; closeMenus()')
+          span.mi-icon 🤖
+          span.mi-label Automation Dashboard
         .menu-sep
         button.menu-item(type='button', (click)='exportAnsibleInventory(); closeMenus()')
           span.mi-icon 📦
@@ -2478,6 +2490,7 @@
             option(value='backup_config') Backup Config
             option(value='run_command') Run Command
             option(value='log') Log
+            option(value='webhook') Webhook
         .er-row
           label.er-label Node Filter
           input.er-input(type='text', placeholder='* (all)', [(ngModel)]='newRuleNodeFilter')
@@ -2491,6 +2504,15 @@
         .er-row(*ngIf='newRuleAction === "run_command"')
           label.er-label Command
           input.er-input(type='text', placeholder='show version', [(ngModel)]='newRuleCommand')
+        .er-row(*ngIf='newRuleAction === "webhook"')
+          label.er-label URL
+          input.er-input(type='text', placeholder='https://hooks.example.com/...', [(ngModel)]='newRuleWebhookUrl')
+        .er-row(*ngIf='newRuleAction === "webhook"')
+          label.er-label Method
+          select.er-select([(ngModel)]='newRuleWebhookMethod')
+            option(value='POST') POST
+            option(value='PUT') PUT
+            option(value='PATCH') PATCH
 
       //- Event log
       .event-rules-sep
@@ -2580,6 +2602,12 @@
           (click)='createUpgradePlan()'
         ) Create Plan
         button.btn-ghost(type='button', (click)='closeUpgradesDialog()') Close
+
+  //- ── Compliance Panel ──────────────────────────────────────────────────
+  compliance-panel(*ngIf='showCompliancePanel', (closed)='closeCompliancePanel()')
+
+  //- ── Event Rules Panel (standalone component) ─────────────────────────
+  event-rules(*ngIf='showEventRulesPanel', (closed)='closeEventRulesPanel()')
 
   //- ── Config Diff Viewer overlay ─────────────────────────────────────────
   .auto-ip-overlay(*ngIf='showConfigViewer', (click)='closeConfigViewer()')
@@ -3999,6 +4027,18 @@
     [discoveredDevices]='discoveredDevicesList',
     (closed)='showDeviceMapper = false; cdr.markForCheck()',
     (mappingApplied)='onMappingApplied($event)'
+  )
+
+  //- ── Automation Dashboard ────────────────────────────────────────────────
+  automation-dashboard(
+    *ngIf='showAutomationDashboard',
+    (closed)='showAutomationDashboard = false; cdr.markForCheck()'
+  )
+
+  //- ── Backup History Overlay ─────────────────────────────────────────────
+  backup-history(
+    *ngIf='showBackupHistory',
+    (closed)='showBackupHistory = false; cdr.markForCheck()'
   )
 
   //- ── Digital Twin Dashboard Panel ──────────────────────────────────────────

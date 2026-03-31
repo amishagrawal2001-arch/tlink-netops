@@ -15459,7 +15459,7 @@ export type EventTrigger =
     'alarm_cleared' | 'poll_complete' | 'version_change' | 'command_check'
 
 export type EventActionType =
-    'notify' | 'backup_config' | 'run_command' | 'log'
+    'notify' | 'backup_config' | 'run_command' | 'log' | 'webhook'
 
 export interface EventRule {
     id: string
@@ -15474,6 +15474,9 @@ export interface EventRule {
         message?: string        // for 'notify' action
         checkCommand?: string   // for 'command_check' trigger: SSH command to run on device
         checkPattern?: string   // for 'command_check' trigger: regex pattern to match output
+        webhookUrl?: string     // for 'webhook' action: target URL
+        webhookMethod?: string  // for 'webhook' action: HTTP method (default POST)
+        webhookHeaders?: Record<string, string>  // for 'webhook' action: extra headers
     }
     createdAt: string
 }

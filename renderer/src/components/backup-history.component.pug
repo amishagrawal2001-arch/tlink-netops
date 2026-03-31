@@ -1,0 +1,71 @@
+.bh-overlay((click)='close()')
+  .bh-dialog((click)='$event.stopPropagation()')
+    .bh-header
+      h3.bh-title Backup History
+      span.bh-subtitle {{ backups.length }} backup(s) stored
+      .bh-header-actions
+        button.bh-btn.bh-btn-backup(type='button', (click)='backupAllNow()') Backup All Now
+        button.bh-btn(
+          type='button',
+          [class.bh-btn-active]='invSvc.scheduledBackupsActive',
+          (click)='toggleSchedule()'
+        ) {{ invSvc.scheduledBackupsActive ? 'Stop Schedule' : 'Start Schedule' }}
+        button.bh-btn.bh-btn-diff(
+          type='button',
+          [disabled]='!canDiff()',
+          (click)='showDiff()'
+        ) Show Diff
+      button.bh-close(type='button', (click)='close()') ✕
+
+    .bh-table-wrap
+      table.bh-table
+        thead
+          tr
+            th Diff
+            th Node
+            th Timestamp
+            th Type
+            th Trigger
+            th Hash
+            th Actions
+        tbody
+          tr.bh-row(
+            *ngFor='let entry of backups',
+            [class.bh-row-selected]='selectedBackup?.id === entry.id',
+            [class.bh-row-diff]='isDiffSelected(entry.id)'
+          )
+            td
+              input(
+                type='checkbox',
+                [checked]='isDiffSelected(entry.id)',
+                (change)='toggleDiffSelection(entry.id)'
+              )
+            td.bh-cell-node {{ entry.nodeLabel }}
+            td {{ formatTime(entry.timestamp) }}
+            td
+              span.bh-badge([class.bh-badge-running]='entry.configType === "running"', [class.bh-badge-startup]='entry.configType === "startup"') {{ entry.configType }}
+            td {{ entry.trigger }}
+            td.bh-cell-hash {{ shortHash(entry.hash) }}
+            td.bh-cell-actions
+              button.bh-action-btn(type='button', title='View config', (click)='selectBackup(entry.id)') View
+              button.bh-action-btn(type='button', title='Restore to device', (click)='restoreBackup(entry)') Restore
+
+    //- Config viewer panel
+    .bh-viewer(*ngIf='selectedBackup')
+      .bh-viewer-header
+        span Viewing {{ selectedBackup.configType }} config for {{ selectedBackup.nodeLabel || selectedBackup.nodeId }}
+        span.bh-viewer-time {{ formatTime(selectedBackup.timestamp) }}
+      pre.bh-code {{ selectedBackup.content }}
+
+    //- Diff viewer panel
+    .bh-viewer(*ngIf='diffResult')
+      .bh-viewer-header
+        span Config Diff
+      pre.bh-diff-code
+        ng-container(*ngFor='let line of diffResult.split("\n")')
+          span.bh-diff-added(*ngIf='line.startsWith("+")') {{ line }}
+          | {{ '\n' }}
+          span.bh-diff-removed(*ngIf='line.startsWith("-")') {{ line }}
+          | {{ '\n' }}
+          span(*ngIf='!line.startsWith("+") && !line.startsWith("-")') {{ line }}
+          | {{ '\n' }}

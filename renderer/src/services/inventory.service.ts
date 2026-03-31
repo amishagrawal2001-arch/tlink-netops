@@ -44,6 +44,7 @@ export class InventoryService implements OnDestroy {
     private _sidecarPath: string | null = null
     private _autoSaveTimer: ReturnType<typeof setTimeout> | null = null
     private _autoSaveDebounceMs = 2000
+    private _backupTimer: any = null
 
     // Poll-all progress tracking
     pollAllTotal = 0
@@ -417,6 +418,28 @@ export class InventoryService implements OnDestroy {
         const node = this.topoSvc.getNode(entry.nodeId)
         const name = `${(node?.label ?? 'device').replace(/\s+/g, '_')}_${entry.configType}_${entry.timestamp.replace(/[:.]/g, '-')}.cfg`
         await api.inventoryExportConfig(entry.content, name)
+    }
+
+    // ── Scheduled Config Backups ──────────────────────────────────────────────
+
+    startScheduledBackups (intervalMs: number = 3600000): void {
+        this.stopScheduledBackups()
+        this._backupTimer = setInterval(() => {
+            this.backupAllConfigs('scheduled')
+        }, intervalMs)
+        // Run an initial backup immediately
+        this.backupAllConfigs('scheduled')
+    }
+
+    stopScheduledBackups (): void {
+        if (this._backupTimer != null) {
+            clearInterval(this._backupTimer)
+            this._backupTimer = null
+        }
+    }
+
+    get scheduledBackupsActive (): boolean {
+        return this._backupTimer != null
     }
 
     /**
@@ -829,6 +852,18 @@ export class InventoryService implements OnDestroy {
                     timeoutMs: 15000,
                     command: cmd,
                 })
+                break
+            }
+
+            case 'webhook': {
+                const url = rule.actionConfig?.webhookUrl
+                if (url) {
+                    fetch(url, {
+                        method: rule.actionConfig?.webhookMethod || 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(rule.actionConfig?.webhookHeaders || {}) },
+                        body: JSON.stringify({ event, rule: { id: rule.id, name: rule.name }, timestamp: new Date().toISOString() }),
+                    }).catch(() => {})
+                }
                 break
             }
 
