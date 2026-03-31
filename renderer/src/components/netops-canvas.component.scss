@@ -289,7 +289,7 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 .menu-dropdown {
   position: fixed;
   min-width: 240px;
-  max-height: calc(100vh - 70px);
+  // max-height is set dynamically via [ngStyle] based on remaining viewport space
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-menu);

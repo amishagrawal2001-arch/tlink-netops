@@ -4993,14 +4993,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const name = typeof eventOrName === 'string' ? eventOrName : nameOrUndef ?? ''
         this.openMenu = this.openMenu === name ? null : name
         if (this.openMenu && event) {
-            const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
-            if (trigger) {
-                const rect = trigger.getBoundingClientRect()
-                this.menuDropdownStyle = {
-                    top: rect.bottom + 'px',
-                    left: rect.left + 'px',
-                }
-            }
+            this._computeMenuPosition(event)
         }
         this.cdr.markForCheck()
     }
@@ -5022,14 +5015,21 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         if (!name && typeof eventOrName === 'string') { name = eventOrName }
         if (this.openMenu && this.openMenu !== name) {
             this.openMenu = name ?? null
-            if (event) {
-                const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
-                if (trigger) {
-                    const rect = trigger.getBoundingClientRect()
-                    this.menuDropdownStyle = { top: rect.bottom + 'px', left: rect.left + 'px' }
-                }
-            }
+            if (event) { this._computeMenuPosition(event) }
             this.cdr.markForCheck()
+        }
+    }
+
+    private _computeMenuPosition (event: MouseEvent): void {
+        const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
+        if (!trigger) { return }
+        const rect = trigger.getBoundingClientRect()
+        const top = rect.bottom
+        const maxH = window.innerHeight - top - 10  // 10px padding from bottom
+        this.menuDropdownStyle = {
+            top: top + 'px',
+            left: rect.left + 'px',
+            'max-height': Math.max(200, maxH) + 'px',
         }
     }
 
