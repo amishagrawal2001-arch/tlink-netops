@@ -6,6 +6,7 @@
         content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:4000 https://*.tlink.io">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NetOps</title>
+  <meta name="description" content="NetOps — Professional Network Topology Design, 3D Visualization, Lab Simulation, Digital Twin, Device Mapping, and Automation for Juniper, Cisco, Arista, Nokia, SONiC, and 8 more vendors.">
   <style>
     :root {
       /* Backgrounds */
@@ -109,8 +110,31 @@
 </head>
 <body>
   <app-shell>
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#3b82f6;font-size:18px">
-      Loading NetOps Designer…
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px">
+      <svg width="64" height="64" viewBox="0 0 512 512" style="opacity:0.8">
+        <rect width="512" height="512" rx="100" fill="#1a1a2e"/>
+        <line x1="256" y1="130" x2="370" y2="196" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <line x1="256" y1="130" x2="142" y2="196" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <line x1="370" y1="196" x2="370" y2="316" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <line x1="142" y1="196" x2="142" y2="316" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <line x1="370" y1="316" x2="256" y2="382" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <line x1="142" y1="316" x2="256" y2="382" stroke="#00d2ff" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="256" cy="130" r="16" fill="#00d2ff"/><circle cx="256" cy="130" r="6" fill="#fff"/>
+        <circle cx="370" cy="196" r="16" fill="#00d2ff"/><circle cx="370" cy="196" r="6" fill="#fff"/>
+        <circle cx="142" cy="196" r="16" fill="#00d2ff"/><circle cx="142" cy="196" r="6" fill="#fff"/>
+        <circle cx="370" cy="316" r="16" fill="#00d2ff"/><circle cx="370" cy="316" r="6" fill="#fff"/>
+        <circle cx="142" cy="316" r="16" fill="#00d2ff"/><circle cx="142" cy="316" r="6" fill="#fff"/>
+        <circle cx="256" cy="382" r="16" fill="#00d2ff"/><circle cx="256" cy="382" r="6" fill="#fff"/>
+      </svg>
+      <div style="color:#3b82f6;font-size:20px;font-weight:600">NetOps</div>
+      <div style="color:#8b949e;font-size:12px;max-width:400px;text-align:center;line-height:1.6">
+        Network Topology Design &bull; 3D Visualization &bull; Lab Simulation<br>
+        Digital Twin &bull; Device Mapping &bull; Automation<br>
+        <span style="color:#58a6ff">13 vendors</span> &bull;
+        <span style="color:#58a6ff">157 templates</span> &bull;
+        <span style="color:#58a6ff">EVPN/VXLAN</span>
+      </div>
+      <div style="color:#3b82f6;font-size:13px;margin-top:8px">Loading…</div>
     </div>
   </app-shell>
   <script src="renderer/dist/index.js"></script>
