@@ -398,45 +398,19 @@
           span.mi-icon ↑
           span.mi-label Upgrade Plans…
         .menu-sep
-        button.menu-item(type='button', (click)='openDashboard(); closeMenus()')
-          span.mi-icon ◫
-          span.mi-label Dashboard
-        .menu-sep
-        button.menu-item(type='button', (click)='exportInventoryReport(); closeMenus()')
-          span.mi-icon ⤓
-          span.mi-label Export Inventory (JSON)
-        button.menu-item(type='button', (click)='exportAllConfigs(); closeMenus()')
-          span.mi-icon 📋
-          span.mi-label Export All Configs (.cfg)
-        button.menu-item(type='button', (click)='exportTelegrafConfig(); closeMenus()')
-          span.mi-icon 📡
-          span.mi-label Export Telegraf Config
-        .menu-sep
         button.menu-item(type='button', [disabled]='!hasConfigs || configPushAllRunning', (click)='pushAllConfigs(); closeMenus()')
           span.mi-icon 🚀
           span.mi-label {{ configPushAllRunning ? 'Pushing...' : 'Push All Configs to Devices' }}
-        button.menu-item(type='button', (click)='exportAlarmHistory(); closeMenus()')
-          span.mi-icon ⤓
-          span.mi-label Export Alarms (CSV)
+        .menu-sep
         button.menu-item(type='button', (click)='showBackupHistory = true; closeMenus()')
           span.mi-icon 🗄
           span.mi-label Backup History
+        button.menu-item(type='button', (click)='openDashboard(); closeMenus()')
+          span.mi-icon ◫
+          span.mi-label Inventory Dashboard
         button.menu-item(type='button', (click)='showAutomationDashboard = true; closeMenus()')
           span.mi-icon 🤖
           span.mi-label Automation Dashboard
-        .menu-sep
-        button.menu-item(type='button', (click)='exportAnsibleInventory(); closeMenus()')
-          span.mi-icon 📦
-          span.mi-label Export Ansible Inventory
-        button.menu-item(type='button', (click)='exportAnsiblePlaybook(); closeMenus()')
-          span.mi-icon 📜
-          span.mi-label Export Ansible Playbook
-        button.menu-item(type='button', (click)='exportTerraformConfig(); closeMenus()')
-          span.mi-icon ⚙
-          span.mi-label Export Terraform
-        button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
-          span.mi-icon 🔄
-          span.mi-label Firmware Upgrade Plan
 
     //- ── Simulate ─────────────────────────
     .menu-item-wrap
@@ -512,18 +486,38 @@
           span.mi-icon ✓
           span.mi-label Validate Topology
         .menu-sep
+        button.menu-item(type='button', (click)='exportAllConfigs(); closeMenus()')
+          span.mi-icon 📋
+          span.mi-label All Configs (.cfg)
+        button.menu-item(type='button', (click)='exportInventoryReport(); closeMenus()')
+          span.mi-icon ⤓
+          span.mi-label Inventory (JSON)
+        button.menu-item(type='button', (click)='exportAlarmHistory(); closeMenus()')
+          span.mi-icon ⤓
+          span.mi-label Alarms (CSV)
+        button.menu-item(type='button', (click)='exportTelegrafConfig(); closeMenus()')
+          span.mi-icon 📡
+          span.mi-label Telegraf Config
+        .menu-sep
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportAnsibleInventory(); closeMenus()')
+          span.mi-icon 📦
           span.mi-label Ansible Inventory
         button.menu-item(type='button', [disabled]='!hasConfigs', (click)='exportAnsiblePlaybook(); closeMenus()')
+          span.mi-icon 📜
           span.mi-label Ansible Playbook
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportTerraformConfig(); closeMenus()')
+          span.mi-icon ⚙
           span.mi-label Terraform Config
+        button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
+          span.mi-icon 🔄
+          span.mi-label Firmware Upgrade Plan
+        .menu-sep
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportGns3(); closeMenus()')
           span.mi-label GNS3 Project
         button.menu-item(type='button', (click)='openClabDialog(); closeMenus()')
           span.mi-label Containerlab Topology
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportIpMatrix(); closeMenus()')
-          span.mi-label Export IP Matrix CSV
+          span.mi-label IP Matrix CSV
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openIpMatrixImport(); closeMenus()')
           span.mi-icon ⌁
           span.mi-label Import IP Matrix CSV…
