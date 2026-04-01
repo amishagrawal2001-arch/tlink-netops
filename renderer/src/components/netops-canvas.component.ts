@@ -69,6 +69,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     twinActiveAlarms = new Map<string, Array<{ severity: string; message: string }>>()
     showTwinDashboard = false
     showDeviceMapper = false
+    showMappedDevicesPanel = false
     showBackupHistory = false
     discoveredDevicesList: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }> = []
     private _twinPollTimer: any = null
@@ -5113,11 +5114,39 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.statusMsg = `Mapped ${mappings.size} nodes to physical devices`
         this.cdr.markForCheck()
 
+        // Auto-save topology so mapping persists across restarts
+        this.saveTopology()
+
         // Prompt to push configs
         if (mappings.size > 0) {
-            const push = confirm(`${mappings.size} nodes mapped. Push configs to physical devices now?`)
+            const push = confirm(`${mappings.size} nodes mapped and saved. Push configs to physical devices now?`)
             if (push) { this.pushAllConfigs({ skipConfirm: true }) }
         }
+    }
+
+    get mappedNodeCount (): number {
+        return this.topology?.nodes?.filter(n => n.mapped).length ?? 0
+    }
+
+    updateMappedField (nodeId: string, field: string, event: Event): void {
+        const value = (event.target as HTMLInputElement).value
+        this.svc.updateNodeConfig(nodeId, { [field]: value } as any)
+    }
+
+    unmapDevice (nodeId: string): void {
+        this.svc.updateNodeConfig(nodeId, { mapped: false, mappedBy: undefined } as any)
+        this.statusMsg = 'Device unmapped'
+        this.cdr.markForCheck()
+    }
+
+    unmapAllDevices (): void {
+        if (!confirm('Remove mapping from all devices?')) { return }
+        for (const node of this.topology.nodes.filter(n => n.mapped)) {
+            this.svc.updateNodeConfig(node.id, { mapped: false, mappedBy: undefined } as any)
+        }
+        this.statusMsg = 'All devices unmapped'
+        this.saveTopology()
+        this.cdr.markForCheck()
     }
 
     onNodeAdded3D (event: { type: string; x: number; y: number }): void {
@@ -8043,6 +8072,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             this.deviceMapError = `${result.unmatched} records were unmatched`
         }
         this._pendingDeviceRecords = []
+        // Auto-save so mapping persists across restarts
+        this.saveTopology()
         this.cdr.markForCheck()
     }
 

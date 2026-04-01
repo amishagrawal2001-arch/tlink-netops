@@ -311,6 +311,9 @@
         button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
           span.mi-icon 🔗
           span.mi-label Device Mapper Wizard…
+        button.menu-item(type='button', [disabled]='!mappedNodeCount', (click)='showMappedDevicesPanel = true; closeMenus()')
+          span.mi-icon 📋
+          span.mi-label Mapped Devices ({{ mappedNodeCount }})
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportDeviceCsv(); closeMenus()')
           span.mi-icon ⇣
           span.mi-label Export Device CSV
@@ -4016,6 +4019,54 @@
           h4.drift-section-title Lines in generated config but NOT in running (missing on device):
           pre.drift-lines.drift-lines-removed
             | {{ twinConfigDrift.get(driftViewerNodeId)?.removedLines?.join('\n') }}
+
+  //- ── Mapped Devices Panel ────────────────────────────────────────────────
+  .mapped-devices-overlay(*ngIf='showMappedDevicesPanel', (click)='showMappedDevicesPanel = false; cdr.markForCheck()')
+    .mapped-devices-dialog((click)='$event.stopPropagation()')
+      .mapped-devices-header
+        h3.mapped-devices-title Mapped Devices
+        span.mapped-devices-count {{ mappedNodeCount }} devices mapped
+        button.mapped-devices-close(type='button', (click)='showMappedDevicesPanel = false; cdr.markForCheck()') ✕
+      .mapped-devices-body
+        table.mapped-devices-table
+          thead
+            tr
+              th Node
+              th Vendor
+              th Model
+              th Mgmt IP
+              th SSH User
+              th Mapped By
+              th Serial
+              th Actions
+          tbody
+            ng-container(*ngFor='let node of topology?.nodes')
+              tr.mapped-devices-row(*ngIf='node.mapped')
+                td.mapped-cell-name {{ node.label }}
+                td {{ node.vendor || '—' }}
+                td {{ node.model || '—' }}
+                td
+                  input.mapped-inline-input(
+                    type='text',
+                    [value]='node.mgmtIp || ""',
+                    placeholder='IP address',
+                    (change)='updateMappedField(node.id, "mgmtIp", $event)'
+                  )
+                td
+                  input.mapped-inline-input(
+                    type='text',
+                    [value]='node.sshUsername || ""',
+                    placeholder='username',
+                    (change)='updateMappedField(node.id, "sshUsername", $event)'
+                  )
+                td {{ node.mappedBy || '—' }}
+                td {{ node.serialNumber || '—' }}
+                td
+                  button.mapped-action-btn(type='button', title='Remove mapping', (click)='unmapDevice(node.id)') ✕
+      .mapped-devices-footer
+        button.mapped-footer-btn(type='button', (click)='unmapAllDevices()') Unmap All
+        .mapped-footer-spacer
+        button.mapped-footer-btn.mapped-footer-save(type='button', (click)='saveTopology(); showMappedDevicesPanel = false; cdr.markForCheck()') Save & Close
 
   //- ── Device Mapper Overlay ────────────────────────────────────────────────
   device-mapper(
