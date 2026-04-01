@@ -1191,6 +1191,7 @@ export class InventoryService implements OnDestroy {
 
     ngOnDestroy (): void {
         this.stopPolling()
+        this.stopScheduledBackups()
         this._cancelAutoSave()
         // Flush any pending auto-save synchronously on destroy
         if (this._sidecarPath) {

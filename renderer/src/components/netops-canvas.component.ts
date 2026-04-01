@@ -1363,6 +1363,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     private _linkMidpointCache = new Map<string, { x: number; y: number }>()
     // Signature map to detect when a link's geometry actually changed
     private _linkGeomSig = new Map<string, string>()
+    private _parallelCache = new Map<string, { index: number; total: number }>()
 
     // ── Performance: viewport culling ────────────────────────────────────────
     private _visibleNodeIds = new Set<string>()
@@ -1486,6 +1487,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         this._linkPathCache.clear()
         this._linkMidpointCache.clear()
         this._linkGeomSig.clear()
+        this._parallelCache.clear()
     }
 
     /** Invalidate link caches only for links connected to a specific node */
@@ -4425,6 +4427,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // Returns { index, total } of this link among all parallel links between the same endpoint pair.
     private _parallelInfo (link: TopologyLink): { index: number; total: number } {
+        let cached = this._parallelCache.get(link.id)
+        if (cached) { return cached }
         const endpointKey = (l: TopologyLink) => {
             const sKey = l.sourceAnnotationId || l.sourceNodeId
             const tKey = l.targetAnnotationId || l.targetNodeId
@@ -4433,7 +4437,9 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const k = endpointKey(link)
         if (!k || k === '|') { return { index: 0, total: 1 } }
         const siblings = this.topology.links.filter(l => endpointKey(l) === k)
-        return { index: siblings.indexOf(link), total: siblings.length }
+        cached = { index: siblings.indexOf(link), total: siblings.length }
+        this._parallelCache.set(link.id, cached)
+        return cached
     }
 
     // Base perpendicular offset before user bend adjustment.
@@ -5196,7 +5202,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         alarms: this.twinActiveAlarms.get(node.id)?.length ?? 0,
                     })
                 }
-            } catch { /* poll failed — keep previous state */ }
+            } catch (err) { console.warn('Twin poll failed:', (err as Error).message) }
         }
 
         // Config drift detection for containerlab nodes
@@ -5216,7 +5222,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                             this.twinConfigDrift.delete(node.id)
                         }
                     }
-                } catch { /* fetch failed */ }
+                } catch (err) { console.warn('Twin poll failed:', (err as Error).message) }
             }
         }
 
@@ -5688,7 +5694,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 if (result.ok && result.output) {
                     this.liveRouteTable.set(node.id, parseRouteTable(node.vendor, result.output))
                 }
-            } catch { /* skip node */ }
+            } catch (err) { console.warn('Health poll failed:', (err as Error).message) }
         }
         this.routeFetching = false
         this.statusMsg = `Fetched route tables from ${this.liveRouteTable.size} device(s)`
@@ -5730,7 +5736,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 if (result.ok && result.output) {
                     this.liveInterfaceCounters.set(node.id, parseInterfaceCounters(node.vendor, result.output))
                 }
-            } catch { /* skip node */ }
+            } catch (err) { console.warn('Health poll failed:', (err as Error).message) }
         }
         this.counterFetching = false
         this.statusMsg = `Fetched counters from ${this.liveInterfaceCounters.size} device(s)`
@@ -9884,7 +9890,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 if (ir.ok && ir.containers) {
                     this.clabContainers = ir.containers
                 }
-            } catch (_e) { /* ignore */ }
+            } catch (err) { console.warn('Container inspect failed:', (err as Error).message) }
         }
 
         if (this.clabContainers.length) {
@@ -9979,7 +9985,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             }
 
             this.liveSummary = { nodesUp, nodesTotal: result.containers.length, bgpUp, bgpTotal }
-        } catch { /* poll failed — keep previous state */ }
+        } catch (err) { console.warn('Live poll failed:', (err as Error).message) }
 
         this._livePollRunning = false
         this.cdr.markForCheck()
@@ -11158,7 +11164,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const status = await api.syslogStatus()
             this.syslogRunning = !!status?.running
             if (status?.localIp) { this.syslogTargetIp = status.localIp }
-        } catch (_) { /* ignore */ }
+        } catch (err) { console.warn('Syslog check failed:', (err as Error).message) }
         this.cdr.markForCheck()
     }
 

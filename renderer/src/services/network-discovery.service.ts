@@ -70,6 +70,7 @@ export class NetworkDiscoveryService {
         password: string,
         opts?: DiscoveryOptions,
     ): Promise<DiscoveryResult> {
+      try {
         const maxDepth = opts?.maxDepth ?? 3
         const timeoutMs = opts?.timeoutMs ?? 15000
         const sshPort = opts?.port ?? port
@@ -151,6 +152,10 @@ export class NetworkDiscoveryService {
         }
 
         return { devices, links }
+      } catch (err) {
+        console.warn('Network discovery failed:', (err as Error).message)
+        return { devices: [], links: [] }
+      }
     }
 
     // ─── SNMP-based discovery ──────────────────────────────────────────────
@@ -164,6 +169,7 @@ export class NetworkDiscoveryService {
         snmpParams: SnmpDiscoveryParams,
         opts?: { timeoutMs?: number },
     ): Promise<DiscoveryResult> {
+      try {
         const api = (window as any).netopsAPI
         if (!api?.snmpWalk) {
             throw new Error('SNMP API not available')
@@ -297,6 +303,10 @@ export class NetworkDiscoveryService {
         }
 
         return { devices, links }
+      } catch (err) {
+        console.warn('Network discovery failed:', (err as Error).message)
+        return { devices: [], links: [] }
+      }
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────
