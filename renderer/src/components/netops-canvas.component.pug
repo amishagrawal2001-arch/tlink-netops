@@ -305,9 +305,9 @@
         (mouseenter)='onMenuEnter("devices")'
       ) Devices
       .menu-dropdown(*ngIf='openMenu === "devices"')
-        button.menu-item(type='button', (click)='openDeviceImport(); closeMenus()')
+        button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
           span.mi-icon ⌁
-          span.mi-label Import Device CSV…
+          span.mi-label Import & Map Devices…
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportDeviceCsv(); closeMenus()')
           span.mi-icon ⇣
           span.mi-label Export Device CSV
