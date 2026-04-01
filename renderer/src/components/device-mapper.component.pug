@@ -11,6 +11,21 @@
         [disabled]='discovering',
         (click)='startDiscovery()'
       ) {{ discovering ? 'Discovering...' : '🔍 Discover Network' }}
+      button.mapper-btn(
+        type='button',
+        (click)='fileInput.click()'
+      ) 📁 Upload CSV/JSON
+      input.mapper-file-input(
+        #fileInput='',
+        type='file',
+        accept='.csv,.json,.txt',
+        (change)='onFileUpload($event)',
+        style='display:none'
+      )
+      button.mapper-btn(
+        type='button',
+        (click)='addManualDevice()'
+      ) + Add Device
       button.mapper-btn.mapper-btn-auto(
         type='button',
         [disabled]='!discoveredDevices.length',

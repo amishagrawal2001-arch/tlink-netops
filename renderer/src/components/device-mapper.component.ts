@@ -77,6 +77,77 @@ export class DeviceMapperComponent implements OnInit {
         this.cdr.markForCheck()
     }
 
+    onFileUpload (event: Event): void {
+        const input = event.target as HTMLInputElement
+        const file = input.files?.[0]
+        if (!file) { return }
+
+        const reader = new FileReader()
+        reader.onload = () => {
+            const content = reader.result as string
+            try {
+                if (file.name.endsWith('.json')) {
+                    this._parseJsonDevices(content)
+                } else {
+                    this._parseCsvDevices(content)
+                }
+                this.autoMatch()
+            } catch (err) {
+                alert(`Failed to parse file: ${(err as Error).message}`)
+            }
+            this.cdr.markForCheck()
+        }
+        reader.readAsText(file)
+        input.value = '' // reset so same file can be re-uploaded
+    }
+
+    private _parseJsonDevices (content: string): void {
+        const data = JSON.parse(content)
+        const devices = Array.isArray(data) ? data : data.devices ?? data.hosts ?? [data]
+        for (const d of devices) {
+            const hostname = d.hostname ?? d.name ?? d.host ?? ''
+            const mgmtIp = d.mgmtIp ?? d.ip ?? d.management_ip ?? d.address ?? ''
+            const vendor = d.vendor ?? d.platform ?? d.os ?? ''
+            const model = d.model ?? d.hardware ?? ''
+            if (hostname || mgmtIp) {
+                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+            }
+        }
+    }
+
+    private _parseCsvDevices (content: string): void {
+        const lines = content.split('\n').map(l => l.trim()).filter(l => l)
+        if (lines.length < 2) { return }
+
+        // Parse header to find column indices
+        const header = lines[0].toLowerCase().split(',').map(h => h.trim())
+        const hostIdx = header.findIndex(h => h.includes('hostname') || h.includes('name') || h === 'host')
+        const ipIdx = header.findIndex(h => h.includes('ip') || h.includes('address') || h.includes('mgmt'))
+        const vendorIdx = header.findIndex(h => h.includes('vendor') || h.includes('platform') || h.includes('os'))
+        const modelIdx = header.findIndex(h => h.includes('model') || h.includes('hardware'))
+
+        for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''))
+            const hostname = hostIdx >= 0 ? cols[hostIdx] ?? '' : cols[0] ?? ''
+            const mgmtIp = ipIdx >= 0 ? cols[ipIdx] ?? '' : cols[1] ?? ''
+            const vendor = vendorIdx >= 0 ? cols[vendorIdx] ?? '' : ''
+            const model = modelIdx >= 0 ? cols[modelIdx] ?? '' : ''
+            if (hostname || mgmtIp) {
+                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+            }
+        }
+    }
+
+    addManualDevice (): void {
+        const hostname = prompt('Device hostname:')
+        if (!hostname) { return }
+        const mgmtIp = prompt('Management IP:') ?? ''
+        const vendor = prompt('Vendor (e.g., Juniper, Cisco, Arista):') ?? ''
+        const model = prompt('Model (optional):') ?? ''
+        this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+        this.cdr.markForCheck()
+    }
+
     autoMatch (): void {
         this.mappings.clear()
 
