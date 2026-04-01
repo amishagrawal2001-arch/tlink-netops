@@ -4986,15 +4986,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // ── Menu bar ─────────────────────────────────────────────────────────────
 
-    menuDropdownStyle: Record<string, string> = {}
-
-    toggleMenu (eventOrName: MouseEvent | string, nameOrUndef?: string): void {
-        const event = eventOrName instanceof MouseEvent ? eventOrName : undefined
-        const name = typeof eventOrName === 'string' ? eventOrName : nameOrUndef ?? ''
+    toggleMenu (name: string): void {
         this.openMenu = this.openMenu === name ? null : name
-        if (this.openMenu && event) {
-            this._computeMenuPosition(event)
-        }
         this.cdr.markForCheck()
     }
 
@@ -5009,27 +5002,10 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
-    /** When a menu is already open, hovering another trigger switches to it. */
-    onMenuEnter (eventOrName: MouseEvent | string, name?: string): void {
-        const event = eventOrName instanceof MouseEvent ? eventOrName : undefined
-        if (!name && typeof eventOrName === 'string') { name = eventOrName }
+    onMenuEnter (name: string): void {
         if (this.openMenu && this.openMenu !== name) {
-            this.openMenu = name ?? null
-            if (event) { this._computeMenuPosition(event) }
+            this.openMenu = name
             this.cdr.markForCheck()
-        }
-    }
-
-    private _computeMenuPosition (event: MouseEvent): void {
-        const trigger = (event.target as HTMLElement).closest('.menu-trigger') as HTMLElement
-        if (!trigger) { return }
-        const rect = trigger.getBoundingClientRect()
-        const top = rect.bottom
-        const maxH = window.innerHeight - top - 10  // 10px padding from bottom
-        this.menuDropdownStyle = {
-            top: top + 'px',
-            left: rect.left + 'px',
-            'max-height': Math.max(200, maxH) + 'px',
         }
     }
 

@@ -21,7 +21,7 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   background: var(--bg-app);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
-  overflow: hidden;
+  overflow: visible;          // allow menu dropdowns to extend past shell bounds
   user-select: none;
 }
 
@@ -287,9 +287,11 @@ $font-mono:   'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .menu-dropdown {
-  position: fixed;
+  position: absolute;
+  top: 100%;
+  left: 0;
   min-width: 240px;
-  // max-height is set dynamically via [ngStyle] based on remaining viewport space
+  max-height: 70vh;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-menu);

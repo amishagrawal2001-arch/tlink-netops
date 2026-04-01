@@ -117,10 +117,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "file"',
-        (click)='toggleMenu($event,"file")',
-        (mouseenter)='onMenuEnter($event,"file")'
+        (click)='toggleMenu("file")',
+        (mouseenter)='onMenuEnter("file")'
       ) File
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "file"')
+      .menu-dropdown(*ngIf='openMenu === "file"')
         button.menu-item(type='button', (click)='newTopology(); closeMenus()')
           span.mi-icon +
           span.mi-label New Topology
@@ -170,10 +170,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "edit"',
-        (click)='toggleMenu($event,"edit")',
-        (mouseenter)='onMenuEnter($event,"edit")'
+        (click)='toggleMenu("edit")',
+        (mouseenter)='onMenuEnter("edit")'
       ) Edit
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "edit"')
+      .menu-dropdown(*ngIf='openMenu === "edit"')
         button.menu-item(type='button', [disabled]='!canUndo', (click)='undo(); closeMenus()')
           span.mi-icon ↺
           span.mi-label Undo
@@ -206,10 +206,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "view"',
-        (click)='toggleMenu($event,"view")',
-        (mouseenter)='onMenuEnter($event,"view")'
+        (click)='toggleMenu("view")',
+        (mouseenter)='onMenuEnter("view")'
       ) View
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "view"')
+      .menu-dropdown(*ngIf='openMenu === "view"')
         button.menu-item(type='button', [disabled]='vpScale >= maxScale', (click)='zoomIn(); closeMenus()')
           span.mi-icon +
           span.mi-label Zoom In
@@ -301,10 +301,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "devices"',
-        (click)='toggleMenu($event,"devices")',
-        (mouseenter)='onMenuEnter($event,"devices")'
+        (click)='toggleMenu("devices")',
+        (mouseenter)='onMenuEnter("devices")'
       ) Devices
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "devices"')
+      .menu-dropdown(*ngIf='openMenu === "devices"')
         button.menu-item(type='button', (click)='openDeviceImport(); closeMenus()')
           span.mi-icon ⌁
           span.mi-label Import Device CSV…
@@ -335,11 +335,11 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "inventory"',
-        (click)='toggleMenu($event,"inventory")',
-        (mouseenter)='onMenuEnter($event,"inventory")'
+        (click)='toggleMenu("inventory")',
+        (mouseenter)='onMenuEnter("inventory")'
       ) Inventory
         span.menu-alarm-badge(*ngIf='activeAlarmCount > 0') {{ activeAlarmCount }}
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "inventory"')
+      .menu-dropdown(*ngIf='openMenu === "inventory"')
         button.menu-item(type='button', (click)='toggleInventoryPanel(); closeMenus()')
           span.mi-check {{ showInventoryPanel ? "✓" : "" }}
           span.mi-label Inventory Panel
@@ -417,10 +417,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "simulate"',
-        (click)='toggleMenu($event,"simulate")',
-        (mouseenter)='onMenuEnter($event,"simulate")'
+        (click)='toggleMenu("simulate")',
+        (mouseenter)='onMenuEnter("simulate")'
       ) Simulate
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "simulate"')
+      .menu-dropdown(*ngIf='openMenu === "simulate"')
         button.menu-item(type='button', [disabled]='nodeCount === 0 || runningCount === nodeCount', (click)='startAll(); closeMenus()')
           span.mi-dot.dot-running
           span.mi-label Start All Nodes
@@ -478,10 +478,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "export"',
-        (click)='toggleMenu($event,"export")',
-        (mouseenter)='onMenuEnter($event,"export")'
+        (click)='toggleMenu("export")',
+        (mouseenter)='onMenuEnter("export")'
       ) Export
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "export"')
+      .menu-dropdown(*ngIf='openMenu === "export"')
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='validateTopology(); closeMenus()')
           span.mi-icon ✓
           span.mi-label Validate Topology
@@ -536,10 +536,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "license"',
-        (click)='toggleMenu($event,"license")',
-        (mouseenter)='onMenuEnter($event,"license")'
+        (click)='toggleMenu("license")',
+        (mouseenter)='onMenuEnter("license")'
       ) License
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "license"')
+      .menu-dropdown(*ngIf='openMenu === "license"')
         .menu-license-status
           span.menu-license-badge(
             [class.badge-trial]='licenseSvc.licenseStatus === "trial"',
@@ -578,10 +578,10 @@
       button.menu-trigger(
         type='button',
         [class.active]='openMenu === "help"',
-        (click)='toggleMenu($event,"help")',
-        (mouseenter)='onMenuEnter($event,"help")'
+        (click)='toggleMenu("help")',
+        (mouseenter)='onMenuEnter("help")'
       ) Help
-      .menu-dropdown([ngStyle]='menuDropdownStyle', *ngIf='openMenu === "help"')
+      .menu-dropdown(*ngIf='openMenu === "help"')
         button.menu-item(type='button', (click)='toggleHelpPanel(); closeMenus()')
           span.mi-icon ?
           span.mi-label Help Panel
