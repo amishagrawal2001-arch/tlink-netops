@@ -305,9 +305,12 @@
         (mouseenter)='onMenuEnter("devices")'
       ) Devices
       .menu-dropdown(*ngIf='openMenu === "devices"')
-        button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
+        button.menu-item(type='button', (click)='openDeviceImport(); closeMenus()')
           span.mi-icon ⌁
-          span.mi-label Import & Map Devices…
+          span.mi-label Import Device CSV…
+        button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
+          span.mi-icon 🔗
+          span.mi-label Device Mapper Wizard…
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportDeviceCsv(); closeMenus()')
           span.mi-icon ⇣
           span.mi-label Export Device CSV
