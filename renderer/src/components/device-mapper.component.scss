@@ -51,12 +51,65 @@
   &:hover { color: var(--text); }
 }
 
+.mapper-tabs {
+  display: flex;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border, #333);
+}
+
+.mapper-tab {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #888);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.12s;
+  &:hover { color: var(--text); }
+  &.active { color: var(--accent, #3b82f6); border-bottom-color: var(--accent, #3b82f6); }
+}
+
 .mapper-actions-bar {
   padding: 10px 20px;
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--border, #333);
+}
+
+.mapper-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 12px;
+  p { margin-bottom: 12px; }
+  ul { list-style: none; text-align: left; max-width: 300px; margin: 0 auto; }
+  li { padding: 4px 0; }
+}
+
+.mapper-inline-edit {
+  width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text, #e0e0e0);
+  font-size: 11px;
+  &:hover { border-color: var(--border, #333); background: var(--bg-input, #0a1120); }
+  &:focus { border-color: var(--accent); background: var(--bg-input); outline: none; }
+}
+
+.mapper-remove-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  &:hover { background: rgba(239, 68, 68, 0.15); }
 }
 
 .mapper-btn {

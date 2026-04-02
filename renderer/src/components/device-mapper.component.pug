@@ -5,6 +5,19 @@
       span.mapper-subtitle Map topology nodes to physical devices
       button.mapper-close(type='button', (click)='close()') ✕
 
+    //- Tab bar
+    .mapper-tabs
+      button.mapper-tab(
+        type='button',
+        [class.active]='activeTab === "inventory"',
+        (click)='activeTab = "inventory"; cdr.markForCheck()'
+      ) Device Inventory ({{ discoveredDevices.length }})
+      button.mapper-tab(
+        type='button',
+        [class.active]='activeTab === "mapping"',
+        (click)='activeTab = "mapping"; cdr.markForCheck()'
+      ) Mapping ({{ mappings.size }}/{{ topologyNodes.length }})
+
     .mapper-actions-bar
       button.mapper-btn.mapper-btn-discover(
         type='button',
@@ -29,11 +42,60 @@
       button.mapper-btn.mapper-btn-auto(
         type='button',
         [disabled]='!discoveredDevices.length',
-        (click)='autoMatch()'
+        (click)='autoMatch(); activeTab = "mapping"; cdr.markForCheck()'
       ) ⚡ Auto-Match
-      span.mapper-status(*ngIf='discoveredDevices.length') {{ discoveredDevices.length }} devices found
+      span.mapper-status(*ngIf='discoveredDevices.length') {{ discoveredDevices.length }} devices
 
-    .mapper-table-wrap
+    //- ── Inventory Tab ──────────────────────────────────────────────
+    .mapper-table-wrap(*ngIf='activeTab === "inventory"')
+      .mapper-empty(*ngIf='!discoveredDevices.length')
+        p No devices in inventory. Use the buttons above to:
+        ul
+          li 🔍 Discover Network — auto-discover via LLDP/SSH
+          li 📁 Upload CSV/JSON — import from file
+          li + Add Device — enter manually
+
+      table.mapper-table(*ngIf='discoveredDevices.length')
+        thead
+          tr
+            th #
+            th Hostname
+            th IP Address
+            th Vendor
+            th Model
+            th Actions
+        tbody
+          tr.mapper-row(*ngFor='let dev of discoveredDevices; let i = index')
+            td {{ i + 1 }}
+            td
+              input.mapper-inline-edit(
+                type='text',
+                [value]='dev.hostname',
+                (change)='saveDeviceEdit(i, "hostname", $event)'
+              )
+            td
+              input.mapper-inline-edit(
+                type='text',
+                [value]='dev.mgmtIp',
+                (change)='saveDeviceEdit(i, "mgmtIp", $event)'
+              )
+            td
+              input.mapper-inline-edit(
+                type='text',
+                [value]='dev.vendor',
+                (change)='saveDeviceEdit(i, "vendor", $event)'
+              )
+            td
+              input.mapper-inline-edit(
+                type='text',
+                [value]='dev.model',
+                (change)='saveDeviceEdit(i, "model", $event)'
+              )
+            td
+              button.mapper-remove-btn(type='button', title='Remove', (click)='removeDevice(i)') ✕
+
+    //- ── Mapping Tab ────────────────────────────────────────────────
+    .mapper-table-wrap(*ngIf='activeTab === "mapping"')
       table.mapper-table
         thead
           tr
@@ -69,10 +131,13 @@
               | {{ mappings.has(node.id) ? 'Mapped' : 'Unmapped' }}
 
     .mapper-footer
-      span.mapper-summary {{ mappings.size }}/{{ topologyNodes.length }} nodes mapped
+      span.mapper-summary(*ngIf='activeTab === "inventory"') {{ discoveredDevices.length }} devices in inventory
+      span.mapper-summary(*ngIf='activeTab === "mapping"') {{ mappings.size }}/{{ topologyNodes.length }} nodes mapped
       .mapper-footer-actions
+        button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', (click)='clearAllDevices()') Clear All
         button.mapper-btn(type='button', (click)='close()') Cancel
         button.mapper-btn.mapper-btn-apply(
+          *ngIf='activeTab === "mapping"',
           type='button',
           [disabled]='!mappings.size',
           (click)='applyMapping()'

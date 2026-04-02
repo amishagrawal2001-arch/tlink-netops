@@ -29,6 +29,10 @@ export class DeviceMapperComponent implements OnInit {
     topologyNodes: TopologyNode[] = []
     mappings = new Map<string, MappingEntry>()
     discovering = false
+    activeTab: 'mapping' | 'inventory' = 'inventory'
+    editingIdx = -1
+
+    private _api = (window as any).netopsAPI
 
     constructor (
         private cdr: ChangeDetectorRef,
@@ -39,6 +43,42 @@ export class DeviceMapperComponent implements OnInit {
         this.topologyNodes = (this.topology?.nodes ?? []).filter(n =>
             n.type === 'router' || n.type === 'switch' || n.type === 'firewall'
         )
+        this._loadInventory()
+    }
+
+    private async _loadInventory (): Promise<void> {
+        const saved = await this._api?.prefGet?.('device-inventory')
+        if (Array.isArray(saved) && saved.length) {
+            this.discoveredDevices = saved
+            this.cdr.markForCheck()
+        }
+    }
+
+    private _saveInventory (): void {
+        this._api?.prefSet?.('device-inventory', this.discoveredDevices)
+    }
+
+    editDevice (idx: number): void { this.editingIdx = idx; this.cdr.markForCheck() }
+
+    saveDeviceEdit (idx: number, field: string, event: Event): void {
+        const value = (event.target as HTMLInputElement).value
+        if (idx >= 0 && idx < this.discoveredDevices.length) {
+            (this.discoveredDevices[idx] as any)[field] = value
+            this._saveInventory()
+        }
+    }
+
+    removeDevice (idx: number): void {
+        this.discoveredDevices.splice(idx, 1)
+        this._saveInventory()
+        this.cdr.markForCheck()
+    }
+
+    clearAllDevices (): void {
+        if (!confirm('Remove all devices from inventory?')) { return }
+        this.discoveredDevices = []
+        this._saveInventory()
+        this.cdr.markForCheck()
     }
 
     close (): void { this.closed.emit() }
@@ -66,8 +106,8 @@ export class DeviceMapperComponent implements OnInit {
 
         try {
             const result = await this.discoverySvc.discoverFromSeed(host, 22, username, password, { maxDepth: 3 })
-            this.discoveredDevices = result.devices
-            // Auto-match after discovery
+            this.discoveredDevices = [...this.discoveredDevices, ...result.devices]
+            this._saveInventory()
             this.autoMatch()
         } catch (err) {
             alert(`Discovery failed: ${(err as Error).message}`)
@@ -91,6 +131,7 @@ export class DeviceMapperComponent implements OnInit {
                 } else {
                     this._parseCsvDevices(content)
                 }
+                this._saveInventory()
                 this.autoMatch()
             } catch (err) {
                 alert(`Failed to parse file: ${(err as Error).message}`)
@@ -145,6 +186,7 @@ export class DeviceMapperComponent implements OnInit {
         const vendor = prompt('Vendor (e.g., Juniper, Cisco, Arista):') ?? ''
         const model = prompt('Model (optional):') ?? ''
         this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+        this._saveInventory()
         this.cdr.markForCheck()
     }
 
