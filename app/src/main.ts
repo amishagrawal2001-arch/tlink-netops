@@ -14,6 +14,9 @@ import {
     _asPositiveInt, _parseSshPayload, _parseSshTerminalPayload, _connectConfig,
 } from './ipc-helpers'
 import * as ptyManager from './pty-manager'
+import { SshConnectionPool } from './ssh-pool'
+
+const sshPool = new SshConnectionPool()
 
 const windows = new Map<number, BrowserWindow>()
 
@@ -57,72 +60,60 @@ function _testSshConnection (payload: SshPayload): Promise<SshResult> {
 
 function _runSshCommand (payload: SshPayload, command: string): Promise<SshResult> {
     return new Promise(resolve => {
-        const conn = new Client()
         let settled = false
+        let releaseFn: (() => void) | null = null
         const timer = setTimeout(() => done({ ok: false, message: `SSH timeout after ${payload.timeoutMs} ms` }), payload.timeoutMs + 1000)
 
         function done (result: SshResult): void {
             if (settled) { return }
             settled = true
             clearTimeout(timer)
-            try { conn.end() } catch { /* no-op */ }
+            if (releaseFn) { releaseFn() }
             resolve(result)
         }
 
-        conn.on('ready', () => {
-            conn.exec(command, (err, stream) => {
-                if (err) {
-                    done({ ok: false, message: `SSH exec failed: ${err.message}` })
-                    return
-                }
+        const cfg = _connectConfig(payload)
+        sshPool.getConnection(payload.host, payload.port, payload.username, payload.password, cfg)
+            .then(({ client: conn, release }) => {
+                releaseFn = release
+                conn.exec(command, (err, stream) => {
+                    if (err) {
+                        done({ ok: false, message: `SSH exec failed: ${err.message}` })
+                        return
+                    }
 
-                let stdout = ''
-                let stderr = ''
+                    let stdout = ''
+                    let stderr = ''
 
-                stream.on('data', (chunk: Buffer | string) => {
-                    stdout += chunk.toString()
-                })
+                    stream.on('data', (chunk: Buffer | string) => {
+                        stdout += chunk.toString()
+                    })
 
-                stream.stderr.on('data', (chunk: Buffer | string) => {
-                    stderr += chunk.toString()
-                })
+                    stream.stderr.on('data', (chunk: Buffer | string) => {
+                        stderr += chunk.toString()
+                    })
 
-                stream.on('close', (code: number | null) => {
-                    const output = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
-                    // Network devices often return non-zero exit codes on
-                    // successful commands.  If there is output, treat as OK.
-                    const hasOutput = !!output
-                    const codeOk = code === null || code === 0
-                    done({
-                        ok: codeOk || hasOutput,
-                        message: codeOk || hasOutput
-                            ? `Command completed on ${payload.host}`
-                            : `Remote command exited with code ${code}`,
-                        output: output || '(no output)',
+                    stream.on('close', (code: number | null) => {
+                        const output = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
+                        const hasOutput = !!output
+                        const codeOk = code === null || code === 0
+                        done({
+                            ok: codeOk || hasOutput,
+                            message: codeOk || hasOutput
+                                ? `Command completed on ${payload.host}`
+                                : `Remote command exited with code ${code}`,
+                            output: output || '(no output)',
+                        })
+                    })
+
+                    stream.on('error', (streamErr: Error) => {
+                        done({ ok: false, message: `SSH stream failed: ${streamErr.message}` })
                     })
                 })
-
-                stream.on('error', (streamErr: Error) => {
-                    done({ ok: false, message: `SSH stream failed: ${streamErr.message}` })
-                })
             })
-        })
-
-        conn.on('error', (err: Error) => {
-            done({ ok: false, message: `SSH connection failed: ${err.message}` })
-        })
-
-        conn.on('close', () => {
-            if (!settled) {
-                done({ ok: false, message: 'SSH connection closed unexpectedly' })
-            }
-        })
-
-        try {
-            conn.connect(_connectConfig(payload))
-        } catch (err) {
-            done({ ok: false, message: `SSH connect error: ${(err as Error).message}` })
-        }
+            .catch(err => {
+                done({ ok: false, message: `SSH connection failed: ${(err as Error).message}` })
+            })
     })
 }
 
@@ -386,6 +377,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+    sshPool.destroyAll()
     ptyManager.destroyAllSessions()
 })
 
@@ -541,6 +533,96 @@ ipcMain.handle('ssh-run-command', async (_event, rawPayload: unknown): Promise<S
     const parsed = _parseSshPayload(rawPayload)
     if ('message' in parsed) { return { ok: false, message: parsed.message } }
     return _runSshCommand(parsed.value, command)
+})
+
+// ─── IPC: Streaming SSH command (sends chunks as they arrive) ──────────────
+
+function _runSshCommandStream (payload: SshPayload, command: string, sender: Electron.WebContents, streamId: string): Promise<SshResult> {
+    return new Promise(resolve => {
+        const conn = new Client()
+        let settled = false
+        const timer = setTimeout(() => done({ ok: false, message: `SSH timeout after ${payload.timeoutMs} ms` }), payload.timeoutMs + 1000)
+
+        function done (result: SshResult): void {
+            if (settled) { return }
+            settled = true
+            clearTimeout(timer)
+            try { conn.end() } catch { /* no-op */ }
+            resolve(result)
+        }
+
+        conn.on('ready', () => {
+            conn.exec(command, (err, stream) => {
+                if (err) {
+                    done({ ok: false, message: `SSH exec failed: ${err.message}` })
+                    return
+                }
+
+                let stdout = ''
+                let stderr = ''
+
+                stream.on('data', (chunk: Buffer | string) => {
+                    const text = chunk.toString()
+                    stdout += text
+                    try { sender.send(`ssh-stream-${streamId}`, text) } catch { /* window may be gone */ }
+                })
+
+                stream.stderr.on('data', (chunk: Buffer | string) => {
+                    const text = chunk.toString()
+                    stderr += text
+                    try { sender.send(`ssh-stream-${streamId}`, text) } catch { /* window may be gone */ }
+                })
+
+                stream.on('close', (code: number | null) => {
+                    const output = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
+                    const hasOutput = !!output
+                    const codeOk = code === null || code === 0
+                    done({
+                        ok: codeOk || hasOutput,
+                        message: codeOk || hasOutput
+                            ? `Command completed on ${payload.host}`
+                            : `Remote command exited with code ${code}`,
+                        output: output || '(no output)',
+                    })
+                })
+
+                stream.on('error', (streamErr: Error) => {
+                    done({ ok: false, message: `SSH stream failed: ${streamErr.message}` })
+                })
+            })
+        })
+
+        conn.on('error', (err: Error) => {
+            done({ ok: false, message: `SSH connection failed: ${err.message}` })
+        })
+
+        conn.on('close', () => {
+            if (!settled) {
+                done({ ok: false, message: 'SSH connection closed unexpectedly' })
+            }
+        })
+
+        try {
+            conn.connect(_connectConfig(payload))
+        } catch (err) {
+            done({ ok: false, message: `SSH connect error: ${(err as Error).message}` })
+        }
+    })
+}
+
+ipcMain.handle('ssh-run-command-stream', async (event, rawPayload: unknown): Promise<SshResult> => {
+    if (!rawPayload || typeof rawPayload !== 'object') {
+        return { ok: false, message: 'Invalid payload' }
+    }
+    const obj = rawPayload as Record<string, unknown>
+    const command = String(obj['command'] ?? '').trim()
+    const streamId = String(obj['streamId'] ?? '').trim()
+    if (!command) { return { ok: false, message: 'Command is required' } }
+    if (!streamId) { return { ok: false, message: 'streamId is required' } }
+
+    const parsed = _parseSshPayload(rawPayload)
+    if ('message' in parsed) { return { ok: false, message: parsed.message } }
+    return _runSshCommandStream(parsed.value, command, event.sender, streamId)
 })
 
 // ─── IPC: Inventory — run multiple commands on one SSH session ───────────────

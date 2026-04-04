@@ -304,6 +304,7 @@ export class InventoryService implements OnDestroy {
         await Promise.allSettled(running)
         this.pollAllRunning = false
         this._patchStore({ lastFullPollAt: nowIso() })
+        this._pruneStore()
     }
 
     // ── Config Backup ────────────────────────────────────────────────────────
@@ -387,6 +388,7 @@ export class InventoryService implements OnDestroy {
             const result = await this.backupConfig(node.id, 'running', trigger)
             if (result) { count++ }
         }
+        this._pruneStore()
         return count
     }
 
@@ -1069,6 +1071,45 @@ export class InventoryService implements OnDestroy {
             eventLog: [],
             pollIntervalMs: 300000,  // 5 min
         }
+    }
+
+    /**
+     * Enforce data storage limits to prevent unbounded growth.
+     * - Alarms: max 200 active + 300 most-recent cleared
+     * - Event log: max 500 entries
+     * - Config backups: max 10 per node per configType
+     */
+    private _pruneStore (): void {
+        const s = this.store
+
+        // Cap alarms: keep max 200 active + archive last 300 cleared
+        const active = s.alarms.filter(a => !a.clearedAt)
+        const cleared = s.alarms.filter(a => a.clearedAt)
+            .sort((a, b) => b.clearedAt!.localeCompare(a.clearedAt!))
+        const prunedAlarms = [...active.slice(0, 200), ...cleared.slice(0, 300)]
+
+        // Cap event log (keep last 500)
+        const prunedLog = s.eventLog.length > 500 ? s.eventLog.slice(-500) : s.eventLog
+
+        // Cap backups: 10 per node per configType
+        const backupGroups = new Map<string, typeof s.configBackups>()
+        for (const b of s.configBackups) {
+            const key = `${b.nodeId}:${b.configType}`
+            const group = backupGroups.get(key) ?? []
+            group.push(b)
+            backupGroups.set(key, group)
+        }
+        const prunedBackups: typeof s.configBackups = []
+        for (const [, group] of backupGroups) {
+            group.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            prunedBackups.push(...group.slice(0, 10))
+        }
+
+        this._patchStore({
+            alarms: prunedAlarms,
+            eventLog: prunedLog,
+            configBackups: prunedBackups,
+        })
     }
 
     private _patchStore (partial: Partial<InventoryStore>): void {

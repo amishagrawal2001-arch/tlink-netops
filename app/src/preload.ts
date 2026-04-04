@@ -65,6 +65,19 @@ contextBridge.exposeInMainWorld('netopsAPI', {
     openSshTerminal: (params: SshTerminalRequest): Promise<SshTerminalResult> =>
         ipcRenderer.invoke('open-ssh-terminal', params),
 
+    // ── Streaming SSH ─────────────────────────────────────────────────────
+    sshRunCommandStream: (
+        params: SshCommandRequest,
+        onChunk: (chunk: string) => void,
+    ): Promise<SshResult> => {
+        const id = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        ipcRenderer.on(`ssh-stream-${id}`, (_e: any, chunk: string) => onChunk(chunk))
+        return ipcRenderer.invoke('ssh-run-command-stream', { ...params, streamId: id }).then((result: SshResult) => {
+            ipcRenderer.removeAllListeners(`ssh-stream-${id}`)
+            return result
+        })
+    },
+
     // ── Inventory management ──────────────────────────────────────────────
     sshRunCommand: (params: SshCommandRequest): Promise<SshResult> =>
         ipcRenderer.invoke('ssh-run-command', params),
