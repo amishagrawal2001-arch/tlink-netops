@@ -19,6 +19,9 @@ import { HelpViewComponent }        from './components/help-view.component'
 import { CompliancePanelComponent } from './components/compliance-panel.component'
 import { EventRulesComponent }      from './components/event-rules.component'
 import { AutomationDashboardComponent } from './components/automation-dashboard.component'
+import { SchedulerPanelComponent }      from './components/scheduler-panel.component'
+import { WorkflowEditorComponent }  from './components/workflow-editor.component'
+import { ChangeManagerComponent }   from './components/change-manager.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
 import { TabManagerService }       from './services/tab-manager.service'
 import { LicenseService }          from './services/license.service'
@@ -47,6 +50,9 @@ import { TAB_MANAGER }             from './api/tokens'
         CompliancePanelComponent,
         EventRulesComponent,
         AutomationDashboardComponent,
+        SchedulerPanelComponent,
+        WorkflowEditorComponent,
+        ChangeManagerComponent,
         SafeHtmlPipe,
     ],
     providers: [

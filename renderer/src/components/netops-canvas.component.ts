@@ -408,6 +408,9 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showCompliancePanel = false
     showEventRulesPanel = false
     showAutomationDashboard = false
+    showWorkflowEditor = false
+    showSchedulerPanel = false
+    showChangeManager = false
     showConfigViewer = false
     configViewerContent = ''
     configViewerTitle = ''

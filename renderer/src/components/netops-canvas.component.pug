@@ -480,6 +480,9 @@
         button.menu-item(type='button', (click)='openEventRulesPanel(); closeMenus()')
           span.mi-icon ⚙
           span.mi-label Event Rules (Full)…
+        button.menu-item(type='button', (click)='showWorkflowEditor = true; closeMenus()')
+          span.mi-icon 🔗
+          span.mi-label Workflow Editor…
         .menu-sep
         button.menu-item(type='button', (click)='openCompliancePanel(); closeMenus()')
           span.mi-icon ✓
@@ -490,6 +493,13 @@
         button.menu-item(type='button', (click)='openUpgradesDialog(); closeMenus()')
           span.mi-icon ↑
           span.mi-label Upgrade Plans…
+        .menu-sep
+        button.menu-item(type='button', (click)='showSchedulerPanel = true; closeMenus()')
+          span.mi-icon 📅
+          span.mi-label Scheduled Jobs…
+        button.menu-item(type='button', (click)='showChangeManager = true; closeMenus()')
+          span.mi-icon 📋
+          span.mi-label Change Manager…
         .menu-sep
         button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
           span.mi-icon 🔄
@@ -4096,6 +4106,24 @@
   automation-dashboard(
     *ngIf='showAutomationDashboard',
     (closed)='showAutomationDashboard = false; cdr.markForCheck()'
+  )
+
+  //- ── Scheduler Panel ─────────────────────────────────────────────────────
+  scheduler-panel(
+    *ngIf='showSchedulerPanel',
+    (closed)='showSchedulerPanel = false; cdr.markForCheck()'
+  )
+
+  //- ── Workflow Editor ────────────────────────────────────────────────────
+  workflow-editor(
+    *ngIf='showWorkflowEditor',
+    (closed)='showWorkflowEditor = false; cdr.markForCheck()'
+  )
+
+  //- ── Change Manager ─────────────────────────────────────────────────────
+  change-manager(
+    *ngIf='showChangeManager',
+    (closed)='showChangeManager = false; cdr.markForCheck()'
   )
 
   //- ── Backup History Overlay ─────────────────────────────────────────────

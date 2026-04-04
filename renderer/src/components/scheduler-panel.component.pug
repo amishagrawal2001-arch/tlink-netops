@@ -1,0 +1,90 @@
+.mapper-overlay((click)='close()')
+  .mapper-dialog((click)='$event.stopPropagation()')
+    .mapper-header
+      h3.mapper-title Scheduled Jobs
+      span.mapper-subtitle Automate recurring network operations
+      .sched-toggle
+        button.mapper-btn(
+          type='button',
+          [class.sched-btn-active]='schedulerRunning',
+          (click)='toggleScheduler()'
+        ) {{ schedulerRunning ? 'Stop Scheduler' : 'Start Scheduler' }}
+      button.mapper-close(type='button', (click)='close()') X
+
+    .mapper-actions-bar
+      button.mapper-btn.mapper-btn-discover(type='button', (click)='openAddForm()') + Add Job
+      span.mapper-status {{ jobs.length }} job(s) configured
+      span.sched-status-badge([class.sched-running]='schedulerRunning')
+        | {{ schedulerRunning ? 'RUNNING' : 'STOPPED' }}
+
+    //- Add job form (inline)
+    .mapper-inline-form(*ngIf='showAddForm')
+      .mapper-form-row
+        label.mapper-form-label Name
+        input.mapper-form-input(type='text', [(ngModel)]='newJob.name', placeholder='e.g. Nightly Backup')
+      .mapper-form-row
+        label.mapper-form-label Schedule
+        select.mapper-form-input([(ngModel)]='newJob.schedule')
+          option(*ngFor='let opt of scheduleOptions', [value]='opt.value') {{ opt.label }}
+      .mapper-form-row
+        label.mapper-form-label Action
+        select.mapper-form-input([(ngModel)]='newJob.action')
+          option(*ngFor='let opt of actionOptions', [value]='opt.value') {{ opt.label }}
+      .mapper-form-row(*ngIf='newJob.action === "custom_command"')
+        label.mapper-form-label Command
+        input.mapper-form-input(type='text', [(ngModel)]='newJob.customCommand', placeholder='e.g. show version')
+      .mapper-form-row(*ngIf='newJob.action === "custom_command"')
+        label.mapper-form-label Node Filter
+        input.mapper-form-input(type='text', [(ngModel)]='newJob.nodeFilter', placeholder='* for all')
+      .mapper-form-row
+        label.mapper-form-label Enabled
+        input(type='checkbox', [(ngModel)]='newJob.enabled')
+      .mapper-form-row
+        span.mapper-form-error(*ngIf='addError') {{ addError }}
+        button.mapper-btn(type='button', (click)='cancelAdd()') Cancel
+        button.mapper-btn.mapper-btn-apply(type='button', (click)='confirmAdd()') Add Job
+
+    //- Jobs table
+    .mapper-table-wrap
+      .mapper-empty(*ngIf='!jobs.length')
+        p No scheduled jobs configured. Click "+ Add Job" to create one.
+
+      table.mapper-table(*ngIf='jobs.length')
+        thead
+          tr
+            th Name
+            th Schedule
+            th Action
+            th Last Run
+            th Next Run
+            th Status
+            th Actions
+        tbody
+          tr.mapper-row(*ngFor='let job of jobs', [class.sched-disabled]='!job.enabled')
+            td.mapper-cell-name {{ job.name }}
+            td
+              span.sched-schedule-badge {{ scheduleLabel(job.schedule) }}
+            td {{ actionLabel(job.action) }}
+            td {{ formatTime(job.lastRun) }}
+            td {{ formatTime(job.nextRun) }}
+            td
+              span.sched-status-dot([class.enabled]='job.enabled')
+              | {{ job.enabled ? 'Enabled' : 'Disabled' }}
+            td.sched-actions
+              button.mapper-btn(type='button', title='Run Now', (click)='runNow(job)') Run
+              button.mapper-btn(type='button', title='Toggle', (click)='toggleJob(job.id)') {{ job.enabled ? 'Disable' : 'Enable' }}
+              button.mapper-remove-btn(type='button', title='Delete', (click)='removeJob(job.id)') X
+
+    //- Recent results log
+    .sched-results(*ngIf='results.length')
+      .sched-results-header Recent Executions (last 10)
+      .sched-results-list
+        .sched-result-row(*ngFor='let r of results.slice(0, 10)', [class.sched-result-ok]='r.ok', [class.sched-result-fail]='!r.ok')
+          span.sched-result-time {{ formatTime(r.timestamp) }}
+          span.sched-result-status {{ r.ok ? 'OK' : 'FAIL' }}
+          span.sched-result-msg {{ r.message }}
+
+    .mapper-footer
+      span.mapper-summary {{ jobs.length }} job(s) | {{ results.length }} execution(s) logged
+      .mapper-footer-actions
+        button.mapper-btn(type='button', (click)='close()') Close

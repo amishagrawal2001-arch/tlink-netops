@@ -1,0 +1,120 @@
+// Scheduler panel — reuses .mapper-* base from device-mapper, adds scheduler-specific styles
+
+.sched-toggle {
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.sched-btn-active {
+  border-color: #22c55e !important;
+  color: #22c55e !important;
+  &:hover { background: rgba(34, 197, 94, 0.15) !important; }
+}
+
+.sched-status-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  margin-left: auto;
+  &.sched-running {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+}
+
+.sched-schedule-badge {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-card, #161b22);
+  border: 1px solid var(--border, #333);
+  color: var(--text-muted, #888);
+}
+
+.sched-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: #666;
+  &.enabled { background: #22c55e; }
+}
+
+.sched-disabled {
+  opacity: 0.5;
+}
+
+.sched-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+// ── Results Log ─────────────────────────────────────────────────────────────
+
+.sched-results {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border, #333);
+  max-height: 160px;
+  overflow-y: auto;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+}
+
+.sched-results-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border, #333);
+  margin-bottom: 4px;
+}
+
+.sched-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sched-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  &:hover { background: var(--bg-hover, #1a1a2e); }
+}
+
+.sched-result-ok {
+  .sched-result-status { color: #22c55e; }
+}
+
+.sched-result-fail {
+  .sched-result-status { color: #ef4444; }
+}
+
+.sched-result-time {
+  color: var(--text-muted, #888);
+  min-width: 110px;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+}
+
+.sched-result-status {
+  font-weight: 600;
+  min-width: 32px;
+}
+
+.sched-result-msg {
+  color: var(--text, #e0e0e0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}

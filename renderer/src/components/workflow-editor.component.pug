@@ -1,0 +1,146 @@
+.auto-ip-overlay((click)='close()')
+  .auto-ip-dialog.wf-dialog((click)='$event.stopPropagation()')
+    .auto-ip-title Workflow Chains
+    .auto-ip-subtitle Define multi-step automated workflows triggered by events.
+
+    .wf-layout
+      //- ── Left panel: workflow list ──────────────────────────────────────
+      .wf-list-panel
+        .wf-list-header
+          span Workflows ({{ workflows.length }})
+          button.wf-add-btn(type='button', (click)='toggleAddForm()') {{ showAddForm ? 'Cancel' : '+ New' }}
+
+        .wf-list
+          .event-rule-empty(*ngIf='workflows.length === 0 && !showAddForm') No workflows defined.
+          .wf-list-item(
+            *ngFor='let wf of workflows',
+            [class.active]='selectedWorkflow?.id === wf.id',
+            (click)='selectWorkflow(wf)'
+          )
+            .wf-list-item-top
+              label.event-rule-toggle((click)='$event.stopPropagation()')
+                input(type='checkbox', [checked]='wf.enabled', (change)='toggleWorkflow(wf.id, $event)')
+                span {{ wf.name }}
+              button.event-rule-remove(type='button', (click)='removeWorkflow(wf.id, $event)') ✕
+            .event-rule-detail
+              span.event-rule-tag {{ triggerLabel(wf.trigger) }}
+              span.wf-step-count {{ wf.steps.length }} step(s)
+              span.event-rule-filter(*ngIf='wf.nodeFilter && wf.nodeFilter !== "*"') node: {{ wf.nodeFilter }}
+
+        //- Add workflow form
+        ng-container(*ngIf='showAddForm')
+          .event-rules-sep
+          .event-rules-add-title New Workflow
+          .event-rules-form
+            input.er-input(type='text', placeholder='Workflow name', [(ngModel)]='newName')
+            .er-row
+              label.er-label Trigger
+              select.er-select([(ngModel)]='newTrigger')
+                option(*ngFor='let t of triggerOptions', [value]='t.value') {{ t.label }}
+            .er-row
+              label.er-label Node Filter
+              input.er-input(type='text', placeholder='* (all)', [(ngModel)]='newNodeFilter')
+            .er-row
+              label.er-label Vendor
+              select.er-select([(ngModel)]='newVendorFilter')
+                option(*ngFor='let v of vendorOptions', [value]='v') {{ v === '*' ? 'All vendors' : v }}
+            .compliance-edit-actions
+              button.btn-tool(type='button', [disabled]='!newName.trim()', (click)='addWorkflow()') Create
+              button.btn-ghost(type='button', (click)='toggleAddForm()') Cancel
+
+      //- ── Right panel: step editor ──────────────────────────────────────
+      .wf-detail-panel(*ngIf='selectedWorkflow')
+        .wf-detail-header
+          span.wf-detail-name {{ selectedWorkflow.name }}
+          span.event-rule-tag {{ triggerLabel(selectedWorkflow.trigger) }}
+
+        .wf-steps-list
+          .event-rule-empty(*ngIf='selectedWorkflow.steps.length === 0') No steps yet. Click "Add Step" to start building the chain.
+          .wf-step-card(*ngFor='let step of selectedWorkflow.steps; let i = index')
+            .wf-step-top
+              span.wf-step-num {{ i + 1 }}
+              span.event-rule-tag {{ step.action }}
+              span.wf-step-summary {{ stepConfigSummary(step) }}
+              .wf-step-actions
+                button.wf-step-btn(type='button', title='Move up', [disabled]='i === 0', (click)='moveStep(i, -1)') ▲
+                button.wf-step-btn(type='button', title='Move down', [disabled]='i === selectedWorkflow.steps.length - 1', (click)='moveStep(i, 1)') ▼
+                button.event-rule-remove(type='button', title='Remove', (click)='removeStep(i)') ✕
+            .wf-step-detail
+              label.wf-step-coe
+                input(type='checkbox', [checked]='step.continueOnError', (change)='toggleContinueOnError(i)')
+                span Continue on error
+
+        //- Add step form
+        ng-container(*ngIf='!showAddStep')
+          button.btn-tool.wf-add-step-btn(type='button', (click)='toggleAddStep()') + Add Step
+
+        ng-container(*ngIf='showAddStep')
+          .event-rules-sep
+          .event-rules-add-title New Step
+          .event-rules-form
+            .er-row
+              label.er-label Action
+              select.er-select([(ngModel)]='newStepAction')
+                option(*ngFor='let a of actionOptions', [value]='a.value') {{ a.label }}
+            .er-row(*ngIf='newStepAction === "notify" || newStepAction === "log"')
+              label.er-label Message
+              input.er-input(type='text', placeholder='Message text...', [(ngModel)]='newStepMessage')
+            .er-row(*ngIf='newStepAction === "run_command"')
+              label.er-label Command
+              input.er-input(type='text', placeholder='show version', [(ngModel)]='newStepCommand')
+            .er-row(*ngIf='newStepAction === "backup_config"')
+              label.er-label Config
+              select.er-select([(ngModel)]='newStepConfigType')
+                option(value='running') Running
+                option(value='startup') Startup
+            .er-row(*ngIf='newStepAction === "webhook"')
+              label.er-label URL
+              input.er-input(type='text', placeholder='https://hooks.example.com/...', [(ngModel)]='newStepUrl')
+            .er-row(*ngIf='newStepAction === "webhook"')
+              label.er-label Method
+              select.er-select([(ngModel)]='newStepMethod')
+                option(value='POST') POST
+                option(value='PUT') PUT
+                option(value='PATCH') PATCH
+            .er-row(*ngIf='newStepAction === "webhook"')
+              label.er-label Headers
+              input.er-input(type='text', placeholder='{"Authorization":"Bearer ..."}', [(ngModel)]='newStepHeaders')
+            .er-row
+              label.wf-step-coe
+                input(type='checkbox', [(ngModel)]='newStepContinueOnError')
+                span Continue on error
+            .compliance-edit-actions
+              button.btn-tool(type='button', (click)='addStep()') Add Step
+              button.btn-ghost(type='button', (click)='toggleAddStep()') Cancel
+
+        //- Test Run
+        .event-rules-sep
+        .compliance-edit-actions
+          button.btn-tool(type='button', [disabled]='testRunning || selectedWorkflow.steps.length === 0', (click)='testRun()') {{ testRunning ? 'Running...' : 'Test Run' }}
+
+      //- Empty state when no workflow selected
+      .wf-detail-panel.wf-detail-empty(*ngIf='!selectedWorkflow && !showAddForm')
+        .event-rule-empty Select a workflow from the list, or create a new one.
+
+    //- ── History ────────────────────────────────────────────────────────────
+    .event-rules-sep
+    .event-rules-add-title Execution History (last 10)
+    .wf-history
+      .event-rule-empty(*ngIf='recentHistory.length === 0') No workflow runs yet.
+      .wf-history-item(*ngFor='let run of recentHistory')
+        .wf-history-top
+          span.wf-history-name {{ run.workflowName }}
+          span.wf-history-status([class.success]='run.success', [class.failure]='!run.success') {{ run.success ? 'OK' : 'FAIL' }}
+          span.wf-history-time {{ relativeTime(run.timestamp) }}
+          span.wf-history-dur {{ run.totalDurationMs }}ms
+        .wf-history-steps
+          span.wf-history-step(
+            *ngFor='let s of run.steps',
+            [class.step-ok]='s.ok',
+            [class.step-fail]='!s.ok',
+            [title]='s.output'
+          ) {{ s.action }}
+
+    //- Actions
+    .auto-ip-actions
+      button.btn-ghost(type='button', (click)='close()') Close

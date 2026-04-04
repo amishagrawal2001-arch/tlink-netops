@@ -1,0 +1,104 @@
+.auto-ip-overlay((click)='close()')
+  .auto-ip-dialog.cm-dialog((click)='$event.stopPropagation()')
+    .cm-header
+      .cm-header-left
+        span.auto-ip-title Change Manager
+        span.cm-badge(*ngIf='pendingCount > 0') {{ pendingCount }} pending
+      button.auto-dash-close(type='button', (click)='close()') ✕
+
+    //- ── Table ──────────────────────────────────────────────────────────────
+    .cm-table-wrap
+      .event-rule-empty(*ngIf='requests.length === 0 && !showNewForm') No change requests yet. Click "New Change Request" to create one.
+      table.cm-table(*ngIf='requests.length > 0')
+        thead
+          tr
+            th Node
+            th Status
+            th Created
+            th Actions
+        tbody
+          tr.cm-row(
+            *ngFor='let cr of requests',
+            [class.selected]='selectedRequest?.id === cr.id',
+            (click)='selectRequest(cr)'
+          )
+            td {{ cr.nodeLabel }}
+            td
+              span.cm-status([class]='statusClass(cr.status)') {{ cr.status }}
+            td {{ formatTime(cr.createdAt) }}
+            td
+              button.event-rule-remove(type='button', title='Remove', (click)='$event.stopPropagation(); removeRequest()') ✕
+
+    //- ── Detail panel (when row selected) ───────────────────────────────────
+    ng-container(*ngIf='selectedRequest')
+      .event-rules-sep
+      .cm-detail
+        .cm-detail-header
+          span.cm-detail-node {{ selectedRequest.nodeLabel }}
+          span.cm-status([class]='statusClass(selectedRequest.status)') {{ selectedRequest.status }}
+          span.cm-detail-time Created: {{ formatTime(selectedRequest.createdAt) }}
+
+        //- Diff view
+        .cm-diff(*ngIf='selectedRequest.diff')
+          .cm-diff-title Diff (current vs proposed)
+          .cm-diff-lines
+            .cm-diff-line(
+              *ngFor='let line of diffLines',
+              [class.diff-add]='line.type === "add"',
+              [class.diff-remove]='line.type === "remove"'
+            ) {{ line.text }}
+
+        //- Deploy / verify result
+        .cm-result(*ngIf='selectedRequest.deployResult')
+          .cm-result-label Deploy Result
+          .cm-result-text {{ selectedRequest.deployResult }}
+        .cm-result(*ngIf='selectedRequest.verifyResult')
+          .cm-result-label Verify Result
+          .cm-result-text {{ selectedRequest.verifyResult }}
+
+        //- Notes
+        .cm-result(*ngIf='selectedRequest.notes')
+          .cm-result-label Notes
+          .cm-result-text {{ selectedRequest.notes }}
+
+        //- Action buttons based on status
+        .cm-actions
+          ng-container(*ngIf='selectedRequest.status === "pending"')
+            button.btn-tool(type='button', [disabled]='actionInProgress', (click)='approveChange()') Approve
+            .cm-reject-row
+              input.er-input.cm-notes-input(type='text', placeholder='Reason (optional)', [(ngModel)]='rejectNotes')
+              button.btn-danger(type='button', [disabled]='actionInProgress', (click)='rejectChange()') Reject
+
+          ng-container(*ngIf='selectedRequest.status === "approved"')
+            button.btn-tool(type='button', [disabled]='actionInProgress', (click)='deployChange()') {{ actionInProgress ? 'Deploying...' : 'Deploy' }}
+
+          ng-container(*ngIf='selectedRequest.status === "deployed"')
+            button.btn-tool(type='button', [disabled]='actionInProgress', (click)='verifyChange()') {{ actionInProgress ? 'Verifying...' : 'Verify' }}
+            button.btn-danger(type='button', [disabled]='actionInProgress', (click)='rollbackChange()') Rollback
+
+          ng-container(*ngIf='selectedRequest.status === "failed"')
+            button.btn-danger(type='button', [disabled]='actionInProgress', (click)='rollbackChange()') {{ actionInProgress ? 'Rolling back...' : 'Rollback' }}
+            button.btn-tool(type='button', [disabled]='actionInProgress', (click)='deployChange()') Retry Deploy
+
+    //- ── New Change Request form ────────────────────────────────────────────
+    .event-rules-sep
+    ng-container(*ngIf='!showNewForm')
+      button.btn-tool(type='button', (click)='toggleNewForm()') + New Change Request
+
+    ng-container(*ngIf='showNewForm')
+      .event-rules-add-title New Change Request
+      .event-rules-form
+        .er-row
+          label.er-label Node
+          select.er-select([(ngModel)]='newNodeId', (ngModelChange)='onNodeChange()')
+            option(*ngFor='let n of topoNodes', [value]='n.id') {{ n.label }} ({{ n.vendor }})
+        .cm-config-wrap
+          label.er-label Proposed Config
+          textarea.cm-textarea([(ngModel)]='newProposedConfig', rows='8', placeholder='Enter proposed configuration...')
+        .compliance-edit-actions
+          button.btn-tool(type='button', [disabled]='!newNodeId || !newProposedConfig.trim()', (click)='submitRequest()') Submit
+          button.btn-ghost(type='button', (click)='toggleNewForm()') Cancel
+
+    //- Footer
+    .auto-ip-actions
+      button.btn-ghost(type='button', (click)='close()') Close
