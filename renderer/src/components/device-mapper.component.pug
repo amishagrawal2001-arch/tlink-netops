@@ -23,7 +23,7 @@
         type='button',
         [disabled]='discovering',
         (click)='startDiscovery()'
-      ) {{ discovering ? 'Discovering...' : '🔍 Discover Network' }}
+      ) {{ discovering ? 'Discovering...' : '🔍 Discover' }}
       button.mapper-btn(
         type='button',
         (click)='fileInput.click()'
@@ -45,6 +45,40 @@
         (click)='autoMatch(); activeTab = "mapping"; cdr.markForCheck()'
       ) ⚡ Auto-Match
       span.mapper-status(*ngIf='discoveredDevices.length') {{ discoveredDevices.length }} devices
+
+    //- Discovery form (inline)
+    .mapper-inline-form(*ngIf='showDiscoveryForm')
+      .mapper-form-row
+        label.mapper-form-label Seed IP
+        input.mapper-form-input(type='text', [(ngModel)]='discoveryForm.host', placeholder='e.g. 172.16.0.1')
+      .mapper-form-row
+        label.mapper-form-label Username
+        input.mapper-form-input(type='text', [(ngModel)]='discoveryForm.username', placeholder='SSH username')
+      .mapper-form-row
+        label.mapper-form-label Password
+        input.mapper-form-input(type='password', [(ngModel)]='discoveryForm.password', placeholder='SSH password')
+      .mapper-form-row
+        span.mapper-form-error(*ngIf='discoveryError') {{ discoveryError }}
+        button.mapper-btn(type='button', (click)='showDiscoveryForm = false; cdr.markForCheck()') Cancel
+        button.mapper-btn.mapper-btn-discover(type='button', (click)='startDiscovery()') Start Discovery
+
+    //- Add device form (inline)
+    .mapper-inline-form(*ngIf='showAddForm')
+      .mapper-form-row
+        label.mapper-form-label Hostname
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.hostname', placeholder='e.g. Spine-1')
+      .mapper-form-row
+        label.mapper-form-label Mgmt IP
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.mgmtIp', placeholder='e.g. 172.16.0.1')
+      .mapper-form-row
+        label.mapper-form-label Vendor
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.vendor', placeholder='e.g. Juniper, Cisco')
+      .mapper-form-row
+        label.mapper-form-label Model
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.model', placeholder='e.g. QFX5130 (optional)')
+      .mapper-form-row
+        button.mapper-btn(type='button', (click)='showAddForm = false; cdr.markForCheck()') Cancel
+        button.mapper-btn.mapper-btn-apply(type='button', [disabled]='!newDevice.hostname && !newDevice.mgmtIp', (click)='confirmAddDevice()') Add Device
 
     //- ── Inventory Tab ──────────────────────────────────────────────
     .mapper-table-wrap(*ngIf='activeTab === "inventory"')

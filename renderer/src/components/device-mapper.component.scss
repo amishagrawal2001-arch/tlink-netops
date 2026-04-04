@@ -101,6 +101,45 @@
   &:focus { border-color: var(--accent); background: var(--bg-input); outline: none; }
 }
 
+.mapper-inline-form {
+  padding: 10px 20px;
+  background: var(--bg-card, #161b22);
+  border-bottom: 1px solid var(--border, #333);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mapper-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mapper-form-label {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  min-width: 70px;
+  text-align: right;
+}
+
+.mapper-form-input {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-input, #0a1120);
+  color: var(--text, #e0e0e0);
+  font-size: 11px;
+  &:focus { border-color: var(--accent); outline: none; }
+}
+
+.mapper-form-error {
+  color: #ef4444;
+  font-size: 10px;
+  flex: 1;
+}
+
 .mapper-remove-btn {
   background: none;
   border: 1px solid var(--border);

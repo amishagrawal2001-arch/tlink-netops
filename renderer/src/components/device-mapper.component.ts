@@ -82,34 +82,49 @@ export class DeviceMapperComponent implements OnInit {
 
     close (): void { this.closed.emit() }
 
+    // Discovery form state
+    showDiscoveryForm = false
+    discoveryForm = { host: '', username: '', password: '' }
+    discoveryError = ''
+
     async startDiscovery (): Promise<void> {
-        const api = (window as any).netopsAPI
+        if (!this.showDiscoveryForm) {
+            // Show form first, pre-fill from saved prefs
+            const api = this._api
+            this.discoveryForm.host = await api?.prefGet?.('discovery-host') ?? ''
+            this.discoveryForm.username = await api?.prefGet?.('discovery-user') ?? ''
+            this.discoveryForm.password = ''
+            this.showDiscoveryForm = true
+            this.discoveryError = ''
+            this.cdr.markForCheck()
+            return
+        }
 
-        // Load saved credentials
-        const savedHost = await api?.prefGet?.('discovery-host') ?? ''
-        const savedUser = await api?.prefGet?.('discovery-user') ?? ''
-
-        const host = prompt('Seed device IP address:', savedHost)
-        if (!host) { return }
-        const username = prompt('SSH username:', savedUser)
-        if (!username) { return }
-        const password = prompt('SSH password:')
-        if (!password) { return }
+        // Validate
+        if (!this.discoveryForm.host || !this.discoveryForm.username || !this.discoveryForm.password) {
+            this.discoveryError = 'All fields are required'
+            this.cdr.markForCheck()
+            return
+        }
 
         // Save credentials for next time (not password)
-        api?.prefSet?.('discovery-host', host)
-        api?.prefSet?.('discovery-user', username)
+        this._api?.prefSet?.('discovery-host', this.discoveryForm.host)
+        this._api?.prefSet?.('discovery-user', this.discoveryForm.username)
 
         this.discovering = true
+        this.showDiscoveryForm = false
+        this.discoveryError = ''
         this.cdr.markForCheck()
 
         try {
-            const result = await this.discoverySvc.discoverFromSeed(host, 22, username, password, { maxDepth: 3 })
+            const result = await this.discoverySvc.discoverFromSeed(
+                this.discoveryForm.host, 22, this.discoveryForm.username, this.discoveryForm.password, { maxDepth: 3 }
+            )
             this.discoveredDevices = [...this.discoveredDevices, ...result.devices]
             this._saveInventory()
             this.autoMatch()
         } catch (err) {
-            alert(`Discovery failed: ${(err as Error).message}`)
+            this.discoveryError = `Discovery failed: ${(err as Error).message}`
         }
 
         this.discovering = false
@@ -185,14 +200,27 @@ export class DeviceMapperComponent implements OnInit {
         }
     }
 
+    // Inline add form state
+    showAddForm = false
+    newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '' }
+
     addManualDevice (): void {
-        const hostname = prompt('Device hostname:')
-        if (!hostname) { return }
-        const mgmtIp = prompt('Management IP:') ?? ''
-        const vendor = prompt('Vendor (e.g., Juniper, Cisco, Arista):') ?? ''
-        const model = prompt('Model (optional):') ?? ''
-        this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+        this.showAddForm = true
+        this.newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '' }
+        this.cdr.markForCheck()
+    }
+
+    confirmAddDevice (): void {
+        if (!this.newDevice.hostname && !this.newDevice.mgmtIp) { return }
+        this.discoveredDevices.push({
+            hostname: this.newDevice.hostname,
+            mgmtIp: this.newDevice.mgmtIp,
+            vendor: this.newDevice.vendor,
+            model: this.newDevice.model,
+            interfaces: [],
+        })
         this._saveInventory()
+        this.showAddForm = false
         this.cdr.markForCheck()
     }
 
