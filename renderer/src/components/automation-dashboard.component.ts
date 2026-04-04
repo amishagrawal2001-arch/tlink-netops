@@ -3,6 +3,8 @@ import {
     EventEmitter, Output, OnInit, OnDestroy,
 } from '@angular/core'
 import { InventoryService } from '../services/inventory.service'
+import { ComplianceService, ComplianceResult } from '../services/compliance.service'
+import { TopologyService } from '../services/topology.service'
 import { Subscription } from 'rxjs'
 
 @Component({
@@ -22,12 +24,16 @@ export class AutomationDashboardComponent implements OnInit, OnDestroy {
     healthScore = 100
     activeRulesCount = 0
     totalRulesCount = 0
+    complianceResults: ComplianceResult[] = []
+    complianceStatus = ''
 
     private _sub?: Subscription
     private _nodeMap = new Map<string, string>()
 
     constructor (
         private invSvc: InventoryService,
+        private compSvc: ComplianceService,
+        private topoSvc: TopologyService,
         private cdr: ChangeDetectorRef,
     ) {}
 
@@ -126,9 +132,29 @@ export class AutomationDashboardComponent implements OnInit, OnDestroy {
         this.invSvc.pollAllDevices()
     }
 
-    runComplianceCheck (): void {
-        // Compliance service would be called here
-        // For now just refresh
+    async runComplianceCheck (): Promise<void> {
+        this.complianceStatus = 'Running...'
+        this.cdr.markForCheck()
+        try {
+            await this.compSvc.loadRules()
+            const topo = this.topoSvc.topology
+            const nodes = topo.nodes
+                .filter(n => n.vendor)
+                .map(n => ({ id: n.id, label: n.label, vendor: n.vendor!, role: n.role ?? '' }))
+            this.complianceResults = await this.compSvc.checkAllCompliance(
+                nodes,
+                async (nodeId) => {
+                    const node = topo.nodes.find(n => n.id === nodeId)
+                    return node?.startupConfig ?? ''
+                },
+            )
+            const avgScore = this.complianceResults.length > 0
+                ? Math.round(this.complianceResults.reduce((s, r) => s + r.score, 0) / this.complianceResults.length)
+                : 100
+            this.complianceStatus = `${this.complianceResults.length} node(s) checked — avg score ${avgScore}%`
+        } catch (err: any) {
+            this.complianceStatus = `Error: ${err?.message ?? err}`
+        }
         this._refresh()
         this.cdr.markForCheck()
     }

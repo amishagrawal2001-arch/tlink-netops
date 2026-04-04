@@ -48,11 +48,30 @@ function uid (): string { return `gcr_${Date.now()}_${_nextId++}` }
 export class ComplianceService {
 
     private _rules: GoldenConfigRule[] = []
+    private _api = (window as any).netopsAPI
 
     /** All currently loaded rules (read-only snapshot). */
     get rules (): GoldenConfigRule[] { return this._rules }
 
     // ── Default Rules ────────────────────────────────────────────────────────
+
+    /** Load saved rules from persistent storage, merging with defaults if none saved. */
+    async loadRules (): Promise<void> {
+        try {
+            const saved = await this._api?.prefGet?.('compliance-rules')
+            if (Array.isArray(saved) && saved.length > 0) {
+                this._rules = saved
+                return
+            }
+        } catch { /* ignore read errors */ }
+        // No saved rules — fall through to defaults
+        if (this._rules.length === 0) { this.initDefaultRules() }
+    }
+
+    /** Persist current rules to storage. */
+    saveRules (): void {
+        this._api?.prefSet?.('compliance-rules', this._rules)
+    }
 
     /** Populate default golden-config rules for common vendors. */
     initDefaultRules (): void {
@@ -87,19 +106,23 @@ export class ComplianceService {
     addRule (rule: Omit<GoldenConfigRule, 'id'>): GoldenConfigRule {
         const full: GoldenConfigRule = { ...rule, id: uid() }
         this._rules = [...this._rules, full]
+        this.saveRules()
         return full
     }
 
     updateRule (id: string, changes: Partial<GoldenConfigRule>): void {
         this._rules = this._rules.map(r => r.id === id ? { ...r, ...changes } : r)
+        this.saveRules()
     }
 
     removeRule (id: string): void {
         this._rules = this._rules.filter(r => r.id !== id)
+        this.saveRules()
     }
 
     toggleRule (id: string): void {
         this._rules = this._rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
+        this.saveRules()
     }
 
     // ── Compliance Check ─────────────────────────────────────────────────────

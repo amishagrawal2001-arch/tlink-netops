@@ -564,8 +564,16 @@ export class InventoryService implements OnDestroy {
                 message: `${downMappedInterfaces.length} interface(s) down on ${node.label}`,
                 detail: downMappedInterfaces.map(i => i.name).join(', '),
             })
+            for (const iface of downMappedInterfaces) {
+                this._emitEvent({ type: 'link_down', nodeId, timestamp: nowIso(), detail: `${iface.name} is ${iface.status}` })
+            }
         } else {
+            // If an interface_down alarm was active and is now being cleared, the interface recovered
+            const hadAlarm = this.store.alarms.some(a => !a.clearedAt && a.nodeId === nodeId && a.category === 'interface_down')
             this._autoClearAlarm(nodeId, 'interface_down')
+            if (hadAlarm) {
+                this._emitEvent({ type: 'link_up', nodeId, timestamp: nowIso(), detail: 'Interface recovered' })
+            }
         }
 
         // Vendor-reported alarms (Juniper, Huawei, etc.)
