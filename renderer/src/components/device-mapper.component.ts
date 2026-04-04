@@ -21,11 +21,10 @@ interface MappingEntry {
 export class DeviceMapperComponent implements OnInit {
 
     @Input() topology!: Topology
-    @Input() discoveredDevices: DiscoveredDevice[] = []
     @Output() closed = new EventEmitter<void>()
     @Output() mappingApplied = new EventEmitter<Map<string, MappingEntry>>()
-    @Output() discoveryRequested = new EventEmitter<void>()
 
+    discoveredDevices: DiscoveredDevice[] = []
     topologyNodes: TopologyNode[] = []
     mappings = new Map<string, MappingEntry>()
     discovering = false
@@ -48,20 +47,8 @@ export class DeviceMapperComponent implements OnInit {
 
     private async _loadInventory (): Promise<void> {
         const saved = await this._api?.prefGet?.('device-inventory')
-        if (Array.isArray(saved) && saved.length) {
-            // Merge: keep any devices passed via @Input, add saved ones that aren't duplicates
-            const existingHostnames = new Set(this.discoveredDevices.map(d => d.hostname))
-            for (const dev of saved) {
-                if (dev.hostname && !existingHostnames.has(dev.hostname)) {
-                    this.discoveredDevices.push(dev)
-                    existingHostnames.add(dev.hostname)
-                } else if (!dev.hostname && dev.mgmtIp) {
-                    const existingIps = new Set(this.discoveredDevices.map(d => d.mgmtIp))
-                    if (!existingIps.has(dev.mgmtIp)) {
-                        this.discoveredDevices.push(dev)
-                    }
-                }
-            }
+        if (Array.isArray(saved)) {
+            this.discoveredDevices = saved
             this.cdr.markForCheck()
         }
     }
@@ -174,13 +161,20 @@ export class DeviceMapperComponent implements OnInit {
 
         // Parse header to find column indices
         const header = lines[0].toLowerCase().split(',').map(h => h.trim())
-        const hostIdx = header.findIndex(h => h.includes('hostname') || h.includes('name') || h === 'host')
-        const ipIdx = header.findIndex(h => h.includes('ip') || h.includes('address') || h.includes('mgmt'))
-        const vendorIdx = header.findIndex(h => h.includes('vendor') || h.includes('platform') || h.includes('os'))
-        const modelIdx = header.findIndex(h => h.includes('model') || h.includes('hardware'))
+        // Use exact match first, then partial match for each field
+        const hostIdx = header.findIndex(h => h === 'hostname') >= 0
+            ? header.findIndex(h => h === 'hostname')
+            : header.findIndex(h => h.includes('hostname') || h === 'name' || h === 'host' || h === 'device_name')
+        const ipIdx = header.findIndex(h => h === 'mgmtip' || h === 'mgmt_ip' || h === 'management_ip') >= 0
+            ? header.findIndex(h => h === 'mgmtip' || h === 'mgmt_ip' || h === 'management_ip')
+            : header.findIndex(h => h === 'ip' || h === 'address' || h === 'ip_address')
+        const vendorIdx = header.findIndex(h => h === 'vendor' || h === 'platform' || h === 'manufacturer')
+        const modelIdx = header.findIndex(h => h === 'model' || h === 'hardware' || h === 'device_type')
+        const serialIdx = header.findIndex(h => h.includes('serial'))
 
         for (let i = 1; i < lines.length; i++) {
             const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''))
+            if (!cols.length || !cols.some(c => c)) { continue }  // skip empty rows
             const hostname = hostIdx >= 0 ? cols[hostIdx] ?? '' : cols[0] ?? ''
             const mgmtIp = ipIdx >= 0 ? cols[ipIdx] ?? '' : cols[1] ?? ''
             const vendor = vendorIdx >= 0 ? cols[vendorIdx] ?? '' : ''

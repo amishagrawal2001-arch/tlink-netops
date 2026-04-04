@@ -4072,7 +4072,6 @@
   device-mapper(
     *ngIf='showDeviceMapper',
     [topology]='topology',
-    [discoveredDevices]='discoveredDevicesList',
     (closed)='showDeviceMapper = false; cdr.markForCheck()',
     (mappingApplied)='onMappingApplied($event)'
   )
