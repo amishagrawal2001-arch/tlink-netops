@@ -85,6 +85,8 @@
   color: var(--text-muted, #888);
   font-size: 12px;
   p { margin-bottom: 12px; }
+  .mapper-sample-hint { margin-top: 16px; font-size: 11px; color: var(--text-muted); }
+  .mapper-sample-btns { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
   ul { list-style: none; text-align: left; max-width: 300px; margin: 0 auto; }
   li { padding: 4px 0; }
 }

@@ -95,6 +95,10 @@
           li 🔍 Discover Network — auto-discover via LLDP/SSH
           li 📁 Upload CSV/JSON — import from file
           li + Add Device — enter manually
+        p.mapper-sample-hint Or download a sample file to get started:
+        .mapper-sample-btns
+          button.mapper-btn(type='button', (click)='downloadSampleCsv()') 📄 Sample CSV
+          button.mapper-btn(type='button', (click)='downloadSampleJson()') 📋 Sample JSON
 
       .mapper-search(*ngIf='discoveredDevices.length')
         input.mapper-form-input(

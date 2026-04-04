@@ -85,6 +85,43 @@ export class DeviceMapperComponent implements OnInit {
         }
     }
 
+    downloadSampleCsv (): void {
+        const csv = [
+            'hostname,mgmtIp,vendor,model,serialNumber,sshUsername,sshPassword',
+            'Spine-1,172.16.0.1,Juniper,QFX5130-32CD,JN1234ABC01,admin,Juniper123!',
+            'Spine-2,172.16.0.2,Juniper,QFX5130-32CD,JN1234ABC02,admin,Juniper123!',
+            'Leaf-1,172.16.0.3,Juniper,QFX5120-48Y,JN5678DEF01,admin,Juniper123!',
+            'Leaf-2,172.16.0.4,Arista,DCS-7050TX3-48C8,AR9012GHI01,admin,Arista456!',
+            'Leaf-3,172.16.0.5,Cisco,Nexus 93180YC-FX,FOC2345JKL1,admin,Cisco789!',
+            'Border-Leaf,172.16.0.6,Juniper,QFX5120-32C,JN3456MNO01,admin,Juniper123!',
+        ].join('\n')
+        this._downloadFile(csv, 'devices-sample.csv', 'text/csv')
+    }
+
+    downloadSampleJson (): void {
+        const json = JSON.stringify({ devices: [
+            { hostname: 'Spine-1', mgmtIp: '172.16.0.1', vendor: 'Juniper', model: 'QFX5130-32CD', sshUsername: 'admin', sshPassword: 'Juniper123!' },
+            { hostname: 'Spine-2', mgmtIp: '172.16.0.2', vendor: 'Juniper', model: 'QFX5130-32CD', sshUsername: 'admin', sshPassword: 'Juniper123!' },
+            { hostname: 'Leaf-1', mgmtIp: '172.16.0.3', vendor: 'Juniper', model: 'QFX5120-48Y', sshUsername: 'admin', sshPassword: 'Juniper123!' },
+            { hostname: 'Leaf-2', mgmtIp: '172.16.0.4', vendor: 'Arista', model: 'DCS-7050TX3-48C8', sshUsername: 'admin', sshPassword: 'Arista456!' },
+            { hostname: 'Leaf-3', mgmtIp: '172.16.0.5', vendor: 'Cisco', model: 'Nexus 93180YC-FX', sshUsername: 'admin', sshPassword: 'Cisco789!' },
+            { hostname: 'Border-Leaf', mgmtIp: '172.16.0.6', vendor: 'Juniper', model: 'QFX5120-32C', sshUsername: 'admin', sshPassword: 'Juniper123!' },
+        ] }, null, 2)
+        this._downloadFile(json, 'devices-sample.json', 'application/json')
+    }
+
+    private _downloadFile (content: string, filename: string, mimeType: string): void {
+        const blob = new Blob([content], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }
+
     removeDevice (idx: number): void {
         this.discoveredDevices.splice(idx, 1)
         this._saveInventory()
