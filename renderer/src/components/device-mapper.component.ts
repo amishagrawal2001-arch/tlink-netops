@@ -49,7 +49,19 @@ export class DeviceMapperComponent implements OnInit {
     private async _loadInventory (): Promise<void> {
         const saved = await this._api?.prefGet?.('device-inventory')
         if (Array.isArray(saved) && saved.length) {
-            this.discoveredDevices = saved
+            // Merge: keep any devices passed via @Input, add saved ones that aren't duplicates
+            const existingHostnames = new Set(this.discoveredDevices.map(d => d.hostname))
+            for (const dev of saved) {
+                if (dev.hostname && !existingHostnames.has(dev.hostname)) {
+                    this.discoveredDevices.push(dev)
+                    existingHostnames.add(dev.hostname)
+                } else if (!dev.hostname && dev.mgmtIp) {
+                    const existingIps = new Set(this.discoveredDevices.map(d => d.mgmtIp))
+                    if (!existingIps.has(dev.mgmtIp)) {
+                        this.discoveredDevices.push(dev)
+                    }
+                }
+            }
             this.cdr.markForCheck()
         }
     }
