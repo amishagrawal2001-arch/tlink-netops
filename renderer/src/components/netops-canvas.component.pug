@@ -391,32 +391,14 @@
         button.menu-item(type='button', (click)='openConfigDiffViewer(); closeMenus()')
           span.mi-icon ≏
           span.mi-label Config Diff Viewer…
-        button.menu-item(type='button', (click)='openEventRulesDialog(); closeMenus()')
-          span.mi-icon ⚡
-          span.mi-label Event Rules…
-        button.menu-item(type='button', (click)='openCompliancePanel(); closeMenus()')
-          span.mi-icon ✓
-          span.mi-label Compliance Check
-        button.menu-item(type='button', (click)='openEventRulesPanel(); closeMenus()')
-          span.mi-icon ⚙
-          span.mi-label Event Rules (Full)…
-        button.menu-item(type='button', (click)='openUpgradesDialog(); closeMenus()')
-          span.mi-icon ↑
-          span.mi-label Upgrade Plans…
         .menu-sep
         button.menu-item(type='button', [disabled]='!hasConfigs || configPushAllRunning', (click)='pushAllConfigs(); closeMenus()')
           span.mi-icon 🚀
           span.mi-label {{ configPushAllRunning ? 'Pushing...' : 'Push All Configs to Devices' }}
         .menu-sep
-        button.menu-item(type='button', (click)='showBackupHistory = true; closeMenus()')
-          span.mi-icon 🗄
-          span.mi-label Backup History
         button.menu-item(type='button', (click)='openDashboard(); closeMenus()')
           span.mi-icon ◫
           span.mi-label Inventory Dashboard
-        button.menu-item(type='button', (click)='showAutomationDashboard = true; closeMenus()')
-          span.mi-icon 🤖
-          span.mi-label Automation Dashboard
 
     //- ── Simulate ─────────────────────────
     .menu-item-wrap
@@ -478,6 +460,40 @@
         button.menu-item(type='button', [disabled]='!clabFilePath', (click)='compareTopologyWithSaved(); closeMenus()')
           span.mi-icon ⇋
           span.mi-label Compare with Saved
+
+    //- ── Automation ──────────────────────────
+    .menu-item-wrap
+      button.menu-trigger(
+        type='button',
+        [class.active]='openMenu === "automation"',
+        (click)='toggleMenu("automation")',
+        (mouseenter)='onMenuEnter("automation")'
+      ) Automation
+      .menu-dropdown(*ngIf='openMenu === "automation"')
+        button.menu-item(type='button', (click)='showAutomationDashboard = true; closeMenus()')
+          span.mi-icon 🤖
+          span.mi-label Automation Dashboard
+        .menu-sep
+        button.menu-item(type='button', (click)='openEventRulesDialog(); closeMenus()')
+          span.mi-icon ⚡
+          span.mi-label Event Rules…
+        button.menu-item(type='button', (click)='openEventRulesPanel(); closeMenus()')
+          span.mi-icon ⚙
+          span.mi-label Event Rules (Full)…
+        .menu-sep
+        button.menu-item(type='button', (click)='openCompliancePanel(); closeMenus()')
+          span.mi-icon ✓
+          span.mi-label Compliance Check
+        button.menu-item(type='button', (click)='showBackupHistory = true; closeMenus()')
+          span.mi-icon 🗄
+          span.mi-label Backup History
+        button.menu-item(type='button', (click)='openUpgradesDialog(); closeMenus()')
+          span.mi-icon ↑
+          span.mi-label Upgrade Plans…
+        .menu-sep
+        button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
+          span.mi-icon 🔄
+          span.mi-label Firmware Upgrade Plan
 
     //- ── Export ────────────────────────────
     .menu-item-wrap
