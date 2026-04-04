@@ -97,6 +97,9 @@
   background: transparent;
   color: var(--text, #e0e0e0);
   font-size: 11px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   &:hover { border-color: var(--border, #333); background: var(--bg-input, #0a1120); }
   &:focus { border-color: var(--accent); background: var(--bg-input); outline: none; }
 }
@@ -215,6 +218,9 @@
     padding: 6px 8px;
     color: var(--text, #e0e0e0);
     vertical-align: middle;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
@@ -264,5 +270,19 @@
 
 .mapper-footer-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.mapper-search {
+  padding: 6px 12px;
+  input { width: 100%; }
+}
+
+.mapper-confirm {
+  font-size: 11px;
+  color: #ef4444;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

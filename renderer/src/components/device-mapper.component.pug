@@ -77,6 +77,13 @@
         label.mapper-form-label Model
         input.mapper-form-input(type='text', [(ngModel)]='newDevice.model', placeholder='e.g. QFX5130 (optional)')
       .mapper-form-row
+        label.mapper-form-label SSH User
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.sshUsername', placeholder='SSH username (optional)')
+      .mapper-form-row
+        label.mapper-form-label SSH Pass
+        input.mapper-form-input(type='password', [(ngModel)]='newDevice.sshPassword', placeholder='SSH password (optional)')
+      .mapper-form-row
+        span.mapper-form-error(*ngIf='addError') {{ addError }}
         button.mapper-btn(type='button', (click)='showAddForm = false; cdr.markForCheck()') Cancel
         button.mapper-btn.mapper-btn-apply(type='button', [disabled]='!newDevice.hostname && !newDevice.mgmtIp', (click)='confirmAddDevice()') Add Device
 
@@ -89,6 +96,14 @@
           li 📁 Upload CSV/JSON — import from file
           li + Add Device — enter manually
 
+      .mapper-search(*ngIf='discoveredDevices.length')
+        input.mapper-form-input(
+          type='text',
+          placeholder='Search by hostname, IP, or vendor...',
+          [(ngModel)]='searchQuery',
+          (ngModelChange)='cdr.markForCheck()'
+        )
+
       table.mapper-table(*ngIf='discoveredDevices.length')
         thead
           tr
@@ -97,9 +112,11 @@
             th IP Address
             th Vendor
             th Model
+            th SSH User
+            th SSH Pass
             th Actions
         tbody
-          tr.mapper-row(*ngFor='let dev of discoveredDevices; let i = index')
+          tr.mapper-row(*ngFor='let dev of filteredDevices; let i = index')
             td {{ i + 1 }}
             td
               input.mapper-inline-edit(
@@ -124,6 +141,18 @@
                 type='text',
                 [value]='dev.model',
                 (change)='saveDeviceEdit(i, "model", $event)'
+              )
+            td
+              input.mapper-inline-edit(
+                type='text',
+                [value]='dev.sshUsername || ""',
+                (change)='saveDeviceEdit(i, "sshUsername", $event)'
+              )
+            td
+              input.mapper-inline-edit(
+                type='password',
+                [value]='dev.sshPassword || ""',
+                (change)='saveDeviceEdit(i, "sshPassword", $event)'
               )
             td
               button.mapper-remove-btn(type='button', title='Remove', (click)='removeDevice(i)') ✕
@@ -168,7 +197,12 @@
       span.mapper-summary(*ngIf='activeTab === "inventory"') {{ discoveredDevices.length }} devices in inventory
       span.mapper-summary(*ngIf='activeTab === "mapping"') {{ mappings.size }}/{{ topologyNodes.length }} nodes mapped
       .mapper-footer-actions
-        button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', (click)='clearAllDevices()') Clear All
+        button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', (click)='exportInventoryCsv()') 📥 Export CSV
+        button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length && !showClearConfirm', (click)='clearAllDevices()') Clear All
+        span.mapper-confirm(*ngIf='showClearConfirm')
+          | Are you sure?
+          button.mapper-btn(type='button', (click)='confirmClearAll()') Yes, clear
+          button.mapper-btn(type='button', (click)='showClearConfirm = false; cdr.markForCheck()') No
         button.mapper-btn(type='button', (click)='close()') Cancel
         button.mapper-btn.mapper-btn-apply(
           *ngIf='activeTab === "mapping"',

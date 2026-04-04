@@ -12,6 +12,11 @@ interface MappingEntry {
     model: string
 }
 
+interface ExtendedDevice extends DiscoveredDevice {
+    sshUsername?: string
+    sshPassword?: string
+}
+
 @Component({
     selector: 'device-mapper',
     templateUrl: './device-mapper.component.pug',
@@ -24,14 +29,27 @@ export class DeviceMapperComponent implements OnInit {
     @Output() closed = new EventEmitter<void>()
     @Output() mappingApplied = new EventEmitter<Map<string, MappingEntry>>()
 
-    discoveredDevices: DiscoveredDevice[] = []
+    discoveredDevices: ExtendedDevice[] = []
     topologyNodes: TopologyNode[] = []
     mappings = new Map<string, MappingEntry>()
     discovering = false
     activeTab: 'mapping' | 'inventory' = 'inventory'
     editingIdx = -1
+    searchQuery = ''
+    showClearConfirm = false
+    addError = ''
 
     private _api = (window as any).netopsAPI
+
+    get filteredDevices (): ExtendedDevice[] {
+        if (!this.searchQuery) { return this.discoveredDevices }
+        const q = this.searchQuery.toLowerCase()
+        return this.discoveredDevices.filter(d =>
+            d.hostname.toLowerCase().includes(q) ||
+            d.mgmtIp.toLowerCase().includes(q) ||
+            d.vendor.toLowerCase().includes(q)
+        )
+    }
 
     constructor (
         private cdr: ChangeDetectorRef,
@@ -74,9 +92,14 @@ export class DeviceMapperComponent implements OnInit {
     }
 
     clearAllDevices (): void {
-        if (!confirm('Remove all devices from inventory?')) { return }
+        this.showClearConfirm = true
+        this.cdr.markForCheck()
+    }
+
+    confirmClearAll (): void {
         this.discoveredDevices = []
         this._saveInventory()
+        this.showClearConfirm = false
         this.cdr.markForCheck()
     }
 
@@ -120,7 +143,9 @@ export class DeviceMapperComponent implements OnInit {
             const result = await this.discoverySvc.discoverFromSeed(
                 this.discoveryForm.host, 22, this.discoveryForm.username, this.discoveryForm.password, { maxDepth: 3 }
             )
-            this.discoveredDevices = [...this.discoveredDevices, ...result.devices]
+            const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
+            const newDevices = result.devices.filter(d => !d.hostname || !existingHosts.has(d.hostname))
+            this.discoveredDevices = [...this.discoveredDevices, ...newDevices]
             this._saveInventory()
             this.autoMatch()
         } catch (err) {
@@ -159,13 +184,18 @@ export class DeviceMapperComponent implements OnInit {
     private _parseJsonDevices (content: string): void {
         const data = JSON.parse(content)
         const devices = Array.isArray(data) ? data : data.devices ?? data.hosts ?? [data]
+        const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
         for (const d of devices) {
             const hostname = d.hostname ?? d.name ?? d.host ?? ''
             const mgmtIp = d.mgmtIp ?? d.ip ?? d.management_ip ?? d.address ?? ''
             const vendor = d.vendor ?? d.platform ?? d.os ?? ''
             const model = d.model ?? d.hardware ?? ''
+            const sshUsername = d.sshUsername ?? d.ssh_username ?? d.username ?? ''
+            const sshPassword = d.sshPassword ?? d.ssh_password ?? d.password ?? ''
             if (hostname || mgmtIp) {
-                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+                if (hostname && existingHosts.has(hostname)) { continue }
+                if (hostname) { existingHosts.add(hostname) }
+                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [], sshUsername, sshPassword })
             }
         }
     }
@@ -186,6 +216,10 @@ export class DeviceMapperComponent implements OnInit {
         const vendorIdx = header.findIndex(h => h === 'vendor' || h === 'platform' || h === 'manufacturer')
         const modelIdx = header.findIndex(h => h === 'model' || h === 'hardware' || h === 'device_type')
         const serialIdx = header.findIndex(h => h.includes('serial'))
+        const sshUserIdx = header.findIndex(h => h === 'sshusername' || h === 'ssh_username' || h === 'username')
+        const sshPassIdx = header.findIndex(h => h === 'sshpassword' || h === 'ssh_password' || h === 'password')
+
+        const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
 
         for (let i = 1; i < lines.length; i++) {
             const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''))
@@ -194,34 +228,77 @@ export class DeviceMapperComponent implements OnInit {
             const mgmtIp = ipIdx >= 0 ? cols[ipIdx] ?? '' : cols[1] ?? ''
             const vendor = vendorIdx >= 0 ? cols[vendorIdx] ?? '' : ''
             const model = modelIdx >= 0 ? cols[modelIdx] ?? '' : ''
+            const sshUsername = sshUserIdx >= 0 ? cols[sshUserIdx] ?? '' : ''
+            const sshPassword = sshPassIdx >= 0 ? cols[sshPassIdx] ?? '' : ''
             if (hostname || mgmtIp) {
-                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [] })
+                if (hostname && existingHosts.has(hostname)) { continue }
+                if (hostname) { existingHosts.add(hostname) }
+                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [], sshUsername, sshPassword })
             }
         }
     }
 
     // Inline add form state
     showAddForm = false
-    newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '' }
+    newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '', sshUsername: '', sshPassword: '' }
 
     addManualDevice (): void {
         this.showAddForm = true
-        this.newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '' }
+        this.newDevice = { hostname: '', mgmtIp: '', vendor: '', model: '', sshUsername: '', sshPassword: '' }
+        this.addError = ''
         this.cdr.markForCheck()
     }
 
     confirmAddDevice (): void {
-        if (!this.newDevice.hostname && !this.newDevice.mgmtIp) { return }
+        const hostname = this.newDevice.hostname.trim()
+        const mgmtIp = this.newDevice.mgmtIp.trim()
+        if (!hostname && !mgmtIp) {
+            this.addError = 'Hostname or IP is required'
+            this.cdr.markForCheck()
+            return
+        }
+        if (!hostname) {
+            this.addError = 'Hostname cannot be only whitespace'
+            this.cdr.markForCheck()
+            return
+        }
+        if (mgmtIp && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(mgmtIp)) {
+            this.addError = 'Invalid IP address format'
+            this.cdr.markForCheck()
+            return
+        }
+        this.addError = ''
         this.discoveredDevices.push({
-            hostname: this.newDevice.hostname,
-            mgmtIp: this.newDevice.mgmtIp,
-            vendor: this.newDevice.vendor,
-            model: this.newDevice.model,
+            hostname,
+            mgmtIp,
+            vendor: this.newDevice.vendor.trim(),
+            model: this.newDevice.model.trim(),
             interfaces: [],
+            sshUsername: this.newDevice.sshUsername,
+            sshPassword: this.newDevice.sshPassword,
         })
         this._saveInventory()
         this.showAddForm = false
         this.cdr.markForCheck()
+    }
+
+    exportInventoryCsv (): void {
+        const headers = 'hostname,mgmtIp,vendor,model,sshUsername,sshPassword'
+        const rows = this.discoveredDevices.map(d =>
+            [d.hostname, d.mgmtIp, d.vendor, d.model, d.sshUsername ?? '', d.sshPassword ?? '']
+                .map(v => `"${(v ?? '').replace(/"/g, '""')}"`)
+                .join(',')
+        )
+        const csv = [headers, ...rows].join('\n')
+        const blob = new Blob([csv], { type: 'text/csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'device-inventory.csv'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
     }
 
     /** Returns devices not already mapped to another node (except the current node's own mapping) */
