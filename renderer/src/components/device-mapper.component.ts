@@ -196,6 +196,17 @@ export class DeviceMapperComponent implements OnInit {
         this.cdr.markForCheck()
     }
 
+    /** Returns devices not already mapped to another node (except the current node's own mapping) */
+    getAvailableDevices (nodeId: string): DiscoveredDevice[] {
+        const usedHostnames = new Set<string>()
+        for (const [id, entry] of this.mappings) {
+            if (id !== nodeId && entry.hostname) {
+                usedHostnames.add(entry.hostname)
+            }
+        }
+        return this.discoveredDevices.filter(d => !usedHostnames.has(d.hostname))
+    }
+
     autoMatch (): void {
         this.mappings.clear()
 

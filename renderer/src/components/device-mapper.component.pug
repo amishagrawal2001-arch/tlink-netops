@@ -122,7 +122,7 @@
               )
                 option(value='') — Select device —
                 option(
-                  *ngFor='let dev of discoveredDevices',
+                  *ngFor='let dev of getAvailableDevices(node.id)',
                   [value]='dev.hostname'
                 ) {{ dev.hostname }} ({{ dev.vendor }})
             td {{ mappings.get(node.id)?.mgmtIp || '—' }}
