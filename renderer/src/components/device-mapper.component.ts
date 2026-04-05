@@ -4,6 +4,7 @@ import {
 } from '@angular/core'
 import { TopologyNode, Topology } from '../api/interfaces'
 import { NetworkDiscoveryService, DiscoveredDevice } from '../services/network-discovery.service'
+import { InventoryService } from '../services/inventory.service'
 
 interface MappingEntry {
     hostname: string
@@ -54,6 +55,7 @@ export class DeviceMapperComponent implements OnInit {
     constructor (
         private cdr: ChangeDetectorRef,
         private discoverySvc: NetworkDiscoveryService,
+        private invSvc: InventoryService,
     ) {}
 
     ngOnInit (): void {
@@ -177,6 +179,10 @@ export class DeviceMapperComponent implements OnInit {
         this.cdr.markForCheck()
 
         try {
+            // Wire backend client from inventory service if connected
+            if (this.invSvc.hasBackend) {
+                this.discoverySvc.setBackendClient(this.invSvc.backendClient)
+            }
             const result = await this.discoverySvc.discoverFromSeed(
                 this.discoveryForm.host, 22, this.discoveryForm.username, this.discoveryForm.password, { maxDepth: 3 }
             )

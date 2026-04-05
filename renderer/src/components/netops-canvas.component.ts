@@ -2648,11 +2648,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             } else {
                 const host = (node.mgmtIp ?? '').split('/')[0]
                 if (!host || !api?.sshShellSession) { throw new Error('No SSH access') }
-                const result = await api.sshShellSession({
-                    host, port: node.sshPort ?? 22,
-                    username: node.sshUsername ?? '', password: node.sshPassword ?? '',
-                    commands: [cmds.showRunningConfig],
-                })
+                let result: any
+                if (this._backendSvc?.isConnected) {
+                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername ?? '', node.sshPassword ?? '', cmds.showRunningConfig)
+                } else {
+                    result = await api.sshShellSession({
+                        host, port: node.sshPort ?? 22,
+                        username: node.sshUsername ?? '', password: node.sshPassword ?? '',
+                        commands: [cmds.showRunningConfig],
+                    })
+                }
                 if (result.ok) { remoteConfig = result.output ?? '' }
                 else { throw new Error(result.message) }
             }
@@ -12451,14 +12456,19 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         throw new Error(result.message)
                     }
                 } else if (method === 'ssh' && entry.host && api?.sshRunCommand) {
-                    const result = await api.sshRunCommand({
-                        host: entry.host,
-                        port: node.sshPort ?? 22,
-                        username: entry.username!,
-                        password: entry.password!,
-                        timeoutMs: 30000,
-                        command: showCmd,
-                    })
+                    let result: any
+                    if (this._backendSvc?.isConnected) {
+                        result = await this._backendSvc.runCommand(entry.host, node.sshPort ?? 22, entry.username!, entry.password!, showCmd)
+                    } else {
+                        result = await api.sshRunCommand({
+                            host: entry.host,
+                            port: node.sshPort ?? 22,
+                            username: entry.username!,
+                            password: entry.password!,
+                            timeoutMs: 30000,
+                            command: showCmd,
+                        })
+                    }
                     if (result.ok) {
                         pulledConfig = result.output ?? ''
                     } else {

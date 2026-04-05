@@ -59,6 +59,9 @@ interface BfsEntry {
 @Injectable({ providedIn: 'root' })
 export class NetworkDiscoveryService {
 
+    private _backendClient: any = null
+    setBackendClient (client: any): void { this._backendClient = client }
+
     /**
      * Discover the network starting from a seed device.
      * Uses BFS over LLDP neighbors to find all reachable devices and links.
@@ -350,6 +353,15 @@ export class NetworkDiscoveryService {
      * Execute a single SSH command via the Electron preload API.
      */
     private async _runCommand (creds: SshCredentials, command: string, timeoutMs: number): Promise<string> {
+        if (this._backendClient?.isConnected) {
+            const result = await this._backendClient.pollDevice(creds.host, creds.port, creds.username, creds.password, [command])
+            if (!result.ok) {
+                throw new Error(result.message ?? 'SSH command failed')
+            }
+            const entry = result.results?.[0]
+            return entry?.stdout ?? entry?.output ?? ''
+        }
+
         const api = (window as any).netopsAPI
         if (!api?.sshRunCommands) {
             throw new Error('SSH API not available')

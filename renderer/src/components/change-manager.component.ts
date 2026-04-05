@@ -24,6 +24,15 @@ export class ChangeManagerComponent implements OnInit {
     newNodeId = ''
     newProposedConfig = ''
 
+    private _backendSvc: any = null
+
+    private _getBackendSvc (): any {
+        if (!this._backendSvc) {
+            try { this._backendSvc = new (require('../services/backend-client.service').BackendClientService)() } catch {}
+        }
+        return this._backendSvc
+    }
+
     constructor (
         public changeSvc: ChangeManagementService,
         private topoSvc: TopologyService,
@@ -159,13 +168,19 @@ export class ChangeManagerComponent implements OnInit {
 
             // Push config lines as a single command block
             const command = lines.join('\n')
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22,
-                username: node.sshUsername.trim(),
-                password: node.sshPassword,
-                timeoutMs: 30000,
-                command,
-            })
+            const backend = this._getBackendSvc()
+            let result: any
+            if (backend?.isConnected) {
+                result = await backend.runCommand(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, command)
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22,
+                    username: node.sshUsername.trim(),
+                    password: node.sshPassword,
+                    timeoutMs: 30000,
+                    command,
+                })
+            }
             return result?.output ?? result?.error ?? 'No output'
         })
 
@@ -189,13 +204,19 @@ export class ChangeManagerComponent implements OnInit {
                 throw new Error('Missing credentials or management IP')
             }
 
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22,
-                username: node.sshUsername.trim(),
-                password: node.sshPassword,
-                timeoutMs: 30000,
-                command: 'show running-config',
-            })
+            const backend = this._getBackendSvc()
+            let result: any
+            if (backend?.isConnected) {
+                result = await backend.runCommand(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, 'show running-config')
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22,
+                    username: node.sshUsername.trim(),
+                    password: node.sshPassword,
+                    timeoutMs: 30000,
+                    command: 'show running-config',
+                })
+            }
             return result?.output ?? ''
         })
 
@@ -220,13 +241,19 @@ export class ChangeManagerComponent implements OnInit {
             }
 
             const command = lines.join('\n')
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22,
-                username: node.sshUsername.trim(),
-                password: node.sshPassword,
-                timeoutMs: 30000,
-                command,
-            })
+            const backend = this._getBackendSvc()
+            let result: any
+            if (backend?.isConnected) {
+                result = await backend.runCommand(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, command)
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22,
+                    username: node.sshUsername.trim(),
+                    password: node.sshPassword,
+                    timeoutMs: 30000,
+                    command,
+                })
+            }
             return result?.output ?? result?.error ?? 'No output'
         })
 

@@ -376,6 +376,14 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     node: TopologyNode | null = null
     activeTab: PanelTab = 'info'
 
+    private _backendSvc: any = null
+    private _getBackendSvc (): any {
+        if (!this._backendSvc) {
+            try { this._backendSvc = new (require('../services/backend-client.service').BackendClientService)() } catch {}
+        }
+        return this._backendSvc
+    }
+
     // Local draft — edits are applied on blur / Enter / explicit save
     draft: Partial<TopologyNode> = {}
     portDrafts: Record<string, Partial<NodePort>> = {}
@@ -2053,7 +2061,13 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         this.sshBusy = true
         this._setSshState(false, 'Testing SSH connection...')
         try {
-            const result = await api.sshTestConnection({ ...request, password })
+            const backend = this._getBackendSvc()
+            let result: any
+            if (backend?.isConnected) {
+                result = await backend.runCommand(request.host, request.port, request.username, password, 'show version')
+            } else {
+                result = await api.sshTestConnection({ ...request, password })
+            }
             this._setSshState(result.ok, result.message, result.output ?? '')
         } catch (err) {
             this._setSshState(false, `SSH test failed: ${(err as Error).message}`)
@@ -2087,14 +2101,20 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         this.sshBusy = true
         this._setSshState(false, `Running "${cmds.showVersion}"...`)
         try {
-            const result = await api.sshRunCommand({
-                host: request.host,
-                port: request.port,
-                username: request.username,
-                password,
-                timeoutMs: request.timeoutMs ?? 15000,
-                command: cmds.showVersion,
-            })
+            const backend = this._getBackendSvc()
+            let result: any
+            if (backend?.isConnected) {
+                result = await backend.runCommand(request.host, request.port, request.username, password, cmds.showVersion)
+            } else {
+                result = await api.sshRunCommand({
+                    host: request.host,
+                    port: request.port,
+                    username: request.username,
+                    password,
+                    timeoutMs: request.timeoutMs ?? 15000,
+                    command: cmds.showVersion,
+                })
+            }
             // Network devices may return non-zero exit codes on success —
             // treat any result with output as successful
             const output = result.output ?? ''
@@ -3315,15 +3335,21 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
                     .filter((l: string) => !/^Last configuration change/i.test(l))
 
                 const commands = [...preamble, ...configLines, ...postamble]
-                const result = await api.sshShellSession({
-                    host,
-                    port: this.node.sshPort ?? 22,
-                    username,
-                    password,
-                    timeoutMs: 60000,
-                    commands,
-                    delayMs: 300,
-                })
+                const backend = this._getBackendSvc()
+                let result: any
+                if (backend?.isConnected) {
+                    result = await backend.loadConfig(host, this.node.sshPort ?? 22, username, password, commands, 300)
+                } else {
+                    result = await api.sshShellSession({
+                        host,
+                        port: this.node.sshPort ?? 22,
+                        username,
+                        password,
+                        timeoutMs: 60000,
+                        commands,
+                        delayMs: 300,
+                    })
+                }
                 this.configPushOutput = result.ok
                     ? `✓ Config pushed via SSH to ${host}\n\n${result.output || ''}`
                     : `✗ SSH push failed: ${result.message || result.output || 'Unknown error'}`
@@ -3388,14 +3414,20 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
                 const vendorKey = (this.node.vendor ?? '').trim().toLowerCase()
                 const cmds = getVendorCommands(vendorKey)
 
-                const result = await api.sshRunCommand({
-                    host,
-                    port: this.node.sshPort ?? 22,
-                    username,
-                    password,
-                    timeoutMs: 30000,
-                    command: cmds.showRunningConfig,
-                })
+                const backend = this._getBackendSvc()
+                let result: any
+                if (backend?.isConnected) {
+                    result = await backend.runCommand(host, this.node.sshPort ?? 22, username, password, cmds.showRunningConfig)
+                } else {
+                    result = await api.sshRunCommand({
+                        host,
+                        port: this.node.sshPort ?? 22,
+                        username,
+                        password,
+                        timeoutMs: 30000,
+                        command: cmds.showRunningConfig,
+                    })
+                }
                 if (result.ok) {
                     runningConfig = result.output ?? ''
                 } else {

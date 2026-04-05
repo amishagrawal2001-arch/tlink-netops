@@ -112,6 +112,7 @@ export class InventoryService implements OnDestroy {
     private _backendClient: any = null
     setBackendClient (client: any): void { this._backendClient = client }
     get hasBackend (): boolean { return this._backendClient?.isConnected ?? false }
+    get backendClient (): any { return this._backendClient }
 
     async pollDevice (nodeId: string): Promise<void> {
         const node = this.topoSvc.getNode(nodeId)
@@ -733,13 +734,18 @@ export class InventoryService implements OnDestroy {
         const host = (node.mgmtIp ?? '').split('/')[0].trim()
         const cmds = getVendorCommands(node.vendor ?? '')
         try {
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22,
-                username: (node.sshUsername ?? '').trim(),
-                password: node.sshPassword ?? '',
-                timeoutMs: 15000,
-                command: cmds.showVersion,
-            })
+            let result: any
+            if (this._backendClient?.isConnected) {
+                result = await this._backendClient.runCommand(host, node.sshPort ?? 22, (node.sshUsername ?? '').trim(), node.sshPassword ?? '', cmds.showVersion)
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22,
+                    username: (node.sshUsername ?? '').trim(),
+                    password: node.sshPassword ?? '',
+                    timeoutMs: 15000,
+                    command: cmds.showVersion,
+                })
+            }
             const plans = this.store.upgradePlans.map(p =>
                 p.id === planId
                     ? { ...p, preCheckOutput: result.output ?? result.message, updatedAt: nowIso() }
@@ -761,13 +767,18 @@ export class InventoryService implements OnDestroy {
         const host = (node.mgmtIp ?? '').split('/')[0].trim()
         const cmds = getVendorCommands(node.vendor ?? '')
         try {
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22,
-                username: (node.sshUsername ?? '').trim(),
-                password: node.sshPassword ?? '',
-                timeoutMs: 15000,
-                command: cmds.showVersion,
-            })
+            let result: any
+            if (this._backendClient?.isConnected) {
+                result = await this._backendClient.runCommand(host, node.sshPort ?? 22, (node.sshUsername ?? '').trim(), node.sshPassword ?? '', cmds.showVersion)
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22,
+                    username: (node.sshUsername ?? '').trim(),
+                    password: node.sshPassword ?? '',
+                    timeoutMs: 15000,
+                    command: cmds.showVersion,
+                })
+            }
             const output = result.output ?? ''
             const parsed = parseShowVersion(node.vendor ?? '', output)
             const newVersion = parsed.osVersion ?? ''
@@ -877,13 +888,17 @@ export class InventoryService implements OnDestroy {
                 if (!api?.sshRunCommand) { break }
                 const host = (node.mgmtIp ?? '').split('/')[0].trim()
                 if (!host || !node.sshUsername || !node.sshPassword) { break }
-                await api.sshRunCommand({
-                    host, port: node.sshPort ?? 22,
-                    username: node.sshUsername.trim(),
-                    password: node.sshPassword,
-                    timeoutMs: 15000,
-                    command: cmd,
-                })
+                if (this._backendClient?.isConnected) {
+                    await this._backendClient.runCommand(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, cmd)
+                } else {
+                    await api.sshRunCommand({
+                        host, port: node.sshPort ?? 22,
+                        username: node.sshUsername.trim(),
+                        password: node.sshPassword,
+                        timeoutMs: 15000,
+                        command: cmd,
+                    })
+                }
                 break
             }
 
