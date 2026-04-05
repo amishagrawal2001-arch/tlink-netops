@@ -504,6 +504,11 @@
         button.menu-item(type='button', (click)='generateUpgradePlan(); closeMenus()')
           span.mi-icon 🔄
           span.mi-label Firmware Upgrade Plan
+        .menu-sep
+        button.menu-item(type='button', (click)='showBackendSettings = true; loadBackendUrl(); closeMenus()')
+          span.mi-icon 🖥
+          span.mi-label Backend Server…
+          span.mi-shortcut(*ngIf='backendConnected') ●
 
     //- ── Export ────────────────────────────
     .menu-item-wrap
@@ -4107,6 +4112,48 @@
     *ngIf='showAutomationDashboard',
     (closed)='showAutomationDashboard = false; cdr.markForCheck()'
   )
+
+  //- ── Backend Server Settings ──────────────────────────────────────────────
+  .backend-settings-overlay(*ngIf='showBackendSettings', (click)='showBackendSettings = false; cdr.markForCheck()')
+    .backend-settings-dialog((click)='$event.stopPropagation()')
+      .backend-settings-header
+        h3.backend-settings-title Backend Server
+        span.backend-status-dot([class.connected]='backendConnected')
+        span.backend-status-text {{ backendConnected ? 'Connected' : 'Disconnected' }}
+        button.backend-close(type='button', (click)='showBackendSettings = false; cdr.markForCheck()') ✕
+      .backend-settings-body
+        p.backend-desc Connect to a remote NetOps backend server for large-scale polling. The server handles SSH/SNMP connections so the app stays lightweight.
+        .backend-form-row
+          label.backend-label Server URL
+          input.backend-input(
+            type='text',
+            [(ngModel)]='backendUrl',
+            placeholder='http://your-server:4000'
+          )
+        .backend-form-row
+          button.backend-btn.backend-btn-connect(
+            type='button',
+            *ngIf='!backendConnected',
+            [disabled]='backendConnecting || !backendUrl',
+            (click)='connectBackend()'
+          ) {{ backendConnecting ? 'Connecting...' : 'Connect' }}
+          button.backend-btn.backend-btn-disconnect(
+            type='button',
+            *ngIf='backendConnected',
+            (click)='disconnectBackend()'
+          ) Disconnect
+        .backend-info(*ngIf='backendConnected')
+          p ✅ Polls route through the backend server
+          p Device polling, config backups, and LLDP discovery run on the server
+          p SSH connections stay on the server — not on this machine
+        .backend-help(*ngIf='!backendConnected')
+          h4 Setup Instructions
+          p 1. Deploy the backend server on a Linux machine:
+          pre.backend-code cd server && ./install.sh
+          p 2. Or use Docker:
+          pre.backend-code docker-compose up -d
+          p 3. Enter the server URL above and click Connect
+          p 4. Default port: 4000
 
   //- ── Scheduler Panel ─────────────────────────────────────────────────────
   scheduler-panel(

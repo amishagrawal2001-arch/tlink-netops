@@ -939,6 +939,64 @@ netops-3d-canvas {
 .mapped-footer-save { border-color: #22c55e; color: #22c55e; &:hover { background: #22c55e; color: #fff; } }
 .mapped-footer-spacer { flex: 1; }
 
+// ─── Backend Server Settings ──────────────────────────────────────────────────
+
+.backend-settings-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+}
+.backend-settings-dialog {
+  background: var(--bg-app, #0d1117); border: 1px solid var(--border, #333);
+  border-radius: 12px; width: 500px; max-width: 95vw;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+}
+.backend-settings-header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.backend-settings-title { font-size: 15px; font-weight: 600; color: var(--text); margin: 0; flex: 1; }
+.backend-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #666;
+  &.connected { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+}
+.backend-status-text { font-size: 11px; color: var(--text-muted); }
+.backend-close { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; }
+
+.backend-settings-body { padding: 16px 20px; }
+.backend-desc { font-size: 12px; color: var(--text-muted); margin: 0 0 16px 0; line-height: 1.5; }
+
+.backend-form-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.backend-label { font-size: 11px; color: var(--text-muted); min-width: 70px; }
+.backend-input {
+  flex: 1; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 12px;
+  &:focus { border-color: var(--accent); outline: none; }
+}
+.backend-btn {
+  padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); font-size: 11px; font-weight: 500; cursor: pointer;
+  &:hover { background: var(--bg-hover); color: var(--text); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+.backend-btn-connect { border-color: #22c55e; color: #22c55e; &:hover:not(:disabled) { background: #22c55e; color: #fff; } }
+.backend-btn-disconnect { border-color: #ef4444; color: #ef4444; &:hover { background: #ef4444; color: #fff; } }
+
+.backend-info {
+  margin-top: 16px; padding: 12px; background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 8px; font-size: 11px; color: #86efac; line-height: 1.8;
+  p { margin: 0; }
+}
+.backend-help {
+  margin-top: 16px; font-size: 11px; color: var(--text-muted); line-height: 1.6;
+  h4 { font-size: 12px; color: var(--text); margin: 0 0 8px 0; }
+  p { margin: 4px 0; }
+}
+.backend-code {
+  font-family: monospace; font-size: 10px; background: var(--bg-input);
+  padding: 4px 8px; border-radius: 4px; color: #93c5fd; display: inline-block; margin: 2px 0;
+}
+
 // ─── Config Drift Viewer ──────────────────────────────────────────────────────
 
 .drift-viewer-overlay {

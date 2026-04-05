@@ -411,6 +411,9 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showWorkflowEditor = false
     showSchedulerPanel = false
     showChangeManager = false
+    showBackendSettings = false
+    backendUrl = 'http://localhost:4000'
+    backendConnecting = false
     showConfigViewer = false
     configViewerContent = ''
     configViewerTitle = ''
@@ -12114,6 +12117,67 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     }
 
     // ── Firmware Upgrade Planner ───────────────────────────────────────
+
+    // ── Backend Server Connection ─────────────────────────────────────
+
+    private _backendSvc: any = null  // lazy-loaded BackendClientService
+
+    private _getBackendSvc (): any {
+        if (!this._backendSvc) {
+            this._backendSvc = new (require('../services/backend-client.service').BackendClientService)()
+        }
+        return this._backendSvc
+    }
+
+    get backendConnected (): boolean {
+        return this._backendSvc?.isConnected ?? false
+    }
+
+    async connectBackend (): Promise<void> {
+        this.backendConnecting = true
+        this.cdr.markForCheck()
+        const svc = this._getBackendSvc()
+
+        // Load saved URL from prefs
+        const api = (window as any).netopsAPI
+        const savedUrl = await api?.prefGet?.('backend-url')
+        if (savedUrl) { this.backendUrl = savedUrl }
+
+        try {
+            svc.connect(this.backendUrl)
+            // Save URL for next time
+            api?.prefSet?.('backend-url', this.backendUrl)
+
+            // Wait up to 5s for connection
+            await new Promise<void>((resolve, reject) => {
+                let checks = 0
+                const timer = setInterval(() => {
+                    if (svc.isConnected) { clearInterval(timer); resolve() }
+                    else if (++checks > 50) { clearInterval(timer); reject(new Error('Connection timeout')) }
+                }, 100)
+            })
+
+            this.statusMsg = `Connected to backend server at ${this.backendUrl}`
+        } catch (err) {
+            this.statusMsg = `Backend connection failed: ${(err as Error).message}`
+        }
+
+        this.backendConnecting = false
+        this.cdr.markForCheck()
+    }
+
+    disconnectBackend (): void {
+        this._getBackendSvc().disconnect()
+        this.statusMsg = 'Disconnected from backend server'
+        this.cdr.markForCheck()
+    }
+
+    async loadBackendUrl (): Promise<void> {
+        const api = (window as any).netopsAPI
+        const saved = await api?.prefGet?.('backend-url')
+        if (saved) { this.backendUrl = saved }
+        this.cdr.markForCheck()
+    }
 
     generateUpgradePlan (): void {
         const { FirmwarePlannerService } = require('../services/firmware-planner.service')
