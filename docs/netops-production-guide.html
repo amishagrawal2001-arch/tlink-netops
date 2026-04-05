@@ -110,10 +110,13 @@ tr:hover td { background: rgba(56,139,253,0.04); }
 <div class="nav">
   <div class="nav-inner">
     <a href="#overview">Overview</a>
+    <a href="#quick-start">Quick Start</a>
     <a href="#architecture">Architecture</a>
     <a href="#installation">Installation</a>
     <a href="#backend-server">Backend Server</a>
+    <a href="#configuration">Configuration</a>
     <a href="#features">Features</a>
+    <a href="#shortcuts">Shortcuts</a>
     <a href="#vendors">Vendors</a>
     <a href="#templates">Templates</a>
     <a href="#device-mapping">Device Mapping</a>
@@ -121,8 +124,14 @@ tr:hover td { background: rgba(56,139,253,0.04); }
     <a href="#3d-view">3D View</a>
     <a href="#digital-twin">Digital Twin</a>
     <a href="#export">Export</a>
+    <a href="#sample-files">Sample Files</a>
     <a href="#api">API Reference</a>
+    <a href="#performance">Performance</a>
+    <a href="#security">Security</a>
     <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#known-limitations">Limitations</a>
+    <a href="#changelog">Changelog</a>
+    <a href="#support">Support</a>
   </div>
 </div>
 
@@ -134,9 +143,12 @@ tr:hover td { background: rgba(56,139,253,0.04); }
   <h3>Table of Contents</h3>
   <ol>
     <li><a href="#overview">Overview &amp; Architecture</a></li>
-    <li><a href="#installation">Installation (Desktop App)</a></li>
+    <li><a href="#quick-start">Quick Start Guide</a></li>
+    <li><a href="#installation">Installation &amp; System Requirements</a></li>
     <li><a href="#backend-server">Backend Server Deployment</a></li>
+    <li><a href="#configuration">Configuration &amp; Settings</a></li>
     <li><a href="#features">Feature Reference</a></li>
+    <li><a href="#shortcuts">Keyboard Shortcuts</a></li>
     <li><a href="#vendors">Vendor Support Matrix</a></li>
     <li><a href="#templates">Template Library</a></li>
     <li><a href="#device-mapping">Device Mapping &amp; Discovery</a></li>
@@ -144,8 +156,14 @@ tr:hover td { background: rgba(56,139,253,0.04); }
     <li><a href="#3d-view">3D Topology View</a></li>
     <li><a href="#digital-twin">Digital Twin</a></li>
     <li><a href="#export">Export &amp; Integration</a></li>
+    <li><a href="#sample-files">Sample Files</a></li>
     <li><a href="#api">Backend API Reference</a></li>
+    <li><a href="#performance">Performance Tuning</a></li>
+    <li><a href="#security">Security Considerations</a></li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#known-limitations">Known Limitations</a></li>
+    <li><a href="#changelog">Changelog</a></li>
+    <li><a href="#support">Support &amp; Links</a></li>
   </ol>
 </div>
 
@@ -181,32 +199,136 @@ tr:hover td { background: rgba(56,139,253,0.04); }
   </div>
 </div>
 
-<h3>Architecture</h3>
-<pre><code>┌──────────────────────────────────────────────────────┐
-│                 NetOps Desktop App                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ Angular 15   │  │ Three.js 3D  │  │ xterm.js     │ │
-│  │ Renderer     │  │ WebGL Canvas │  │ Terminals    │ │
-│  └──────┬───────┘  └──────────────┘  └──────────────┘ │
-│         │ IPC                                         │
-│  ┌──────┴───────┐                                     │
-│  │ Electron 38  │  ← SSH Pool (50 max)               │
-│  │ Main Process │  ← Docker API                       │
-│  └──────────────┘  ← SNMP (net-snmp)                 │
-└──────────────────────────────────────────────────────┘
-         │ Optional
+<h3 id="architecture">Architecture</h3>
+<pre><code>┌──────────────────────────────────────────────────────────────────┐
+│                      NetOps Desktop App (Electron 38)            │
+│                                                                  │
+│  ┌──────────────┐  ┌───────────────┐  ┌───────────────────────┐ │
+│  │ Angular 15   │  │ Three.js 3D   │  │ xterm.js Terminals    │ │
+│  │ Renderer     │  │ WebGL Canvas  │  │ (SSH shell sessions)  │ │
+│  │              │  │               │  │                       │ │
+│  │ - Canvas SVG │  │ - Orbit/Zoom  │  │ - Per-container term  │ │
+│  │ - Templates  │  │ - Drag nodes  │  │ - Multi-tab panels    │ │
+│  │ - Twin view  │  │ - Shift+drag  │  │ - Config push         │ │
+│  │ - Automation │  │   link create │  │                       │ │
+│  └──────┬───────┘  └───────────────┘  └───────────────────────┘ │
+│         │ IPC (Electron contextBridge)                           │
+│  ┌──────┴───────────────────────────────────────────────┐       │
+│  │               Electron Main Process                   │       │
+│  │                                                       │       │
+│  │  SSH Pool ──→ 3 per host, 50 total, 60s idle timeout │       │
+│  │  Docker API → containerlab deploy/destroy/inspect     │       │
+│  │  SNMP ──────→ net-snmp for device discovery           │       │
+│  │  File I/O ──→ .topo.json, .inv.json, prefs           │       │
+│  └───────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+         │ Optional HTTP + WebSocket
          ▼
-┌──────────────────────────────────────────────────────┐
-│            NetOps Backend Server                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ Express API  │  │ WebSocket    │  │ SSH Pool     │ │
-│  │ REST + CORS  │  │ Streaming    │  │ Connection   │ │
-│  └─────────────┘  └──────────────┘  └──────────────┘ │
-│  Port 4000 • Linux • systemd • Docker                 │
-└──────────────────────────────────────────────────────┘</code></pre>
+┌──────────────────────────────────────────────────────────────────┐
+│                   NetOps Backend Server (Node.js)                 │
+│                                                                  │
+│  ┌──────────────┐  ┌───────────────┐  ┌───────────────────────┐ │
+│  │ Express API  │  │ WebSocket     │  │ SSH Pool              │ │
+│  │ REST + CORS  │  │ Streaming     │  │ (10 concurrent polls) │ │
+│  │              │  │               │  │                       │ │
+│  │ /api/poll    │  │ poll_result   │  │ ssh2 connections      │ │
+│  │ /api/backup  │  │ events stream │  │ to network devices    │ │
+│  │ /api/discover│  │               │  │                       │ │
+│  └──────────────┘  └───────────────┘  └───────────────────────┘ │
+│  Port 4000 · Linux · systemd · Docker                            │
+└──────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>Data Flow</h3>
+<pre><code>User Action          Desktop App                  Backend Server         Network Devices
+─────────────        ───────────                  ──────────────         ───────────────
+Click Deploy    ───→ Docker API ─────────────────────────────────────→  containerlab up
+                     Config push via SSH ────────────────────────────→  device config
+Click Twin      ───→ Poll scheduler
+                     ├─ Local:   SSH pool ──────────────────────────→  show commands
+                     └─ Backend: POST /api/poll-all ──→ SSH pool ──→  show commands
+                                  ←── WebSocket poll_result ←──────
+                     Parse output → update alarms/gauges/BGP status
+Save Topology   ───→ Write .topo.json + .inv.json sidecar to disk
+Export Ansible  ───→ Generate YAML inventory + playbooks from topology model</code></pre>
+
+<h3>Key Files</h3>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>app/src/main.ts</code></td><td>Electron main process — IPC handlers, file I/O, SSH pool, Docker API</td></tr>
+  <tr><td><code>renderer/src/components/netops-canvas.component.ts</code></td><td>Primary canvas component — 2D topology, menus, keyboard shortcuts</td></tr>
+  <tr><td><code>renderer/src/components/netops-3d-canvas.component.ts</code></td><td>Three.js 3D topology view</td></tr>
+  <tr><td><code>renderer/src/services/inventory.service.ts</code></td><td>Device inventory, polling, alarms, event rules, automation engine</td></tr>
+  <tr><td><code>renderer/src/services/parser-worker.service.ts</code></td><td>Async vendor output parsing (setTimeout(0) to avoid UI blocking)</td></tr>
+  <tr><td><code>renderer/src/components/device-mapper.component.ts</code></td><td>Device mapping wizard — CSV/JSON import, LLDP discovery, auto-match</td></tr>
+  <tr><td><code>renderer/src/components/automation-dashboard.component.ts</code></td><td>Unified automation dashboard — alarms, events, health score</td></tr>
+  <tr><td><code>app/src/ssh-pool.ts</code></td><td>SSH connection pool — 3 per host, 50 total, 60s idle cleanup</td></tr>
+  <tr><td><code>server/src/index.ts</code></td><td>Backend server entry — Express + WebSocket + SSH</td></tr>
+  <tr><td><code>renderer/src/components/templates.component.ts</code></td><td>157 pre-built topology templates with config generation</td></tr>
+</table>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="installation">2. Installation</h2>
+<h2 id="quick-start">2. Quick Start Guide</h2>
+
+<div class="alert alert-info">
+  <strong>Get started in 5 minutes.</strong> Install the app, load a template, deploy a lab, and start monitoring.
+</div>
+
+<h3>Step-by-Step</h3>
+<ol>
+  <li><strong>Install the app</strong> — Download the installer for your platform (DMG, EXE, DEB, RPM, or AppImage) and install it. Make sure Docker and containerlab are installed on your system.</li>
+  <li><strong>Load a template</strong> — Open the app, click <strong>Templates</strong> in the toolbar, hover over any template to preview, and click to load it onto the canvas. Try "3-Stage IP Fabric (cRPD)" for a quick start.</li>
+  <li><strong>Deploy the lab</strong> — Click the <strong>Deploy</strong> button in the bottom bar. NetOps generates a containerlab YAML, launches containers, and pushes vendor configs automatically.</li>
+  <li><strong>Monitor with Twin</strong> — Click <strong>Twin</strong> in the view bar. CPU/memory gauges, BGP status, and alarm rings appear on each node. Click <strong>Dashboard</strong> for a tabular overview.</li>
+  <li><strong>Map to physical devices</strong> — Click <strong>Map</strong> in the bottom bar, upload a CSV/JSON of your real devices (or use LLDP discovery), and map them to topology nodes. Configs and monitoring extend to your physical network.</li>
+</ol>
+
+<h3>Workflow Diagram</h3>
+<div class="workflow">
+  <span class="workflow-step">1. Install App</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">2. Load Template</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">3. Deploy Lab</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">4. Twin Monitor</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">5. Map Devices</span>
+</div>
+
+<div class="workflow">
+  <span class="workflow-step">Design Topology</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Generate Configs</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Simulate in Lab</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Validate BGP/LLDP</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Export to Production</span>
+</div>
+
+<div class="alert alert-success">
+  <strong>Tip:</strong> Right-click any node for quick access to terminals, config push, polling, and device properties.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="installation">3. Installation</h2>
+
+<h3>System Requirements</h3>
+<table>
+  <tr><th>Component</th><th>Minimum</th><th>Recommended</th></tr>
+  <tr><td>RAM</td><td>4 GB</td><td>8 GB</td></tr>
+  <tr><td>CPU</td><td>2 cores</td><td>4 cores</td></tr>
+  <tr><td>Disk</td><td>10 GB free</td><td>50 GB free (container images are large)</td></tr>
+  <tr><td>Node.js</td><td>18+</td><td>22 LTS</td></tr>
+  <tr><td>Docker</td><td>20+ (for containerlab simulation)</td><td>Latest stable</td></tr>
+  <tr><td>Containerlab</td><td>0.50+</td><td>Latest</td></tr>
+  <tr><td>KVM</td><td colspan="2">Required only for VM-based vendors (vQFX, CSR1000v, XRd). Not needed for cRPD, cEOS, SRL, SONiC.</td></tr>
+</table>
+
+<div class="alert alert-warn">
+  <strong>Backend server:</strong> Requires Linux, Node.js 18+, and at least 2 GB RAM. The server does not need Docker or containerlab.
+</div>
 
 <h3>Desktop App (Mac / Windows / Linux)</h3>
 
@@ -248,7 +370,7 @@ git tag v2.0.0 && git push origin v2.0.0</code></pre>
 </ul>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="backend-server">3. Backend Server</h2>
+<h2 id="backend-server">4. Backend Server</h2>
 
 <p>Optional standalone server for large-scale deployments (100+ devices). Offloads SSH/SNMP polling from the desktop app to a centralized Linux server.</p>
 
@@ -306,7 +428,39 @@ npm start
 <p>WebSocket at <code>ws://server:4000</code> streams poll results in real-time.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="features">4. Feature Reference</h2>
+<h2 id="configuration">5. Configuration &amp; Settings</h2>
+
+<h3>Preferences File</h3>
+<p>Application preferences are stored in <code>netops-prefs.json</code> inside the platform-specific userData directory:</p>
+<table>
+  <tr><th>Platform</th><th>Path</th></tr>
+  <tr><td>macOS</td><td><code>~/Library/Application Support/NetOps/netops-prefs.json</code></td></tr>
+  <tr><td>Windows</td><td><code>%APPDATA%\NetOps\netops-prefs.json</code></td></tr>
+  <tr><td>Linux</td><td><code>~/.config/NetOps/netops-prefs.json</code></td></tr>
+</table>
+
+<h3>File Types</h3>
+<table>
+  <tr><th>Extension</th><th>Purpose</th><th>Location</th></tr>
+  <tr><td><code>.topo.json</code></td><td>Topology file — nodes, links, positions, configs, metadata</td><td>User-chosen save path</td></tr>
+  <tr><td><code>.inv.json</code></td><td>Inventory sidecar — device mappings, poll data, alarms, backups</td><td>Same directory as .topo.json, auto-derived name</td></tr>
+  <tr><td><code>netops-prefs.json</code></td><td>App preferences — recent files, backend server URL, window state</td><td>userData directory</td></tr>
+</table>
+
+<h3>Settings Stored in Preferences</h3>
+<ul>
+  <li><strong>Backend server URL</strong> — persisted across sessions; auto-reconnects on app start</li>
+  <li><strong>Theme</strong> — dark or light mode toggle (View menu or system preference)</li>
+  <li><strong>Recent files</strong> — list of recently opened topology files</li>
+  <li><strong>Window state</strong> — size and position of the app window</li>
+  <li><strong>Device inventory</strong> — host, username, and vendor are saved per-device; passwords are NOT persisted</li>
+</ul>
+
+<h3>Inventory Sidecar Auto-Discovery</h3>
+<p>When opening a topology file (e.g., <code>Lab.topo.json</code>), the app looks for a sidecar inventory file in the same directory with these name patterns: <code>Lab.inv.json</code>, <code>Lab.topo.inv.json</code>, <code>Lab-inv.json</code>. If found, device mappings, poll data, and automation state are automatically restored.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="features">6. Feature Reference</h2>
 
 <h3>Menu Bar</h3>
 <pre><code>File | Edit | View | Devices | Inventory | Simulate | Automation | Export | License | Help</code></pre>
@@ -333,7 +487,36 @@ npm start
 </table>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="vendors">5. Vendor Support</h2>
+<h2 id="shortcuts">7. Keyboard Shortcuts</h2>
+
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><code>Ctrl+S</code></td><td>Save topology</td></tr>
+  <tr><td><code>Ctrl+O</code></td><td>Open topology</td></tr>
+  <tr><td><code>Ctrl+Z</code></td><td>Undo</td></tr>
+  <tr><td><code>Ctrl+Shift+Z</code></td><td>Redo</td></tr>
+  <tr><td><code>Ctrl+C</code> / <code>Ctrl+V</code></td><td>Copy / Paste</td></tr>
+  <tr><td><code>Ctrl+A</code></td><td>Select all</td></tr>
+  <tr><td><code>Ctrl+F</code></td><td>Search</td></tr>
+  <tr><td><code>Delete</code></td><td>Remove selected element</td></tr>
+  <tr><td><code>L</code></td><td>Toggle Link Mode</td></tr>
+  <tr><td><code>Escape</code></td><td>Cancel / Deselect / Close dialogs</td></tr>
+  <tr><td><code>?</code></td><td>Show keyboard shortcuts panel</td></tr>
+  <tr><td><code>F1</code></td><td>Open Help panel</td></tr>
+  <tr><td><code>Ctrl+Shift+S</code></td><td>Save Workspace</td></tr>
+  <tr><td><code>Ctrl+Shift+L</code></td><td>Admin Panel</td></tr>
+  <tr><td><code>Ctrl+0</code></td><td>Fit to View</td></tr>
+  <tr><td><code>Ctrl+Scroll</code></td><td>Precise zoom</td></tr>
+  <tr><td><code>Shift+Click</code></td><td>Multi-select devices</td></tr>
+  <tr><td><code>Cmd+Option+I</code> / <code>Ctrl+Shift+I</code></td><td>Open DevTools (Mac / Win+Linux)</td></tr>
+</table>
+
+<div class="alert alert-info">
+  <strong>Tip:</strong> Press <code>?</code> at any time inside the app to see the shortcuts panel. On macOS, replace <code>Ctrl</code> with <code>Cmd</code>.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="vendors">8. Vendor Support</h2>
 
 <table>
   <tr><th>Vendor</th><th>Templates</th><th>Config Gen</th><th>LLDP</th><th>BGP</th><th>Push</th><th>Monitor</th><th>Alarms</th><th>Clab Kind</th></tr>
@@ -353,7 +536,7 @@ npm start
 </table>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="templates">6. Templates</h2>
+<h2 id="templates">9. Templates</h2>
 
 <p>157 pre-built topology templates across 11 categories:</p>
 
@@ -384,7 +567,7 @@ npm start
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="device-mapping">7. Device Mapping</h2>
+<h2 id="device-mapping">10. Device Mapping</h2>
 
 <h3>Three Ways to Add Devices</h3>
 
@@ -430,7 +613,7 @@ Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="automation">8. Automation</h2>
+<h2 id="automation">11. Automation</h2>
 
 <h3>Automation Menu</h3>
 <table>
@@ -486,7 +669,7 @@ Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
 <p>If verification fails: <strong>Rollback</strong> restores the original config automatically.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="3d-view">9. 3D Topology View</h2>
+<h2 id="3d-view">12. 3D Topology View</h2>
 
 <p>Click <strong>3D</strong> in the view bar to switch to WebGL mode.</p>
 
@@ -513,7 +696,7 @@ Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
 </ul>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="digital-twin">10. Digital Twin</h2>
+<h2 id="digital-twin">13. Digital Twin</h2>
 
 <p>Click <strong>Twin</strong> in the view bar to activate real-time monitoring overlay.</p>
 
@@ -530,7 +713,7 @@ Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
 <p>Click <strong>Dashboard</strong> (appears when Twin is active) for a table of all nodes with Status, CPU, Memory, BGP (per-node), Alarms, and Drift status.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="export">11. Export &amp; Integration</h2>
+<h2 id="export">14. Export &amp; Integration</h2>
 
 <table>
   <tr><th>Export</th><th>Format</th><th>Use Case</th></tr>
@@ -548,7 +731,55 @@ Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
 </table>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="api">12. Backend API Reference</h2>
+<h2 id="sample-files">15. Sample Files</h2>
+
+<p>NetOps ships with sample device inventory files to help you get started. When the device inventory is empty, the Device Mapper wizard shows download buttons for both formats.</p>
+
+<h3>CSV Format (devices-sample.csv)</h3>
+<pre><code>hostname,mgmtIp,vendor,model,serialNumber,sshUsername,sshPassword
+Spine-1,172.16.0.1,Juniper,QFX5130-32CD,JN123456,admin,admin123
+Spine-2,172.16.0.2,Juniper,QFX5130-32CD,JN123457,admin,admin123
+Leaf-1,172.16.0.3,Arista,DCS-7050TX3,AR567890,admin,arista
+Leaf-2,172.16.0.4,Arista,DCS-7050TX3,AR567891,admin,arista</code></pre>
+
+<h3>JSON Format (devices-sample.json)</h3>
+<pre><code>{
+  "devices": [
+    {
+      "hostname": "Spine-1",
+      "mgmtIp": "172.16.0.1",
+      "vendor": "Juniper",
+      "model": "QFX5130-32CD",
+      "serialNumber": "JN123456",
+      "sshUsername": "admin",
+      "sshPassword": "admin123"
+    },
+    {
+      "hostname": "Leaf-1",
+      "mgmtIp": "172.16.0.3",
+      "vendor": "Arista",
+      "model": "DCS-7050TX3",
+      "serialNumber": "AR567890",
+      "sshUsername": "admin",
+      "sshPassword": "arista"
+    }
+  ]
+}</code></pre>
+
+<h4>How to Access</h4>
+<ol>
+  <li>Click <strong>Map</strong> in the bottom bar to open the Device Mapper.</li>
+  <li>When the inventory is empty, click <strong>Download Sample CSV</strong> or <strong>Download Sample JSON</strong>.</li>
+  <li>Edit the sample file with your real device details.</li>
+  <li>Upload via the mapper wizard (drag-and-drop or file picker).</li>
+</ol>
+
+<div class="alert alert-info">
+  <strong>Source:</strong> Sample files are generated by <code>renderer/src/components/device-mapper.component.ts</code> and downloaded directly from the app — no separate file on disk.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="api">16. Backend API Reference</h2>
 
 <h3>POST /api/poll</h3>
 <pre><code>// Request
@@ -617,7 +848,79 @@ ws://server:4000
 }</code></pre>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<h2 id="troubleshooting">13. Troubleshooting</h2>
+<h2 id="performance">17. Performance Tuning</h2>
+
+<h3>SSH Connection Pool</h3>
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Description</th></tr>
+  <tr><td>Max per host</td><td>3</td><td>Maximum concurrent SSH connections to a single device</td></tr>
+  <tr><td>Max total</td><td>50</td><td>Global limit across all hosts</td></tr>
+  <tr><td>Idle timeout</td><td>60 seconds</td><td>Connections unused for 60s are automatically closed</td></tr>
+  <tr><td>Cleanup interval</td><td>30 seconds</td><td>Idle connection sweep runs every 30s</td></tr>
+</table>
+
+<h3>Polling Concurrency</h3>
+<table>
+  <tr><th>Mode</th><th>Concurrency</th><th>Notes</th></tr>
+  <tr><td>Local (desktop app)</td><td>5 simultaneous</td><td>Polls devices directly via local SSH pool</td></tr>
+  <tr><td>Backend server</td><td>10 simultaneous</td><td>POST /api/poll-all batches to server SSH pool</td></tr>
+</table>
+
+<h3>Data Storage Limits</h3>
+<p>The automation engine enforces caps to prevent unbounded memory/storage growth:</p>
+<table>
+  <tr><th>Data Type</th><th>Limit</th><th>Behavior</th></tr>
+  <tr><td>Active alarms</td><td>200</td><td>Oldest active alarms pruned beyond limit</td></tr>
+  <tr><td>Cleared alarms</td><td>300</td><td>Oldest cleared alarms pruned beyond limit</td></tr>
+  <tr><td>Config backups per node</td><td>10</td><td>Oldest backups rotated out when new backup is created</td></tr>
+  <tr><td>Event log entries</td><td>500</td><td>Oldest entries discarded (ring buffer style)</td></tr>
+</table>
+
+<h3>UI Performance Optimizations</h3>
+<ul>
+  <li><strong>Async parsing via setTimeout(0)</strong> — vendor output parsing yields to the event loop between parse calls, preventing UI thread blocking during large poll batches.</li>
+  <li><strong>Viewport culling</strong> — for topologies with 80+ nodes, only visible elements are rendered in the DOM. Off-screen nodes are removed from the SVG to reduce paint cost.</li>
+  <li><strong>Parallel link cache</strong> — O(1) lookup for parallel links between the same pair of nodes, avoiding O(n) scans during render.</li>
+  <li><strong>WebSocket streaming</strong> — backend poll results arrive incrementally via WebSocket; the UI updates per-node as results arrive rather than waiting for all devices.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="security">18. Security Considerations</h2>
+
+<div class="alert alert-danger">
+  <strong>Important:</strong> Review these considerations before deploying NetOps in a production environment.
+</div>
+
+<h3>Credential Handling</h3>
+<ul>
+  <li><strong>SSH credentials</strong> are stored in the topology JSON file and held in memory during operation. They are <strong>plaintext</strong> and not encrypted at rest.</li>
+  <li><strong>Device inventory preferences</strong> save only <code>host</code>, <code>username</code>, and <code>vendor</code> per device. <strong>Passwords are never persisted</strong> in the inventory preferences file.</li>
+  <li>Credentials in <code>.topo.json</code> files may include SSH passwords for config push. Treat topology files as sensitive.</li>
+</ul>
+
+<h3>Backend Server Security</h3>
+<ul>
+  <li>The backend server has <strong>no built-in authentication</strong>. Any client that can reach port 4000 can send SSH commands through the server.</li>
+  <li><strong>Recommendation:</strong> Deploy the backend server behind a reverse proxy (nginx, Caddy, Traefik) with TLS and authentication.</li>
+  <li><strong>Recommendation:</strong> Use VPN or SSH tunnel for remote access to the backend server.</li>
+  <li><strong>Recommendation:</strong> Configure firewall rules to restrict access to port 4000 to trusted IP ranges only.</li>
+</ul>
+
+<h3>Content Security Policy</h3>
+<p>The Electron app sets a Content Security Policy (CSP) via a <code>&lt;meta&gt;</code> tag in <code>index.html</code>. The CSP allows <code>ws:</code> and <code>wss:</code> connections to any host (required for backend server connectivity to arbitrary IPs).</p>
+
+<h3>Recommended Production Hardening</h3>
+<table>
+  <tr><th>Measure</th><th>Details</th></tr>
+  <tr><td>Reverse proxy</td><td>Place nginx/Caddy in front of port 4000 with TLS termination and basic auth or OAuth</td></tr>
+  <tr><td>Firewall</td><td><code>ufw allow from 10.0.0.0/8 to any port 4000</code> — restrict to management subnet</td></tr>
+  <tr><td>VPN</td><td>Access backend server only via WireGuard/OpenVPN tunnel</td></tr>
+  <tr><td>File permissions</td><td>Restrict read access to <code>.topo.json</code> files: <code>chmod 600 *.topo.json</code></td></tr>
+  <tr><td>Credential rotation</td><td>Rotate SSH credentials regularly; use SSH key-based auth where possible</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="troubleshooting">19. Troubleshooting</h2>
 
 <h3>Common Issues</h3>
 
@@ -667,12 +970,129 @@ gtar czf package.tar.gz directory/</code></pre>
   <li><code>Twin poll failed: ...</code> &mdash; polling error</li>
 </ul>
 
+<h4>SSH connection timeout / ECONNREFUSED</h4>
+<pre><code># Verify the device is reachable:
+ping 172.16.0.1
+ssh admin@172.16.0.1
+
+# Check SSH pool isn't exhausted (50 max):
+# Open DevTools (Cmd+Option+I) and look for "[SSHPool]" messages
+
+# For containerlab nodes, check if container is running:
+sudo docker ps | grep clab</code></pre>
+
+<h4>Topology file won't open / "inventory file" error</h4>
+<p>The app distinguishes between <code>.topo.json</code> (topology) and <code>.inv.json</code> (inventory sidecar) files. If you accidentally drag an inventory file, the app will show an error. Make sure you're opening the <code>.topo.json</code> file.</p>
+
+<h4>3D view shows blank canvas</h4>
+<p>WebGL must be supported by your GPU/driver. Check DevTools console for WebGL errors. On headless Linux or VMs without GPU passthrough, 3D view may not work. Switch back to 2D view.</p>
+
+<h4>Device polling returns empty results</h4>
+<ul>
+  <li>Verify SSH credentials are correct for the target device.</li>
+  <li>Ensure the vendor is correctly set — wrong vendor means wrong command set.</li>
+  <li>Check if the device prompt is expected by the parser (some custom prompts break pattern matching).</li>
+  <li>Try polling a single device manually via right-click context menu to isolate the issue.</li>
+</ul>
+
+<h4>LLDP discovery finds no neighbors</h4>
+<ul>
+  <li>LLDP discovery requires SSH access to the seed device.</li>
+  <li>LLDP must be enabled on the device interfaces.</li>
+  <li>The discovered neighbors must also be SSH-reachable for BFS traversal to continue.</li>
+  <li>SNMP discovery runs locally only — it does not route through the backend server.</li>
+</ul>
+
+<h4>Automation event rules not firing</h4>
+<ul>
+  <li>Rules only evaluate during active polling. Make sure Digital Twin is active or scheduled polling is enabled.</li>
+  <li>Check the event log in the Automation Dashboard for suppressed or throttled events.</li>
+  <li>Webhook actions require the target URL to be reachable from the desktop app (or backend server if connected).</li>
+</ul>
+
 <h3>Testing</h3>
 <pre><code># Run all tests (871 tests, 11 suites):
 npm test
 
 # Watch mode:
 npm run test:watch</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="known-limitations">20. Known Limitations</h2>
+
+<ul>
+  <li><strong>SNMP discovery runs locally only</strong> — there are no backend API endpoints for SNMP operations. SNMP discovery always runs from the desktop app using the local net-snmp library.</li>
+  <li><strong>cRPD EVPN overlay with eBGP underlay</strong> — requires <code>local-as 65000</code> configuration on the underlay BGP sessions for eBGP fabrics. Without this, eBGP peering may fail.</li>
+  <li><strong>3D view annotation support</strong> — the Three.js 3D view does not render all 2D canvas annotations (text boxes, shapes, images). Switch to 2D view for full annotation support.</li>
+  <li><strong>Container count limit</strong> — maximum of approximately 20 containerlab containers per lab, depending on Docker resource allocation (CPU, memory, disk). Large labs may require tuning Docker daemon settings.</li>
+  <li><strong>WebSocket reconnect</strong> — if the backend server WebSocket connection drops, it does not automatically reconnect. You must disconnect and reconnect manually from the Automation menu.</li>
+  <li><strong>Concurrent users</strong> — the backend server supports multiple WebSocket clients, but there is no conflict resolution if two users push configs to the same device simultaneously.</li>
+  <li><strong>IPv6 polling</strong> — SSH polling to IPv6 management addresses works, but some vendor parsers may not handle IPv6 neighbor entries in LLDP output.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="changelog">21. Changelog</h2>
+
+<table>
+  <tr><th>Version</th><th>Date</th><th>Changes</th></tr>
+  <tr>
+    <td><strong>v2.0.0</strong></td>
+    <td>2026</td>
+    <td>
+      <ul>
+        <li>Three.js 3D topology view with orbit, zoom, drag-to-move, Shift+drag link creation</li>
+        <li>Digital Twin real-time monitoring — CPU/memory gauges, alarm pulse rings, config drift detection</li>
+        <li>Device Mapping — LLDP/SNMP discovery, CSV/JSON import, auto-match wizard, persistent inventory</li>
+        <li>Automation engine — event rules (8 triggers x 5 actions), workflows, scheduled jobs, compliance checks, change management</li>
+        <li>Backend server — remote SSH polling, WebSocket streaming, systemd/Docker deployment</li>
+        <li>Export: Ansible inventory/playbooks, Terraform configs, firmware upgrade plans</li>
+        <li>13 vendor support with full config generation and monitoring</li>
+        <li>157 pre-built topology templates</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.0.0</strong></td>
+    <td>2025</td>
+    <td>
+      <ul>
+        <li>Initial release with 2D topology canvas</li>
+        <li>Template library with animated previews</li>
+        <li>Containerlab deploy/destroy integration</li>
+        <li>Vendor config generation</li>
+        <li>Basic SSH terminal support</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="support">22. Support &amp; Links</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>GitHub Repository</h4>
+    <p><a href="https://github.com/amishagrawal2001-arch/tlink-netops">github.com/amishagrawal2001-arch/tlink-netops</a></p>
+    <p>Source code, build instructions, and contribution guide.</p>
+  </div>
+  <div class="card">
+    <h4>Issue Tracker</h4>
+    <p><a href="https://github.com/amishagrawal2001-arch/tlink-netops/issues">GitHub Issues</a></p>
+    <p>Report bugs, request features, or ask questions.</p>
+  </div>
+  <div class="card">
+    <h4>Sample Files</h4>
+    <p>Sample CSV and JSON device inventory files are available directly from the Device Mapper wizard in the app (click Map, then download samples when inventory is empty).</p>
+  </div>
+</div>
+
+<h3>Getting Help</h3>
+<ul>
+  <li>Check the <a href="#troubleshooting">Troubleshooting</a> section above for common issues.</li>
+  <li>Open DevTools (<code>Cmd+Option+I</code> / <code>Ctrl+Shift+I</code>) to check for console errors.</li>
+  <li>Run the test suite (<code>npm test</code>) to verify your build is healthy.</li>
+  <li>File an issue on GitHub with your OS, app version, and steps to reproduce.</li>
+</ul>
 
 </div>
 
