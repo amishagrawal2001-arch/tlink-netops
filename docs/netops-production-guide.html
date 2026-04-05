@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetOps — Production Deployment Guide</title>
+<style>
+:root { --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --amber: #d29922; --border: #30363d; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Header */
+.header { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); border-bottom: 1px solid var(--border); padding: 40px 0; text-align: center; }
+.header h1 { font-size: 36px; font-weight: 700; margin-bottom: 8px; }
+.header h1 span { color: var(--accent); }
+.header .subtitle { color: var(--muted); font-size: 16px; }
+.header .badges { margin-top: 16px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge-blue { background: rgba(56,139,253,0.15); color: var(--accent); }
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-amber { background: rgba(210,153,34,0.15); color: var(--amber); }
+
+/* Navigation */
+.nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 0; position: sticky; top: 0; z-index: 100; }
+.nav-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; gap: 20px; overflow-x: auto; }
+.nav a { color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; padding: 4px 0; border-bottom: 2px solid transparent; }
+.nav a:hover { color: var(--text); text-decoration: none; border-bottom-color: var(--accent); }
+
+/* Content */
+.container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+h2 { font-size: 24px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h2:first-child { margin-top: 0; }
+h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--accent); }
+h4 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 24px; }
+li { margin: 4px 0; }
+
+/* Code */
+code { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; background: var(--bg3); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+pre { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; font-size: 13px; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+th { text-align: left; padding: 8px 12px; background: var(--bg2); color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--border); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: rgba(56,139,253,0.04); }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.card h4 { margin-top: 0; color: var(--text); }
+.card p { color: var(--muted); font-size: 13px; }
+
+/* Alerts */
+.alert { padding: 12px 16px; border-radius: 8px; margin: 16px 0; font-size: 13px; }
+.alert-info { background: rgba(56,139,253,0.1); border-left: 4px solid var(--accent); }
+.alert-warn { background: rgba(210,153,34,0.1); border-left: 4px solid var(--amber); }
+.alert-success { background: rgba(63,185,80,0.1); border-left: 4px solid var(--green); }
+.alert-danger { background: rgba(248,81,73,0.1); border-left: 4px solid var(--red); }
+
+/* Status */
+.status-ok { color: var(--green); }
+.status-warn { color: var(--amber); }
+.status-fail { color: var(--red); }
+
+/* TOC */
+.toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 32px; }
+.toc h3 { margin-top: 0; font-size: 16px; }
+.toc ol { margin-left: 20px; }
+.toc li { margin: 6px 0; }
+.toc a { color: var(--muted); }
+.toc a:hover { color: var(--accent); }
+
+/* Footer */
+.footer { border-top: 1px solid var(--border); padding: 32px 0; text-align: center; color: var(--muted); font-size: 12px; margin-top: 64px; }
+
+/* Workflow diagram */
+.workflow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; }
+.workflow-step { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; }
+.workflow-arrow { color: var(--accent); font-weight: bold; }
+
+@media (max-width: 768px) {
+  .header h1 { font-size: 24px; }
+  .card-grid { grid-template-columns: 1fr; }
+  table { font-size: 11px; }
+  th, td { padding: 6px 8px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1><span>NetOps</span> Production Guide</h1>
+  <p class="subtitle">Network Topology Design, 3D Visualization, Lab Simulation, Digital Twin &amp; Automation</p>
+  <div class="badges">
+    <span class="badge badge-blue">v2.0.0</span>
+    <span class="badge badge-green">13 Vendors</span>
+    <span class="badge badge-green">157 Templates</span>
+    <span class="badge badge-amber">871 Tests</span>
+    <span class="badge badge-blue">Mac / Win / Linux</span>
+  </div>
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <div class="nav-inner">
+    <a href="#overview">Overview</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#installation">Installation</a>
+    <a href="#backend-server">Backend Server</a>
+    <a href="#features">Features</a>
+    <a href="#vendors">Vendors</a>
+    <a href="#templates">Templates</a>
+    <a href="#device-mapping">Device Mapping</a>
+    <a href="#automation">Automation</a>
+    <a href="#3d-view">3D View</a>
+    <a href="#digital-twin">Digital Twin</a>
+    <a href="#export">Export</a>
+    <a href="#api">API Reference</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="container">
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h3>Table of Contents</h3>
+  <ol>
+    <li><a href="#overview">Overview &amp; Architecture</a></li>
+    <li><a href="#installation">Installation (Desktop App)</a></li>
+    <li><a href="#backend-server">Backend Server Deployment</a></li>
+    <li><a href="#features">Feature Reference</a></li>
+    <li><a href="#vendors">Vendor Support Matrix</a></li>
+    <li><a href="#templates">Template Library</a></li>
+    <li><a href="#device-mapping">Device Mapping &amp; Discovery</a></li>
+    <li><a href="#automation">Automation &amp; Compliance</a></li>
+    <li><a href="#3d-view">3D Topology View</a></li>
+    <li><a href="#digital-twin">Digital Twin</a></li>
+    <li><a href="#export">Export &amp; Integration</a></li>
+    <li><a href="#api">Backend API Reference</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="overview">1. Overview</h2>
+
+<p>NetOps is a professional network topology design, simulation, and operations platform. It combines visual topology design with containerlab-based lab simulation, 3D WebGL visualization, digital twin monitoring, physical device mapping, and comprehensive automation — supporting 13 network vendors end-to-end.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>🎨 Design</h4>
+    <p>2D/3D topology canvas with drag-and-drop, 157 pre-built templates, vendor-specific config generation, IP addressing tools.</p>
+  </div>
+  <div class="card">
+    <h4>🚀 Simulate</h4>
+    <p>One-click containerlab deployment, auto config push, inline terminal panels, cRPD/SONiC/Arista/Nokia container support.</p>
+  </div>
+  <div class="card">
+    <h4>🌐 3D View</h4>
+    <p>Three.js WebGL 3D topology with orbit/zoom/pan, drag-to-move, drop-to-add, Shift+drag link creation, traffic particles.</p>
+  </div>
+  <div class="card">
+    <h4>🔮 Digital Twin</h4>
+    <p>Real-time CPU/memory gauges, alarm pulse rings, config drift detection with diff viewer, per-node BGP status dashboard.</p>
+  </div>
+  <div class="card">
+    <h4>🔗 Device Mapping</h4>
+    <p>LLDP/SNMP auto-discovery, CSV/JSON import, visual mapper wizard with auto-match scoring, persistent device inventory.</p>
+  </div>
+  <div class="card">
+    <h4>⚡ Automation</h4>
+    <p>Event rules, workflow chains, scheduled jobs, compliance checks, change management, webhook notifications, backup history.</p>
+  </div>
+</div>
+
+<h3>Architecture</h3>
+<pre><code>┌──────────────────────────────────────────────────────┐
+│                 NetOps Desktop App                     │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ Angular 15   │  │ Three.js 3D  │  │ xterm.js     │ │
+│  │ Renderer     │  │ WebGL Canvas │  │ Terminals    │ │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘ │
+│         │ IPC                                         │
+│  ┌──────┴───────┐                                     │
+│  │ Electron 38  │  ← SSH Pool (50 max)               │
+│  │ Main Process │  ← Docker API                       │
+│  └──────────────┘  ← SNMP (net-snmp)                 │
+└──────────────────────────────────────────────────────┘
+         │ Optional
+         ▼
+┌──────────────────────────────────────────────────────┐
+│            NetOps Backend Server                      │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ Express API  │  │ WebSocket    │  │ SSH Pool     │ │
+│  │ REST + CORS  │  │ Streaming    │  │ Connection   │ │
+│  └─────────────┘  └──────────────┘  └──────────────┘ │
+│  Port 4000 • Linux • systemd • Docker                 │
+└──────────────────────────────────────────────────────┘</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="installation">2. Installation</h2>
+
+<h3>Desktop App (Mac / Windows / Linux)</h3>
+
+<h4>From Release</h4>
+<table>
+  <tr><th>Platform</th><th>File</th><th>Install</th></tr>
+  <tr><td>macOS</td><td><code>NetOps-2.0.0-arm64.dmg</code></td><td>Double-click, drag to Applications</td></tr>
+  <tr><td>Windows</td><td><code>NetOps-2.0.0.exe</code></td><td>Run installer (NSIS)</td></tr>
+  <tr><td>Linux (Debian)</td><td><code>NetOps-2.0.0.deb</code></td><td><code>sudo dpkg -i NetOps-2.0.0.deb</code></td></tr>
+  <tr><td>Linux (RPM)</td><td><code>NetOps-2.0.0.rpm</code></td><td><code>sudo rpm -i NetOps-2.0.0.rpm</code></td></tr>
+  <tr><td>Linux (AppImage)</td><td><code>NetOps-2.0.0.AppImage</code></td><td><code>chmod +x && ./NetOps-2.0.0.AppImage</code></td></tr>
+</table>
+
+<h4>From Source</h4>
+<pre><code>git clone https://github.com/amishagrawal2001-arch/tlink-netops.git
+cd tlink-netops
+npm install --legacy-peer-deps
+npm run build
+npm start</code></pre>
+
+<h4>Build Installers</h4>
+<pre><code># macOS
+npx electron-builder --mac
+
+# Windows
+npx electron-builder --win
+
+# Linux
+npx electron-builder --linux
+
+# Or push a tag to trigger CI:
+git tag v2.0.0 && git push origin v2.0.0</code></pre>
+
+<h4>Prerequisites</h4>
+<ul>
+  <li>Node.js 18+ (22 recommended)</li>
+  <li>Docker (for containerlab simulation)</li>
+  <li>Containerlab (for lab deployment)</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="backend-server">3. Backend Server</h2>
+
+<p>Optional standalone server for large-scale deployments (100+ devices). Offloads SSH/SNMP polling from the desktop app to a centralized Linux server.</p>
+
+<div class="alert alert-info">
+  <strong>When to use:</strong> If you're polling 50+ devices, have multiple users, or need 24/7 monitoring with the app closed.
+</div>
+
+<h3>Deployment Options</h3>
+
+<h4>Option 1: Direct Install (systemd)</h4>
+<pre><code># Copy tarball to server:
+scp netops-server-1.0.0-linux.tar.gz root@server:~/
+
+# On server:
+tar xzf netops-server-1.0.0-linux.tar.gz
+cd netops-server-1.0.0
+./install.sh
+
+# Management:
+sudo systemctl status netops-server
+sudo journalctl -u netops-server -f
+sudo systemctl restart netops-server</code></pre>
+
+<h4>Option 2: Docker</h4>
+<pre><code>docker-compose up -d
+# or for older Docker:
+docker compose up -d</code></pre>
+
+<h4>Option 3: Manual</h4>
+<pre><code>cd server
+npm install
+npm start
+# Listening on port 4000</code></pre>
+
+<h3>Connect from App</h3>
+<ol>
+  <li>Open NetOps desktop app</li>
+  <li><strong>Automation menu &rarr; 🖥 Backend Server&hellip;</strong></li>
+  <li>Enter server URL: <code>http://&lt;server-ip&gt;:4000</code></li>
+  <li>Click <strong>Connect</strong></li>
+  <li>Green dot = connected &mdash; all SSH operations route through server</li>
+</ol>
+
+<h3>API Endpoints</h3>
+<table>
+  <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+  <tr><td>GET</td><td><code>/api/status</code></td><td>Server health + connected client count</td></tr>
+  <tr><td>POST</td><td><code>/api/poll</code></td><td>Poll single device via SSH</td></tr>
+  <tr><td>POST</td><td><code>/api/poll-all</code></td><td>Batch poll (10 concurrent)</td></tr>
+  <tr><td>POST</td><td><code>/api/backup</code></td><td>Fetch running config</td></tr>
+  <tr><td>POST</td><td><code>/api/load-config</code></td><td>Push config via interactive SSH shell</td></tr>
+  <tr><td>POST</td><td><code>/api/discover</code></td><td>LLDP network discovery</td></tr>
+</table>
+
+<p>WebSocket at <code>ws://server:4000</code> streams poll results in real-time.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="features">4. Feature Reference</h2>
+
+<h3>Menu Bar</h3>
+<pre><code>File | Edit | View | Devices | Inventory | Simulate | Automation | Export | License | Help</code></pre>
+
+<h3>View Bar (Bottom Center)</h3>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│  ▶ Deploy  Inspect  Live  ⏹ Destroy  🔗 Map                │  ← Lab Controls
+├──────────────────────────────────────────────────────────────┤
+│  IP  Intf  IPv6 │ VLAN  BGP  Flows │ Routes  Counters │ Map │ 3D │ Twin │  ← View Bar
+└──────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>Complete Feature List</h3>
+<table>
+  <tr><th>Category</th><th>Features</th></tr>
+  <tr><td>Canvas</td><td>2D SVG + 3D WebGL, drag-and-drop, link creation, shapes, annotations, grid, minimap, zoom</td></tr>
+  <tr><td>Templates</td><td>157 templates, animated preview on hover, deploy button, config download</td></tr>
+  <tr><td>Lab Simulation</td><td>Containerlab deploy/destroy/inspect, auto config push, inline terminals, live polling</td></tr>
+  <tr><td>Device Mapping</td><td>LLDP/SNMP discovery, CSV/JSON upload, mapper wizard, persistent inventory</td></tr>
+  <tr><td>Digital Twin</td><td>CPU/memory gauges, alarm rings, config drift detection, dashboard</td></tr>
+  <tr><td>Automation</td><td>Event rules (8 triggers &times; 5 actions), workflows, scheduled jobs, compliance, change management</td></tr>
+  <tr><td>Export</td><td>Ansible inventory/playbook, Terraform, firmware upgrade plan, configs, HTML report</td></tr>
+  <tr><td>Monitoring</td><td>SSH polling, SNMP, interface counters, route tables, BGP summary, vendor alarms</td></tr>
+  <tr><td>Config Mgmt</td><td>Vendor config generation, config push (SSH + container), backup/restore, drift detection</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="vendors">5. Vendor Support</h2>
+
+<table>
+  <tr><th>Vendor</th><th>Templates</th><th>Config Gen</th><th>LLDP</th><th>BGP</th><th>Push</th><th>Monitor</th><th>Alarms</th><th>Clab Kind</th></tr>
+  <tr><td>Juniper</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>crpd / vqfx</td></tr>
+  <tr><td>Cisco IOS</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>csr1000v</td></tr>
+  <tr><td>Cisco NX-OS</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>cisco_n9kv</td></tr>
+  <tr><td>Cisco IOS-XR</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>cisco_xrd</td></tr>
+  <tr><td>Arista EOS</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>ceos</td></tr>
+  <tr><td>Nokia SRL</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>srl</td></tr>
+  <tr><td>Nokia SROS</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>—</td></tr>
+  <tr><td>SONiC</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-warn">—</td><td>sonic-vs</td></tr>
+  <tr><td>Huawei VRP</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>—</td></tr>
+  <tr><td>Dell OS10</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>—</td></tr>
+  <tr><td>HPE AOS-CX</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>—</td></tr>
+  <tr><td>MikroTik</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-warn">—</td><td>—</td></tr>
+  <tr><td>Extreme EXOS</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td class="status-ok">&#10004;</td><td>—</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="templates">6. Templates</h2>
+
+<p>157 pre-built topology templates across 11 categories:</p>
+
+<table>
+  <tr><th>Category</th><th>Count</th><th>Examples</th></tr>
+  <tr><td>Datacenter</td><td>56</td><td>IP Fabric, EVPN-VXLAN, 5-Stage Clos, AI/ML Fabric</td></tr>
+  <tr><td>Routing</td><td>21</td><td>OSPF, IS-IS, BGP, MPLS LDP</td></tr>
+  <tr><td>IPv6</td><td>17</td><td>SRv6, OSPFv3, Dual-Stack</td></tr>
+  <tr><td>Segment Routing</td><td>8</td><td>SR-MPLS, TI-LFA</td></tr>
+  <tr><td>Multi-Vendor</td><td>8</td><td>Juniper Spine + Arista Leaf, Cisco + Nokia</td></tr>
+  <tr><td>DCI</td><td>6</td><td>EVPN DCI, VXLAN Stretch</td></tr>
+  <tr><td>Enterprise</td><td>4</td><td>Campus, Branch Office</td></tr>
+  <tr><td>Service Provider</td><td>4</td><td>MPLS Core, PE-CE</td></tr>
+  <tr><td>WAN</td><td>4</td><td>SD-WAN, Hub-Spoke</td></tr>
+  <tr><td>Security</td><td>3</td><td>Firewall DMZ, Zero Trust</td></tr>
+  <tr><td>General</td><td>5</td><td>Star, Ring, Mesh</td></tr>
+</table>
+
+<h4>Using Templates</h4>
+<div class="workflow">
+  <span class="workflow-step">Open Templates</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Hover to preview</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Click to load</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Or click &#9654; Deploy</span>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="device-mapping">7. Device Mapping</h2>
+
+<h3>Three Ways to Add Devices</h3>
+
+<h4>1. Upload CSV</h4>
+<pre><code>hostname,mgmtIp,vendor,model,serialNumber,sshUsername,sshPassword
+Spine-1,172.16.0.1,Juniper,QFX5130-32CD,JN1234,admin,pass123
+Leaf-1,172.16.0.3,Arista,DCS-7050,AR5678,admin,pass456</code></pre>
+
+<h4>2. Upload JSON</h4>
+<pre><code>{
+  "devices": [
+    { "hostname": "Spine-1", "mgmtIp": "172.16.0.1", "vendor": "Juniper" },
+    { "hostname": "Leaf-1", "mgmtIp": "172.16.0.3", "vendor": "Arista" }
+  ]
+}</code></pre>
+
+<h4>3. LLDP Auto-Discovery</h4>
+<div class="workflow">
+  <span class="workflow-step">🔗 Map</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">🔍 Discover</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Enter seed IP</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">BFS walks LLDP neighbors</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Devices discovered</span>
+</div>
+
+<h3>Mapping Workflow</h3>
+<div class="workflow">
+  <span class="workflow-step">Add devices</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">⚡ Auto-Match</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Review matches</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Apply &amp; Push Configs</span>
+</div>
+
+<div class="alert alert-success">
+  <strong>Persistence:</strong> Device inventory saves to disk automatically. Mappings auto-save to topology file. Both survive app restarts.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="automation">8. Automation</h2>
+
+<h3>Automation Menu</h3>
+<table>
+  <tr><th>Item</th><th>Description</th></tr>
+  <tr><td>🤖 Automation Dashboard</td><td>Unified view: alarms, events, backups, health score, quick actions</td></tr>
+  <tr><td>⚡ Event Rules</td><td>When trigger fires &rarr; execute action (8 triggers &times; 5 actions)</td></tr>
+  <tr><td>🔗 Workflow Editor</td><td>Chain multiple actions into sequential playbooks</td></tr>
+  <tr><td>✓ Compliance Check</td><td>Golden config rules with regex patterns, per-node scoring</td></tr>
+  <tr><td>🗄 Backup History</td><td>View/diff/restore config backups, scheduled backups</td></tr>
+  <tr><td>📅 Scheduled Jobs</td><td>Cron-like recurring tasks (backup, compliance, poll)</td></tr>
+  <tr><td>📋 Change Manager</td><td>Config change approval: propose &rarr; approve &rarr; deploy &rarr; verify &rarr; rollback</td></tr>
+  <tr><td>🔄 Firmware Upgrade Plan</td><td>4-phase upgrade plan with pre/post checks, markdown report</td></tr>
+  <tr><td>🖥 Backend Server</td><td>Connect to remote polling server</td></tr>
+</table>
+
+<h3>Event Triggers</h3>
+<table>
+  <tr><th>Trigger</th><th>Fires when</th></tr>
+  <tr><td><code>alarm_raised</code></td><td>New alarm created (CPU &gt;80%, interface down, etc.)</td></tr>
+  <tr><td><code>alarm_cleared</code></td><td>Alarm condition resolved</td></tr>
+  <tr><td><code>config_change</code></td><td>Config drift detected during backup</td></tr>
+  <tr><td><code>link_down</code></td><td>Interface status changes to down</td></tr>
+  <tr><td><code>link_up</code></td><td>Interface recovers from down</td></tr>
+  <tr><td><code>poll_complete</code></td><td>Device poll finishes (success or failure)</td></tr>
+  <tr><td><code>version_change</code></td><td>Firmware version detected</td></tr>
+  <tr><td><code>command_check</code></td><td>SSH command output matches regex pattern</td></tr>
+</table>
+
+<h3>Event Actions</h3>
+<table>
+  <tr><th>Action</th><th>What happens</th></tr>
+  <tr><td><code>notify</code></td><td>Creates an info-level alarm with custom message</td></tr>
+  <tr><td><code>backup_config</code></td><td>Triggers config backup for the device</td></tr>
+  <tr><td><code>run_command</code></td><td>Executes arbitrary SSH command on device</td></tr>
+  <tr><td><code>webhook</code></td><td>POST event data to configurable URL (Slack, PagerDuty, etc.)</td></tr>
+  <tr><td><code>log</code></td><td>Records event in event log</td></tr>
+</table>
+
+<h3>Change Management Workflow</h3>
+<div class="workflow">
+  <span class="workflow-step">Propose</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Diff Preview</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Approve / Reject</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Deploy</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Verify</span>
+  <span class="workflow-arrow">&rarr;</span>
+  <span class="workflow-step">Done ✓</span>
+</div>
+<p>If verification fails: <strong>Rollback</strong> restores the original config automatically.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="3d-view">9. 3D Topology View</h2>
+
+<p>Click <strong>3D</strong> in the view bar to switch to WebGL mode.</p>
+
+<table>
+  <tr><th>Node Type</th><th>3D Shape</th><th>Color</th></tr>
+  <tr><td>Router</td><td>Sphere</td><td style="color:#3b82f6">#3b82f6 Blue</td></tr>
+  <tr><td>Switch</td><td>Flat Box</td><td style="color:#22c55e">#22c55e Green</td></tr>
+  <tr><td>Firewall</td><td>Octahedron</td><td style="color:#ef4444">#ef4444 Red</td></tr>
+  <tr><td>Server</td><td>Tall Box</td><td style="color:#f59e0b">#f59e0b Amber</td></tr>
+  <tr><td>PC</td><td>Cone</td><td style="color:#a855f7">#a855f7 Purple</td></tr>
+  <tr><td>Cloud</td><td>Icosahedron</td><td style="color:#38bdf8">#38bdf8 Cyan</td></tr>
+</table>
+
+<h4>Controls</h4>
+<ul>
+  <li><strong>Orbit</strong> &mdash; left-click drag</li>
+  <li><strong>Zoom</strong> &mdash; scroll wheel</li>
+  <li><strong>Pan</strong> &mdash; right-click drag</li>
+  <li><strong>Move node</strong> &mdash; click + drag</li>
+  <li><strong>Create link</strong> &mdash; Shift + drag from node to node</li>
+  <li><strong>Add device</strong> &mdash; drag from palette</li>
+  <li><strong>Select</strong> &mdash; click node</li>
+  <li><strong>Properties</strong> &mdash; double-click node</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="digital-twin">10. Digital Twin</h2>
+
+<p>Click <strong>Twin</strong> in the view bar to activate real-time monitoring overlay.</p>
+
+<h4>Visual Indicators</h4>
+<ul>
+  <li><strong>CPU gauge badge</strong> &mdash; green (&lt;50%), amber (50-80%), red (&gt;80%)</li>
+  <li><strong>Alarm pulse ring</strong> &mdash; red (critical), amber (major), yellow (minor)</li>
+  <li><strong>⚠ Drift icon</strong> &mdash; click to see config diff</li>
+  <li><strong>BGP link colors</strong> &mdash; green (established), amber (connecting), red (down)</li>
+  <li><strong>Status dot</strong> &mdash; green (running), grey (stopped)</li>
+</ul>
+
+<h4>Twin Dashboard</h4>
+<p>Click <strong>Dashboard</strong> (appears when Twin is active) for a table of all nodes with Status, CPU, Memory, BGP (per-node), Alarms, and Drift status.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="export">11. Export &amp; Integration</h2>
+
+<table>
+  <tr><th>Export</th><th>Format</th><th>Use Case</th></tr>
+  <tr><td>All Configs (.cfg)</td><td>Text</td><td>Vendor startup configs for all nodes</td></tr>
+  <tr><td>Ansible Inventory</td><td>YAML</td><td>Groups by role, ansible_network_os per vendor</td></tr>
+  <tr><td>Ansible Playbook</td><td>YAML</td><td>Per-vendor config modules (junos_config, ios_config, etc.)</td></tr>
+  <tr><td>Terraform Config</td><td>HCL</td><td>Provider blocks + device resources + variables</td></tr>
+  <tr><td>Firmware Upgrade Plan</td><td>Markdown</td><td>4-phase plan with checklists</td></tr>
+  <tr><td>IP Matrix CSV</td><td>CSV</td><td>All IPs across all nodes/ports</td></tr>
+  <tr><td>HTML Report</td><td>HTML</td><td>Topology diagram + IP table</td></tr>
+  <tr><td>Alarms CSV</td><td>CSV</td><td>Alarm history export</td></tr>
+  <tr><td>Device CSV</td><td>CSV</td><td>Device inventory export</td></tr>
+  <tr><td>GNS3 Project</td><td>JSON</td><td>GNS3 topology import</td></tr>
+  <tr><td>Containerlab YAML</td><td>YAML</td><td>Containerlab topology file</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="api">12. Backend API Reference</h2>
+
+<h3>POST /api/poll</h3>
+<pre><code>// Request
+{
+  "host": "172.16.0.1",
+  "port": 22,
+  "username": "admin",
+  "password": "secret",
+  "commands": ["show version", "show bgp summary"],
+  "timeoutMs": 15000
+}
+
+// Response
+{
+  "ok": true,
+  "outputs": ["Junos: 24.4R1...", "BGP summary..."],
+  "error": null
+}</code></pre>
+
+<h3>POST /api/backup</h3>
+<pre><code>// Request
+{
+  "host": "172.16.0.1",
+  "port": 22,
+  "username": "admin",
+  "password": "secret",
+  "command": "show running-config"
+}
+
+// Response
+{
+  "ok": true,
+  "output": "set system host-name Spine-1\nset ...",
+  "error": null
+}</code></pre>
+
+<h3>POST /api/load-config</h3>
+<pre><code>// Request
+{
+  "host": "172.16.0.1",
+  "port": 22,
+  "username": "admin",
+  "password": "secret",
+  "commands": ["configure", "set system host-name NewName", "commit"],
+  "delayMs": 300
+}
+
+// Response
+{
+  "ok": true,
+  "output": "commit complete\n...",
+  "error": null
+}</code></pre>
+
+<h3>WebSocket Events</h3>
+<pre><code>// Connect
+ws://server:4000
+
+// Received message (poll result):
+{
+  "type": "poll_result",
+  "nodeId": "172.16.0.1",
+  "ok": true,
+  "data": { "ok": true, "outputs": [...] },
+  "timestamp": "2026-04-05T00:00:00.000Z"
+}</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="troubleshooting">13. Troubleshooting</h2>
+
+<h3>Common Issues</h3>
+
+<h4>App won't start</h4>
+<pre><code># Rebuild from source:
+npm run build
+npm start
+
+# Check Electron version:
+npx electron --version</code></pre>
+
+<h4>Containerlab deploy fails with "CPU virtualization required"</h4>
+<p>Use <strong>cRPD mode</strong> (click OK when prompted) instead of full VM mode. cRPD works without KVM.</p>
+
+<h4>Backend server connection refused</h4>
+<pre><code># Check server status:
+sudo systemctl status netops-server
+sudo journalctl -u netops-server -f
+
+# Check port:
+curl http://server:4000/api/status
+
+# Check firewall:
+sudo ufw allow 4000/tcp</code></pre>
+
+<h4>BGP shows 0/0 in live polling</h4>
+<p>JunOS truncates "Established" to "Establ" in BGP summary. This is handled by the parser. If still showing 0/0, restart the app to pick up the latest build.</p>
+
+<h4>Config push fails for cRPD</h4>
+<p>cRPD containers use <code>enforce-startup-config: true</code> in containerlab. The config push verifies instead of overwriting. Destroy and redeploy for config changes to take effect.</p>
+
+<h4>CSP blocks WebSocket connection</h4>
+<p>The CSP allows <code>ws:</code> and <code>wss:</code> connections to any host. If still blocked, check the <code>Content-Security-Policy</code> meta tag in <code>index.html</code>.</p>
+
+<h4>Apple metadata warnings in tar</h4>
+<p>Use <code>gtar</code> (GNU tar) instead of macOS tar when building server packages:</p>
+<pre><code>brew install gnu-tar
+gtar czf package.tar.gz directory/</code></pre>
+
+<h3>Debug Logging</h3>
+<p>Open DevTools in the app: <strong>Cmd+Option+I</strong> (Mac) or <strong>Ctrl+Shift+I</strong> (Windows/Linux)</p>
+<p>Key console messages:</p>
+<ul>
+  <li><code>[Backend] Connected and wired...</code> &mdash; backend server connected</li>
+  <li><code>[Backup] node (host) &mdash; backend: true/false</code> &mdash; routing path</li>
+  <li><code>[Webhook] Failed: url error</code> &mdash; webhook delivery failure</li>
+  <li><code>Twin poll failed: ...</code> &mdash; polling error</li>
+</ul>
+
+<h3>Testing</h3>
+<pre><code># Run all tests (871 tests, 11 suites):
+npm test
+
+# Watch mode:
+npm run test:watch</code></pre>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <p>NetOps v2.0.0 &bull; 13 Vendors &bull; 157 Templates &bull; 871 Tests</p>
+  <p>Built with Electron 38 &bull; Angular 15 &bull; Three.js &bull; Containerlab</p>
+  <p>&copy; 2026 Tlink Technologies</p>
+</div>
+
+</body>
+</html>
