@@ -340,11 +340,17 @@ export class InventoryService implements OnDestroy {
         const command = configType === 'running' ? cmds.showRunningConfig : cmds.showStartupConfig
 
         try {
-            const result = await api.sshRunCommand({
-                host, port: node.sshPort ?? 22, username, password,
-                timeoutMs: 30000,
-                command,
-            })
+            let result: any
+            if (this._backendClient?.isConnected) {
+                const backupRes = await this._backendClient.backup(host, node.sshPort ?? 22, username, password, command)
+                result = { ok: backupRes.ok, output: backupRes.config ?? '', message: backupRes.error }
+            } else {
+                result = await api.sshRunCommand({
+                    host, port: node.sshPort ?? 22, username, password,
+                    timeoutMs: 30000,
+                    command,
+                })
+            }
 
             if (!result.ok || !result.output) { return null }
 
@@ -503,15 +509,20 @@ export class InventoryService implements OnDestroy {
         const commands = [...preamble, ...configLines, ...postamble]
 
         try {
-            const result = await api.sshShellSession({
-                host,
-                port: node.sshPort ?? 22,
-                username,
-                password,
-                timeoutMs: 60000,
-                commands,
-                delayMs: 300,
-            })
+            let result: any
+            if (this._backendClient?.isConnected) {
+                result = await this._backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
+            } else {
+                result = await api.sshShellSession({
+                    host,
+                    port: node.sshPort ?? 22,
+                    username,
+                    password,
+                    timeoutMs: 60000,
+                    commands,
+                    delayMs: 300,
+                })
+            }
 
             this._emitEvent({
                 type: 'config_change',
@@ -923,13 +934,19 @@ export class InventoryService implements OnDestroy {
 
         for (const rule of rules) {
             try {
-                const result = await api.sshRunCommand({
-                    host, port: node.sshPort ?? 22,
-                    username: node.sshUsername.trim(),
-                    password: node.sshPassword,
-                    timeoutMs: 15000,
-                    command: rule.actionConfig.checkCommand!,
-                })
+                let result: any
+                if (this._backendClient?.isConnected) {
+                    const pollRes = await this._backendClient.pollDevice(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, [rule.actionConfig.checkCommand!])
+                    result = { ok: pollRes.ok, output: pollRes.outputs?.[0] ?? '', message: pollRes.error }
+                } else {
+                    result = await api.sshRunCommand({
+                        host, port: node.sshPort ?? 22,
+                        username: node.sshUsername.trim(),
+                        password: node.sshPassword,
+                        timeoutMs: 15000,
+                        command: rule.actionConfig.checkCommand!,
+                    })
+                }
 
                 const output: string = result.ok ? (result.output ?? '') : ''
                 let matched = false

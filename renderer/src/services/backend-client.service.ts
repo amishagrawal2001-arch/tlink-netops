@@ -88,6 +88,28 @@ export class BackendClientService {
         return res.json()
     }
 
+    /** Run a single command on a device via the backend (returns sshRunCommand-compatible result). */
+    async runCommand (host: string, port: number, username: string, password: string, command: string): Promise<any> {
+        const res = await fetch(`${this._url}/api/poll`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, username, password, commands: [command], timeoutMs: 30000 }),
+        })
+        const data = await res.json()
+        // Transform to match sshRunCommand result format
+        return { ok: data.ok, output: data.outputs?.[0] ?? '', message: data.error }
+    }
+
+    /** Load (restore) config onto a device via an interactive shell session on the backend. */
+    async loadConfig (host: string, port: number, username: string, password: string, commands: string[], delayMs?: number): Promise<any> {
+        const res = await fetch(`${this._url}/api/load-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, username, password, commands, delayMs }),
+        })
+        return res.json()
+    }
+
     /** Check backend server health. */
     async status (): Promise<any> {
         const res = await fetch(`${this._url}/api/status`)

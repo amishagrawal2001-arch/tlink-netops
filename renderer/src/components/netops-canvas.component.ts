@@ -5721,11 +5721,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const cmds = getVendorCommands(node.vendor)
             if (!cmds.showRouteTable) { continue }
             try {
-                const result = await api.sshRunCommand({
-                    host, port: node.sshPort ?? 22,
-                    username: node.sshUsername, password: node.sshPassword ?? '',
-                    timeoutMs: 15000, command: cmds.showRouteTable,
-                })
+                let result: any
+                if (this._backendSvc?.isConnected) {
+                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showRouteTable)
+                } else {
+                    result = await api.sshRunCommand({
+                        host, port: node.sshPort ?? 22,
+                        username: node.sshUsername, password: node.sshPassword ?? '',
+                        timeoutMs: 15000, command: cmds.showRouteTable,
+                    })
+                }
                 if (result.ok && result.output) {
                     this.liveRouteTable.set(node.id, parseRouteTable(node.vendor, result.output))
                 }
@@ -5763,11 +5768,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const cmds = getVendorCommands(node.vendor)
             if (!cmds.showInterfaceCounters) { continue }
             try {
-                const result = await api.sshRunCommand({
-                    host, port: node.sshPort ?? 22,
-                    username: node.sshUsername, password: node.sshPassword ?? '',
-                    timeoutMs: 15000, command: cmds.showInterfaceCounters,
-                })
+                let result: any
+                if (this._backendSvc?.isConnected) {
+                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showInterfaceCounters)
+                } else {
+                    result = await api.sshRunCommand({
+                        host, port: node.sshPort ?? 22,
+                        username: node.sshUsername, password: node.sshPassword ?? '',
+                        timeoutMs: 15000, command: cmds.showInterfaceCounters,
+                    })
+                }
                 if (result.ok && result.output) {
                     this.liveInterfaceCounters.set(node.id, parseInterfaceCounters(node.vendor, result.output))
                 }
@@ -12719,15 +12729,20 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     .filter(l => !/^Last configuration change/i.test(l))
 
                 const commands = [...preamble, ...configLines, ...postamble]
-                const result = await api.sshShellSession({
-                    host,
-                    port: node.sshPort ?? 22,
-                    username,
-                    password,
-                    timeoutMs: 60000,
-                    commands,
-                    delayMs: 300,
-                })
+                let result: any
+                if (this._backendSvc?.isConnected) {
+                    result = await this._backendSvc.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
+                } else {
+                    result = await api.sshShellSession({
+                        host,
+                        port: node.sshPort ?? 22,
+                        username,
+                        password,
+                        timeoutMs: 60000,
+                        commands,
+                        delayMs: 300,
+                    })
+                }
                 if (result.ok) { success++ }
                 else { failed++; errors.push(`${node.label}: ${result.message}`) }
             } catch (err) {
