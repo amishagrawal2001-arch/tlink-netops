@@ -12157,7 +12157,9 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 }, 100)
             })
 
-            this.statusMsg = `Connected to backend server at ${this.backendUrl}`
+            // Wire backend client into inventory service for poll routing
+            this.invSvc.setBackendClient(svc)
+            this.statusMsg = `Connected to backend server at ${this.backendUrl} — polls will route through server`
         } catch (err) {
             this.statusMsg = `Backend connection failed: ${(err as Error).message}`
         }
@@ -12168,7 +12170,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     disconnectBackend (): void {
         this._getBackendSvc().disconnect()
-        this.statusMsg = 'Disconnected from backend server'
+        this.invSvc.setBackendClient(null)
+        this.statusMsg = 'Disconnected from backend server — polls will use local SSH'
         this.cdr.markForCheck()
     }
 

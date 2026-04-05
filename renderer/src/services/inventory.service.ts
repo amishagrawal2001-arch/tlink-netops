@@ -108,6 +108,11 @@ export class InventoryService implements OnDestroy {
         }
     }
 
+    // Optional backend client — set by canvas component when connected
+    private _backendClient: any = null
+    setBackendClient (client: any): void { this._backendClient = client }
+    get hasBackend (): boolean { return this._backendClient?.isConnected ?? false }
+
     async pollDevice (nodeId: string): Promise<void> {
         const node = this.topoSvc.getNode(nodeId)
         if (!node) { return }
@@ -128,11 +133,17 @@ export class InventoryService implements OnDestroy {
         if (cmds.showAlarms) { commands.push(cmds.showAlarms) }
 
         try {
-            const result = await api.sshRunCommands({
-                host, port: node.sshPort ?? 22, username, password,
-                timeoutMs: 15000,
-                commands,
-            })
+            // Route through backend server if connected
+            let result: any
+            if (this._backendClient?.isConnected) {
+                result = await this._backendClient.pollDevice(host, node.sshPort ?? 22, username, password, commands)
+            } else {
+                result = await api.sshRunCommands({
+                    host, port: node.sshPort ?? 22, username, password,
+                    timeoutMs: 15000,
+                    commands,
+                })
+            }
 
             if (!result.ok) {
                 this._updateDeviceVersion(nodeId, { pollError: result.message, lastPolled: nowIso() })
