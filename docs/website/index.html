@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetOps - Design, Simulate, and Operate Networks in 3D</title>
+    <meta name="description" content="Professional network topology design with 3D visualization, containerlab simulation, digital twin monitoring, and automation for 13 vendors. 157 pre-built templates.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* ========== Reset & Variables ========== */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #111118;
+            --bg-card: #16161f;
+            --bg-card-hover: #1c1c28;
+            --border: #2a2a3a;
+            --text-primary: #f0f0f5;
+            --text-secondary: #9898a8;
+            --text-muted: #686878;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #00d2ff;
+            --accent-green: #4ade80;
+            --accent-purple: #8b5cf6;
+            --accent-pink: #f472b6;
+            --accent-orange: #f59e0b;
+            --gradient-start: #00d2ff;
+            --gradient-end: #3b82f6;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --radius-lg: 16px;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* ========== Typography ========== */
+        h1, h2, h3, h4 {
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        h1 { font-size: clamp(2.5rem, 5vw, 4rem); }
+        h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); }
+        h3 { font-size: 1.25rem; }
+
+        a {
+            color: var(--accent-cyan);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a:hover { color: #33e0ff; }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 210, 255, 0.08);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: var(--accent-cyan);
+        }
+
+        /* ========== Buttons ========== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 22px;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.25);
+        }
+        .btn-primary:hover {
+            color: white;
+            box-shadow: 0 6px 25px rgba(0, 210, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        .btn-outline:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(0, 210, 255, 0.05);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        .btn-ghost:hover { color: var(--text-primary); }
+
+        .btn-lg {
+            padding: 14px 32px;
+            font-size: 16px;
+            border-radius: var(--radius);
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .btn-block {
+            width: 100%;
+            justify-content: center;
+        }
+
+        /* ========== Navbar ========== */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+            gap: 32px;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-weight: 800;
+            font-size: 20px;
+        }
+
+        .brand-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            border-radius: 8px;
+            font-size: 14px;
+            color: white;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 28px;
+            flex: 1;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text-primary); }
+
+        .nav-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .nav-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        /* ========== Hero ========== */
+        .hero {
+            padding: 160px 0 80px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-glow {
+            position: absolute;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 600px;
+            background: radial-gradient(ellipse, rgba(0, 210, 255, 0.12) 0%, rgba(59, 130, 246, 0.06) 40%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 20px;
+            border-radius: 999px;
+            background: rgba(0, 210, 255, 0.1);
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            color: var(--accent-cyan);
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+
+        .hero-badges {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+
+        .hero-title {
+            margin-bottom: 24px;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            max-width: 680px;
+            margin: 0 auto 40px;
+            line-height: 1.7;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .hero-platforms {
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 60px;
+        }
+
+        .hero-platforms span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-secondary);
+        }
+
+        .hero-image-placeholder {
+            max-width: 1000px;
+            margin: 0 auto;
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 210, 255, 0.08);
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.05), rgba(59, 130, 246, 0.05));
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .hero-image-placeholder .placeholder-icon {
+            font-size: 64px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 16px;
+        }
+
+        .hero-image-placeholder h3 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .hero-image-placeholder p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* ========== Stats Bar ========== */
+        .stats-bar {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* ========== Sections ========== */
+        .section {
+            padding: 100px 0;
+        }
+
+        .section-dark {
+            background: var(--bg-secondary);
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .section-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 999px;
+            background: rgba(0, 210, 255, 0.1);
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            color: var(--accent-cyan);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 16px;
+        }
+
+        .section-header h2 {
+            margin-bottom: 16px;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* ========== Features Grid ========== */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+        }
+
+        .feature-card {
+            position: relative;
+            padding: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-card.featured {
+            border-color: rgba(0, 210, 255, 0.2);
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.05), rgba(59, 130, 246, 0.05));
+        }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: rgba(0, 210, 255, 0.1);
+            color: var(--accent-cyan);
+            font-size: 18px;
+            margin-bottom: 16px;
+        }
+
+        .feature-icon.gradient-bg {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: white;
+        }
+
+        .feature-card h3 {
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .feature-tag {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* ========== Vendor Grid ========== */
+        .vendor-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .vendor-card {
+            padding: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .vendor-card:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .vendor-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-size: 22px;
+            margin: 0 auto 12px;
+            background: rgba(0, 210, 255, 0.1);
+            color: var(--accent-cyan);
+        }
+
+        .vendor-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .vendor-caps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            justify-content: center;
+        }
+
+        .vendor-caps span {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(74, 222, 128, 0.1);
+            color: var(--accent-green);
+            border: 1px solid rgba(74, 222, 128, 0.2);
+        }
+
+        /* ========== Templates Section ========== */
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .template-card {
+            padding: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .template-card:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .template-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+
+        .template-card h3 { margin-bottom: 8px; }
+        .template-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .template-count {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+
+        /* ========== Automation Section ========== */
+        .automation-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 48px;
+            flex-wrap: wrap;
+        }
+
+        .flow-step {
+            padding: 20px 28px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            text-align: center;
+            min-width: 140px;
+            transition: all 0.3s;
+        }
+
+        .flow-step:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .flow-step .step-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .flow-step h4 {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .flow-step p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .flow-arrow {
+            color: var(--accent-cyan);
+            font-size: 20px;
+            padding: 0 12px;
+        }
+
+        .automation-features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .auto-card {
+            padding: 28px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .auto-card:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .auto-card h4 {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .auto-card h4 i {
+            color: var(--accent-cyan);
+        }
+
+        .auto-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* ========== 3D View Section ========== */
+        .view3d-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+            align-items: center;
+        }
+
+        .view3d-placeholder {
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.05), rgba(139, 92, 246, 0.05));
+            padding: 80px 40px;
+            text-align: center;
+        }
+
+        .view3d-placeholder .placeholder-icon {
+            font-size: 80px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 16px;
+        }
+
+        .view3d-features {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .view3d-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .view3d-item-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: white;
+            font-size: 20px;
+        }
+
+        .view3d-item h4 {
+            margin: 0 0 4px;
+            font-size: 16px;
+        }
+
+        .view3d-item p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* ========== Backend Section ========== */
+        .backend-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .backend-card {
+            padding: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .backend-card:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .backend-card .backend-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-size: 20px;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.15), rgba(59, 130, 246, 0.15));
+            color: var(--accent-cyan);
+        }
+
+        .backend-card h3 { margin-bottom: 8px; }
+        .backend-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* ========== Pricing Grid ========== */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 32px;
+            max-width: 800px;
+            margin: 0 auto;
+            align-items: start;
+        }
+
+        .pricing-card {
+            position: relative;
+            padding: 36px 28px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .pricing-card.popular {
+            border-color: var(--accent-cyan);
+            background: linear-gradient(180deg, rgba(0, 210, 255, 0.08) 0%, var(--bg-card) 100%);
+            box-shadow: 0 8px 30px rgba(0, 210, 255, 0.15);
+        }
+
+        .popular-badge {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 16px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .pricing-tier {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+
+        .pricing-price {
+            margin-bottom: 12px;
+        }
+
+        .price-amount {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .price-period {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .pricing-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .pricing-features {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+
+        .pricing-features li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .pricing-features li i {
+            color: var(--accent-green);
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        /* ========== Download Grid ========== */
+        .download-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .download-card {
+            padding: 40px 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .download-card:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .download-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .download-card h3 { margin-bottom: 4px; }
+        .download-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .download-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .build-source {
+            margin-top: 40px;
+            text-align: center;
+            padding: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .build-source h3 {
+            margin-bottom: 12px;
+        }
+
+        .build-source pre {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px 24px;
+            font-size: 13px;
+            color: var(--accent-cyan);
+            display: inline-block;
+            margin-top: 8px;
+            text-align: left;
+        }
+
+        /* ========== CTA Section ========== */
+        .cta-section {
+            padding: 100px 0;
+            text-align: center;
+            background: linear-gradient(180deg, var(--bg-primary) 0%, rgba(0, 210, 255, 0.05) 50%, var(--bg-primary) 100%);
+        }
+
+        .cta-section h2 { margin-bottom: 16px; }
+        .cta-section p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            margin-bottom: 32px;
+        }
+
+        .cta-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* ========== Footer ========== */
+        .footer {
+            padding: 60px 0 32px;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 48px;
+            margin-bottom: 48px;
+        }
+
+        .footer-brand p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 12px;
+            max-width: 280px;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .footer-links h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        .footer-links a:hover { color: var(--text-primary); }
+
+        .footer-bottom {
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer-bottom p {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .footer-tech {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .footer-tech span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(0, 210, 255, 0.06);
+            border: 1px solid rgba(0, 210, 255, 0.12);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        /* ========== Change Management ========== */
+        .change-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            flex-wrap: wrap;
+            margin-top: 40px;
+        }
+
+        .change-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .change-step-num {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+            color: white;
+        }
+
+        .change-step-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .change-arrow {
+            color: var(--accent-cyan);
+            font-size: 18px;
+            padding: 0 16px;
+            margin-bottom: 20px;
+        }
+
+        /* ========== Responsive ========== */
+        @media (max-width: 1024px) {
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .vendor-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .templates-grid,
+            .automation-features,
+            .backend-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+            .footer-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 32px;
+            }
+            .view3d-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links,
+            .nav-actions {
+                display: none;
+            }
+            .nav-links.open,
+            .nav-actions.open {
+                display: flex;
+                flex-direction: column;
+                position: absolute;
+                top: 64px;
+                left: 0;
+                right: 0;
+                background: var(--bg-primary);
+                border-bottom: 1px solid var(--border);
+                padding: 16px 24px;
+                gap: 12px;
+                z-index: 99;
+            }
+            .nav-toggle { display: block; }
+
+            .features-grid,
+            .vendor-grid,
+            .templates-grid,
+            .automation-features,
+            .backend-grid,
+            .download-grid {
+                grid-template-columns: 1fr;
+            }
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                max-width: 400px;
+                margin: 0 auto;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .hero {
+                padding: 120px 0 60px;
+            }
+            .footer-grid {
+                grid-template-columns: 1fr;
+                gap: 32px;
+            }
+            .automation-flow {
+                flex-direction: column;
+            }
+            .flow-arrow {
+                transform: rotate(90deg);
+                padding: 8px 0;
+            }
+            .change-flow {
+                flex-direction: column;
+            }
+            .change-arrow {
+                transform: rotate(90deg);
+                padding: 8px 0;
+                margin-bottom: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container nav-container">
+            <a href="#" class="nav-brand">
+                <span class="brand-icon"><i class="fas fa-hexagon-nodes"></i></span>
+                <span class="brand-text">NetOps</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#view3d">3D View</a>
+                <a href="#templates">Templates</a>
+                <a href="#vendors">Vendors</a>
+                <a href="#automation">Automation</a>
+                <a href="#pricing">Pricing</a>
+            </div>
+            <div class="nav-actions">
+                <a href="https://github.com/user/tlink-netops" class="btn btn-ghost" target="_blank">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
+                <a href="#download" class="btn btn-primary">Download Free</a>
+            </div>
+            <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open');document.querySelector('.nav-actions').classList.toggle('open')">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-glow"></div>
+        <div class="container">
+            <div class="hero-badges">
+                <div class="hero-badge">
+                    <i class="fas fa-bolt"></i> Open Source
+                </div>
+                <div class="hero-badge">
+                    <i class="fas fa-server"></i> 13 Vendors
+                </div>
+                <div class="hero-badge">
+                    <i class="fas fa-layer-group"></i> 157 Templates
+                </div>
+            </div>
+            <h1 class="hero-title">
+                Design, Simulate, and<br>
+                <span class="gradient-text">Operate Networks &mdash; in 3D</span>
+            </h1>
+            <p class="hero-subtitle">
+                Professional network topology design with 3D visualization, containerlab simulation, digital twin monitoring, and automation for 13 vendors. 157 pre-built templates for datacenter, WAN, campus, and service provider networks.
+            </p>
+            <div class="hero-actions">
+                <a href="#download" class="btn btn-primary btn-lg">
+                    <i class="fas fa-download"></i> Download NetOps Free
+                </a>
+                <a href="#features" class="btn btn-outline btn-lg">
+                    <i class="fas fa-play-circle"></i> See Features
+                </a>
+            </div>
+            <div class="hero-platforms">
+                <span><i class="fab fa-apple"></i> macOS</span>
+                <span><i class="fab fa-windows"></i> Windows</span>
+                <span><i class="fab fa-linux"></i> Linux</span>
+            </div>
+
+            <!-- Hero Image Placeholder -->
+            <div class="hero-image-placeholder">
+                <div class="placeholder-icon"><i class="fas fa-diagram-project"></i></div>
+                <h3>Visual Topology Designer &amp; 3D Visualization</h3>
+                <p>2D canvas with drag-and-drop + immersive 3D WebGL view with orbit, zoom, and fly-through controls</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Bar -->
+    <section class="stats-bar">
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat">
+                    <div class="stat-number" data-target="13">13</div>
+                    <div class="stat-label">Vendors Supported</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" data-target="157">157</div>
+                    <div class="stat-label">Pre-built Templates</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" data-target="871">871</div>
+                    <div class="stat-label">Tests Passing</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" data-target="3">3</div>
+                    <div class="stat-label">Platforms</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Features</span>
+                <h2>Everything you need to manage networks</h2>
+                <p>From topology design to live monitoring, simulation to automation &mdash; all in one desktop application.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card featured">
+                    <div class="feature-icon gradient-bg"><i class="fas fa-palette"></i></div>
+                    <h3>Visual Topology Designer</h3>
+                    <p>Drag-and-drop 2D canvas for building network topologies. Full WebGL-powered 3D view with orbit, zoom, pan, and fly-through camera controls.</p>
+                    <div class="feature-tag">Core</div>
+                </div>
+                <div class="feature-card featured">
+                    <div class="feature-icon gradient-bg"><i class="fas fa-rocket"></i></div>
+                    <h3>One-Click Lab Deploy</h3>
+                    <p>Deploy topologies to containerlab with a single click. Auto-generates configuration and pushes to every node. Supports cEOS, cRPD, XRd, and more.</p>
+                    <div class="feature-tag">Core</div>
+                </div>
+                <div class="feature-card featured">
+                    <div class="feature-icon gradient-bg"><i class="fas fa-globe"></i></div>
+                    <h3>3D Network Visualization</h3>
+                    <p>Immersive Three.js-powered 3D topology view. Orbit around your network, zoom into racks, fly through data paths. Real-time link utilization overlays.</p>
+                    <div class="feature-tag">3D</div>
+                </div>
+                <div class="feature-card featured">
+                    <div class="feature-icon gradient-bg"><i class="fas fa-crystal-ball"></i></div>
+                    <h3>Digital Twin</h3>
+                    <p>Live polling of CPU, memory, interface counters, and BGP/OSPF state. Real-time alarm dashboard, config drift detection, and health scoring.</p>
+                    <div class="feature-tag">Live</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-magnifying-glass"></i></div>
+                    <h3>Device Discovery</h3>
+                    <p>Auto-discover network topology via LLDP and SNMP. Import existing networks from CSV, JSON, or direct device interrogation. Build topologies from live networks.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-bolt"></i></div>
+                    <h3>Smart Automation</h3>
+                    <p>Event-driven rules engine with workflows, webhooks, and compliance checks. Trigger actions on interface flaps, BGP state changes, or threshold breaches.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-clipboard-check"></i></div>
+                    <h3>Change Management</h3>
+                    <p>Full lifecycle: propose changes, get approval, deploy to devices, verify with post-checks, and automatic rollback on failure. Audit trail included.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-file-export"></i></div>
+                    <h3>Export Anywhere</h3>
+                    <p>Generate Ansible playbooks, Terraform configs, GNS3 projects, and containerlab YAML. One topology, any deployment target you need.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3D View Section -->
+    <section id="view3d" class="section section-dark">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">3D Visualization</span>
+                <h2>See your network like never before</h2>
+                <p>Three.js-powered immersive 3D topology with real-time data overlays and interactive navigation.</p>
+            </div>
+            <div class="view3d-content">
+                <div class="view3d-placeholder">
+                    <div class="placeholder-icon"><i class="fas fa-cube"></i></div>
+                    <h3 style="color:var(--text-primary);margin-bottom:8px">3D Topology View</h3>
+                    <p style="color:var(--text-secondary);font-size:14px">Interactive WebGL rendering with real-time link utilization, device health overlays, and traffic flow animation</p>
+                </div>
+                <div class="view3d-features">
+                    <div class="view3d-item">
+                        <div class="view3d-item-icon" style="background:linear-gradient(135deg,#00d2ff,#3b82f6)">
+                            <i class="fas fa-arrows-rotate"></i>
+                        </div>
+                        <div>
+                            <h4>Orbit, Zoom &amp; Pan</h4>
+                            <p>Mouse-driven orbit controls. Scroll to zoom, drag to rotate, right-click to pan. Touch support for tablets.</p>
+                        </div>
+                    </div>
+                    <div class="view3d-item">
+                        <div class="view3d-item-icon" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">
+                            <i class="fas fa-jet-fighter"></i>
+                        </div>
+                        <div>
+                            <h4>Fly-Through Mode</h4>
+                            <p>First-person camera to fly through your network. Navigate cable paths, inspect rack layouts, and trace traffic flows.</p>
+                        </div>
+                    </div>
+                    <div class="view3d-item">
+                        <div class="view3d-item-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)">
+                            <i class="fas fa-chart-area"></i>
+                        </div>
+                        <div>
+                            <h4>Real-Time Overlays</h4>
+                            <p>Link utilization heatmaps, device health indicators, BGP/OSPF adjacency states, and traffic flow animation on links.</p>
+                        </div>
+                    </div>
+                    <div class="view3d-item">
+                        <div class="view3d-item-icon" style="background:linear-gradient(135deg,#22c55e,#16a34a)">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <div>
+                            <h4>Multi-Layer Views</h4>
+                            <p>Toggle between physical, logical, and overlay network layers. Filter by VLAN, VRF, or segment for focused analysis.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Templates Section -->
+    <section id="templates" class="section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Templates</span>
+                <h2>157 pre-built network templates</h2>
+                <p>Production-ready topologies for every network architecture. Deploy EVPN/VXLAN fabrics in one click.</p>
+            </div>
+            <div class="templates-grid">
+                <div class="template-card">
+                    <div class="template-icon" style="background:rgba(0,210,255,0.15);color:var(--accent-cyan)">
+                        <i class="fas fa-building"></i>
+                    </div>
+                    <h3>Datacenter Fabrics</h3>
+                    <p>EVPN/VXLAN leaf-spine, IP fabrics, multi-tier Clos, and collapsed-core designs. From 2-tier to 5-stage Clos with full BGP underlay/overlay.</p>
+                    <span class="template-count"><i class="fas fa-layer-group"></i> 52 templates</span>
+                </div>
+                <div class="template-card">
+                    <div class="template-icon" style="background:rgba(139,92,246,0.15);color:var(--accent-purple)">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <h3>WAN &amp; SD-WAN</h3>
+                    <p>Hub-and-spoke, full-mesh, DMVPN, and SD-WAN overlay topologies. MPLS L3VPN, segment routing, and traffic engineering templates.</p>
+                    <span class="template-count"><i class="fas fa-layer-group"></i> 38 templates</span>
+                </div>
+                <div class="template-card">
+                    <div class="template-icon" style="background:rgba(245,158,11,0.15);color:var(--accent-orange)">
+                        <i class="fas fa-school"></i>
+                    </div>
+                    <h3>Campus &amp; Branch</h3>
+                    <p>Three-tier campus, routed access, micro-segmentation, and branch gateway designs. 802.1X, DHCP snooping, and first-hop security baked in.</p>
+                    <span class="template-count"><i class="fas fa-layer-group"></i> 34 templates</span>
+                </div>
+                <div class="template-card">
+                    <div class="template-icon" style="background:rgba(74,222,128,0.15);color:var(--accent-green)">
+                        <i class="fas fa-tower-broadcast"></i>
+                    </div>
+                    <h3>Service Provider</h3>
+                    <p>MPLS core, PE-CE routing, BGP route reflectors, carrier-of-carriers, and inter-AS MPLS VPN. Full IS-IS/OSPF underlay options.</p>
+                    <span class="template-count"><i class="fas fa-layer-group"></i> 22 templates</span>
+                </div>
+                <div class="template-card">
+                    <div class="template-icon" style="background:rgba(244,114,182,0.15);color:var(--accent-pink)">
+                        <i class="fas fa-shield-halved"></i>
+                    </div>
+                    <h3>Security Zones</h3>
+                    <p>DMZ architectures, firewall sandwich, zero-trust segmentation, and microsegmentation designs with ACL and policy templates.</p>
+                    <span class="template-count"><i class="fas fa-layer-group"></i> 11 templates</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Vendors Section -->
+    <section id="vendors" class="section section-dark">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Vendors</span>
+                <h2>13 vendors, one unified workflow</h2>
+                <p>Multi-vendor topology design with vendor-specific configuration generation, templates, and live polling.</p>
+            </div>
+            <div class="vendor-grid">
+                <div class="vendor-card">
+                    <div class="vendor-icon"><i class="fas fa-network-wired"></i></div>
+                    <h4>Arista</h4>
+                    <div class="vendor-caps">
+                        <span>cEOS</span><span>EVPN</span><span>BGP</span><span>MLAG</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(59,130,246,0.1);color:#3b82f6"><i class="fas fa-server"></i></div>
+                    <h4>Cisco IOS-XE</h4>
+                    <div class="vendor-caps">
+                        <span>CSR1000v</span><span>OSPF</span><span>BGP</span><span>MPLS</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(139,92,246,0.1);color:#8b5cf6"><i class="fas fa-server"></i></div>
+                    <h4>Cisco IOS-XR</h4>
+                    <div class="vendor-caps">
+                        <span>XRd</span><span>SR-MPLS</span><span>BGP</span><span>IS-IS</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(244,114,182,0.1);color:#f472b6"><i class="fas fa-server"></i></div>
+                    <h4>Cisco NX-OS</h4>
+                    <div class="vendor-caps">
+                        <span>N9Kv</span><span>VXLAN</span><span>vPC</span><span>EVPN</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(74,222,128,0.1);color:#4ade80"><i class="fas fa-leaf"></i></div>
+                    <h4>Juniper</h4>
+                    <div class="vendor-caps">
+                        <span>cRPD</span><span>vMX</span><span>EVPN</span><span>SR</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b"><i class="fas fa-fire"></i></div>
+                    <h4>Palo Alto</h4>
+                    <div class="vendor-caps">
+                        <span>PAN-OS</span><span>Firewall</span><span>Zones</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(239,68,68,0.1);color:#ef4444"><i class="fas fa-shield-halved"></i></div>
+                    <h4>Fortinet</h4>
+                    <div class="vendor-caps">
+                        <span>FortiOS</span><span>SD-WAN</span><span>ZTNA</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(34,211,238,0.1);color:#22d3ee"><i class="fas fa-tower-cell"></i></div>
+                    <h4>Nokia SR Linux</h4>
+                    <div class="vendor-caps">
+                        <span>SRL</span><span>EVPN</span><span>BGP</span><span>SR</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(168,85,247,0.1);color:#a855f7"><i class="fas fa-microchip"></i></div>
+                    <h4>SONiC</h4>
+                    <div class="vendor-caps">
+                        <span>VS</span><span>BGP</span><span>ECMP</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(251,191,36,0.1);color:#fbbf24"><i class="fas fa-code-branch"></i></div>
+                    <h4>Cumulus / NVUE</h4>
+                    <div class="vendor-caps">
+                        <span>VX</span><span>EVPN</span><span>BGP</span><span>MLAG</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(16,185,129,0.1);color:#10b981"><i class="fas fa-network-wired"></i></div>
+                    <h4>MikroTik</h4>
+                    <div class="vendor-caps">
+                        <span>RouterOS</span><span>OSPF</span><span>WireGuard</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(99,102,241,0.1);color:#6366f1"><i class="fas fa-circle-nodes"></i></div>
+                    <h4>Vyos</h4>
+                    <div class="vendor-caps">
+                        <span>VyOS</span><span>BGP</span><span>IPsec</span><span>VRRP</span>
+                    </div>
+                </div>
+                <div class="vendor-card">
+                    <div class="vendor-icon" style="background:rgba(234,179,8,0.1);color:#eab308"><i class="fas fa-server"></i></div>
+                    <h4>Linux</h4>
+                    <div class="vendor-caps">
+                        <span>FRR</span><span>iptables</span><span>netns</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Automation Section -->
+    <section id="automation" class="section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Automation</span>
+                <h2>Event-driven network automation</h2>
+                <p>Build workflows that respond to network events in real time. From threshold alerts to full remediation pipelines.</p>
+            </div>
+
+            <!-- Automation Flow Diagram -->
+            <div class="automation-flow">
+                <div class="flow-step">
+                    <div class="step-icon" style="color:var(--accent-cyan)"><i class="fas fa-tower-broadcast"></i></div>
+                    <h4>Event</h4>
+                    <p>Interface flap, BGP down, threshold breach</p>
+                </div>
+                <div class="flow-arrow"><i class="fas fa-arrow-right"></i></div>
+                <div class="flow-step">
+                    <div class="step-icon" style="color:var(--accent-purple)"><i class="fas fa-filter"></i></div>
+                    <h4>Rule</h4>
+                    <p>Match conditions, severity, vendor, device</p>
+                </div>
+                <div class="flow-arrow"><i class="fas fa-arrow-right"></i></div>
+                <div class="flow-step">
+                    <div class="step-icon" style="color:var(--accent-orange)"><i class="fas fa-gears"></i></div>
+                    <h4>Action</h4>
+                    <p>Push config, run script, call webhook</p>
+                </div>
+                <div class="flow-arrow"><i class="fas fa-arrow-right"></i></div>
+                <div class="flow-step">
+                    <div class="step-icon" style="color:var(--accent-green)"><i class="fas fa-circle-check"></i></div>
+                    <h4>Verify</h4>
+                    <p>Post-check validation, compliance audit</p>
+                </div>
+            </div>
+
+            <div class="automation-features" style="margin-top:48px">
+                <div class="auto-card">
+                    <h4><i class="fas fa-code"></i> Workflow Builder</h4>
+                    <p>Visual drag-and-drop workflow editor. Chain actions together: collect data, transform, decide, execute, verify. Loops and conditionals supported.</p>
+                </div>
+                <div class="auto-card">
+                    <h4><i class="fas fa-webhook"></i> Webhooks &amp; API</h4>
+                    <p>Trigger workflows from external systems via webhooks. REST API for integration with ServiceNow, PagerDuty, Slack, and CI/CD pipelines.</p>
+                </div>
+                <div class="auto-card">
+                    <h4><i class="fas fa-shield-check"></i> Compliance Engine</h4>
+                    <p>Define compliance policies as code. Continuous auditing against NTP, DNS, SNMP, AAA, and interface naming standards. Auto-remediate violations.</p>
+                </div>
+            </div>
+
+            <!-- Change Management Flow -->
+            <div style="margin-top:60px">
+                <div class="section-header" style="margin-bottom:32px">
+                    <span class="section-badge" style="background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.25);color:#f59e0b">Change Management</span>
+                    <h2>Full lifecycle change control</h2>
+                    <p>From proposal to rollback &mdash; every change is tracked, approved, verified, and reversible.</p>
+                </div>
+                <div class="change-flow">
+                    <div class="change-step">
+                        <div class="change-step-num" style="background:linear-gradient(135deg,#00d2ff,#3b82f6)">1</div>
+                        <span class="change-step-label">Propose</span>
+                    </div>
+                    <div class="change-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="change-step">
+                        <div class="change-step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">2</div>
+                        <span class="change-step-label">Approve</span>
+                    </div>
+                    <div class="change-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="change-step">
+                        <div class="change-step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">3</div>
+                        <span class="change-step-label">Deploy</span>
+                    </div>
+                    <div class="change-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="change-step">
+                        <div class="change-step-num" style="background:linear-gradient(135deg,#22c55e,#16a34a)">4</div>
+                        <span class="change-step-label">Verify</span>
+                    </div>
+                    <div class="change-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="change-step">
+                        <div class="change-step-num" style="background:linear-gradient(135deg,#ef4444,#dc2626)">5</div>
+                        <span class="change-step-label">Rollback</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Backend Server Section -->
+    <section class="section section-dark">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Backend Server</span>
+                <h2>Scale with a dedicated backend</h2>
+                <p>For enterprise and large-scale deployments. Offload SSH/SNMP polling, run containerlab, and share topologies across teams.</p>
+            </div>
+            <div class="backend-grid">
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-server"></i></div>
+                    <h3>Centralized Polling</h3>
+                    <p>Backend server handles all SSH and SNMP connections. Desktop app stays lightweight while the server polls hundreds of devices concurrently.</p>
+                </div>
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-users"></i></div>
+                    <h3>Multi-User Access</h3>
+                    <p>Multiple engineers share the same topology, device inventory, and monitoring data. Role-based access controls for view, edit, and deploy permissions.</p>
+                </div>
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-docker"></i></div>
+                    <h3>Lab Orchestration</h3>
+                    <p>Deploy containerlab topologies on the server. Manage multiple labs simultaneously. Scale lab resources independently from the desktop app.</p>
+                </div>
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-database"></i></div>
+                    <h3>Persistent Storage</h3>
+                    <p>Topologies, device configs, polling history, and automation logs stored on the server. Survives desktop app restarts and team member changes.</p>
+                </div>
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-lock"></i></div>
+                    <h3>Credential Vault</h3>
+                    <p>Centralized encrypted credential management. Device credentials never leave the server. Audit log for every credential access event.</p>
+                </div>
+                <div class="backend-card">
+                    <div class="backend-icon"><i class="fas fa-plug"></i></div>
+                    <h3>API &amp; Integrations</h3>
+                    <p>REST API for external integrations. WebSocket for real-time events. Connect to CMDB, ticketing systems, and CI/CD pipelines.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Pricing</span>
+                <h2>Simple, transparent pricing</h2>
+                <p>Start free with all core features. Enterprise plan for teams that need the backend server.</p>
+            </div>
+            <div class="pricing-grid">
+                <div class="pricing-card popular">
+                    <div class="popular-badge">Most Popular</div>
+                    <div class="pricing-tier">Free &amp; Open Source</div>
+                    <div class="pricing-price">
+                        <span class="price-amount">$0</span>
+                        <span class="price-period">forever</span>
+                    </div>
+                    <p class="pricing-desc">Full-featured desktop application for individual network engineers and small teams.</p>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Visual topology designer (2D &amp; 3D)</li>
+                        <li><i class="fas fa-check"></i> 157 pre-built templates</li>
+                        <li><i class="fas fa-check"></i> 13 vendor support</li>
+                        <li><i class="fas fa-check"></i> Containerlab deployment</li>
+                        <li><i class="fas fa-check"></i> Digital twin monitoring</li>
+                        <li><i class="fas fa-check"></i> LLDP/SNMP discovery</li>
+                        <li><i class="fas fa-check"></i> Export to Ansible, Terraform, GNS3</li>
+                        <li><i class="fas fa-check"></i> Smart automation &amp; workflows</li>
+                        <li><i class="fas fa-check"></i> Change management</li>
+                        <li><i class="fas fa-check"></i> Community support</li>
+                    </ul>
+                    <a href="#download" class="btn btn-primary btn-block">Download Free</a>
+                </div>
+                <div class="pricing-card">
+                    <div class="pricing-tier">Enterprise</div>
+                    <div class="pricing-price">
+                        <span class="price-amount">Contact</span>
+                    </div>
+                    <p class="pricing-desc">For teams and organizations that need centralized management, multi-user access, and enterprise support.</p>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Everything in Free, plus:</li>
+                        <li><i class="fas fa-check"></i> Backend server deployment</li>
+                        <li><i class="fas fa-check"></i> Multi-user &amp; RBAC</li>
+                        <li><i class="fas fa-check"></i> Centralized credential vault</li>
+                        <li><i class="fas fa-check"></i> Persistent topology storage</li>
+                        <li><i class="fas fa-check"></i> REST API &amp; WebSocket events</li>
+                        <li><i class="fas fa-check"></i> CMDB &amp; ticketing integrations</li>
+                        <li><i class="fas fa-check"></i> Priority email &amp; Slack support</li>
+                        <li><i class="fas fa-check"></i> Custom template development</li>
+                        <li><i class="fas fa-check"></i> SLA guarantee</li>
+                    </ul>
+                    <a href="mailto:sales@netops.dev" class="btn btn-outline btn-block">Contact Sales</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="section section-dark">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Download</span>
+                <h2>Get NetOps for your platform</h2>
+                <p>Free, open source, and cross-platform. Install in under a minute.</p>
+            </div>
+            <div class="download-grid">
+                <div class="download-card">
+                    <div class="download-icon"><i class="fab fa-apple"></i></div>
+                    <h3>macOS</h3>
+                    <p>Intel &amp; Apple Silicon</p>
+                    <div class="download-buttons">
+                        <a href="#" class="btn btn-primary btn-sm">DMG (Apple Silicon)</a>
+                        <a href="#" class="btn btn-outline btn-sm">DMG (Intel)</a>
+                    </div>
+                </div>
+                <div class="download-card">
+                    <div class="download-icon"><i class="fab fa-windows"></i></div>
+                    <h3>Windows</h3>
+                    <p>x64 &amp; ARM64</p>
+                    <div class="download-buttons">
+                        <a href="#" class="btn btn-primary btn-sm">Installer (x64)</a>
+                        <a href="#" class="btn btn-outline btn-sm">Portable (x64)</a>
+                    </div>
+                </div>
+                <div class="download-card">
+                    <div class="download-icon"><i class="fab fa-linux"></i></div>
+                    <h3>Linux</h3>
+                    <p>DEB, RPM, AppImage</p>
+                    <div class="download-buttons">
+                        <a href="#" class="btn btn-primary btn-sm">DEB (x64)</a>
+                        <a href="#" class="btn btn-outline btn-sm">AppImage</a>
+                    </div>
+                </div>
+            </div>
+            <div class="build-source">
+                <h3><i class="fas fa-code-branch" style="color:var(--accent-cyan);margin-right:8px"></i> Build from Source</h3>
+                <p style="color:var(--text-secondary);font-size:14px;margin-bottom:12px">Clone the repository and build locally with npm.</p>
+                <pre>git clone https://github.com/user/tlink-netops.git
+cd tlink-netops
+npm install &amp;&amp; npm run build</pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <h2>Ready to reimagine network operations?</h2>
+            <p>Join network engineers who design, simulate, and operate networks in a single application.</p>
+            <div class="cta-actions">
+                <a href="#download" class="btn btn-primary btn-lg"><i class="fas fa-download"></i> Download NetOps Free</a>
+                <a href="https://github.com/user/tlink-netops" class="btn btn-outline btn-lg" target="_blank"><i class="fab fa-github"></i> Star on GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="nav-brand">
+                        <span class="brand-icon"><i class="fas fa-hexagon-nodes"></i></span>
+                        <span class="brand-text">NetOps</span>
+                    </div>
+                    <p>Professional network topology design with 3D visualization, simulation, and automation. Open source and cross-platform.</p>
+                </div>
+                <div class="footer-links">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="#view3d">3D Visualization</a>
+                    <a href="#templates">Templates</a>
+                    <a href="#vendors">Vendors</a>
+                    <a href="#download">Download</a>
+                </div>
+                <div class="footer-links">
+                    <h4>Resources</h4>
+                    <a href="#">Documentation</a>
+                    <a href="#">API Reference</a>
+                    <a href="#">Release Notes</a>
+                    <a href="#">Template Gallery</a>
+                </div>
+                <div class="footer-links">
+                    <h4>Community</h4>
+                    <a href="https://github.com/user/tlink-netops" target="_blank">GitHub</a>
+                    <a href="#">Discord</a>
+                    <a href="#">Twitter</a>
+                    <a href="#">Blog</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 NetOps. MIT License.</p>
+                <div class="footer-tech">
+                    <span><i class="fab fa-angular"></i> Angular</span>
+                    <span><i class="fab fa-js"></i> Electron</span>
+                    <span><i class="fas fa-cube"></i> Three.js</span>
+                    <span><i class="fab fa-node-js"></i> Node.js</span>
+                    <span><i class="fas fa-docker"></i> Containerlab</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Animated Stats Counter -->
+    <script>
+        const observerOptions = { threshold: 0.5 };
+        const statsObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.querySelectorAll('.stat-number').forEach(num => {
+                        const target = parseInt(num.dataset.target);
+                        if (isNaN(target)) return;
+                        let current = 0;
+                        const increment = Math.max(1, Math.floor(target / 40));
+                        const timer = setInterval(() => {
+                            current += increment;
+                            if (current >= target) {
+                                current = target;
+                                clearInterval(timer);
+                            }
+                            num.textContent = current;
+                        }, 30);
+                    });
+                    statsObserver.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        const statsBar = document.querySelector('.stats-bar');
+        if (statsBar) statsObserver.observe(statsBar);
+    </script>
+</body>
+</html>
