@@ -50,69 +50,134 @@ export class BackendClientService {
     async pollDevice (
         host: string, port: number, username: string, password: string, commands: string[],
     ): Promise<any> {
-        const res = await fetch(`${this._url}/api/poll`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password, commands }),
-        })
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, message: 'Backend not connected', results: [] }
+            }
+            const res = await fetch(`${this._url}/api/poll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password, commands }),
+            })
+            if (!res.ok) { return { ok: false, message: `HTTP ${res.status}`, results: [] } }
+            const data = await res.json()
+            // Transform to match local sshRunCommands result format
+            return {
+                ok: data.ok,
+                message: data.error ?? '',
+                results: (data.outputs ?? []).map((output: string) => ({ ok: true, output, message: '' })),
+            }
+        } catch (err: any) {
+            return { ok: false, message: err.message, results: [] }
+        }
     }
 
     /** Poll multiple devices; results are streamed back via the WebSocket. */
     async pollAll (devices: any[]): Promise<any> {
-        const res = await fetch(`${this._url}/api/poll-all`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ devices }),
-        })
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, message: 'Backend not connected', results: [] }
+            }
+            const res = await fetch(`${this._url}/api/poll-all`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ devices }),
+            })
+            if (!res.ok) { return { ok: false, message: `HTTP ${res.status}`, results: [] } }
+            return res.json()
+        } catch (err: any) {
+            return { ok: false, message: err.message, results: [] }
+        }
     }
 
     /** Fetch running config from a device via the backend. */
     async backup (host: string, port: number, username: string, password: string, command?: string): Promise<any> {
-        const res = await fetch(`${this._url}/api/backup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password, command }),
-        })
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, output: '', message: 'Backend not connected' }
+            }
+            const res = await fetch(`${this._url}/api/backup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password, command }),
+            })
+            if (!res.ok) { return { ok: false, output: '', message: `HTTP ${res.status}` } }
+            const data = await res.json()
+            return { ok: data.ok, output: data.output ?? data.config ?? '', message: data.error ?? '' }
+        } catch (err: any) {
+            return { ok: false, output: '', message: err.message }
+        }
     }
 
     /** Run LLDP discovery on a device via the backend. */
     async discover (host: string, port: number, username: string, password: string, command?: string): Promise<any> {
-        const res = await fetch(`${this._url}/api/discover`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password, command }),
-        })
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, output: '', message: 'Backend not connected' }
+            }
+            const res = await fetch(`${this._url}/api/discover`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password, command }),
+            })
+            if (!res.ok) { return { ok: false, output: '', message: `HTTP ${res.status}` } }
+            const data = await res.json()
+            return { ok: data.ok, output: data.output ?? '', message: data.error ?? '' }
+        } catch (err: any) {
+            return { ok: false, output: '', message: err.message }
+        }
     }
 
     /** Run a single command on a device via the backend (returns sshRunCommand-compatible result). */
     async runCommand (host: string, port: number, username: string, password: string, command: string): Promise<any> {
-        const res = await fetch(`${this._url}/api/poll`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password, commands: [command], timeoutMs: 30000 }),
-        })
-        const data = await res.json()
-        // Transform to match sshRunCommand result format
-        return { ok: data.ok, output: data.outputs?.[0] ?? '', message: data.error }
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, output: '', message: 'Backend not connected' }
+            }
+            const res = await fetch(`${this._url}/api/poll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password, commands: [command], timeoutMs: 30000 }),
+            })
+            if (!res.ok) { return { ok: false, output: '', message: `HTTP ${res.status}` } }
+            const data = await res.json()
+            // Transform to match sshRunCommand result format
+            return { ok: data.ok, output: data.outputs?.[0] ?? '', message: data.error ?? '' }
+        } catch (err: any) {
+            return { ok: false, output: '', message: err.message }
+        }
     }
 
     /** Load (restore) config onto a device via an interactive shell session on the backend. */
     async loadConfig (host: string, port: number, username: string, password: string, commands: string[], delayMs?: number): Promise<any> {
-        const res = await fetch(`${this._url}/api/load-config`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password, commands, delayMs }),
-        })
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, output: '', message: 'Backend not connected' }
+            }
+            const res = await fetch(`${this._url}/api/load-config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password, commands, delayMs }),
+            })
+            if (!res.ok) { return { ok: false, output: '', message: `HTTP ${res.status}` } }
+            const data = await res.json()
+            return { ok: data.ok, output: data.output ?? '', message: data.error ?? '' }
+        } catch (err: any) {
+            return { ok: false, output: '', message: err.message }
+        }
     }
 
     /** Check backend server health. */
     async status (): Promise<any> {
-        const res = await fetch(`${this._url}/api/status`)
-        return res.json()
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, message: 'Backend not connected' }
+            }
+            const res = await fetch(`${this._url}/api/status`)
+            if (!res.ok) { return { ok: false, message: `HTTP ${res.status}` } }
+            return res.json()
+        } catch (err: any) {
+            return { ok: false, message: err.message }
+        }
     }
 }

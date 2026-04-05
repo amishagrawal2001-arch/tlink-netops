@@ -342,9 +342,12 @@ export class InventoryService implements OnDestroy {
 
         try {
             let result: any
-            if (this._backendClient?.isConnected) {
+            const useBackend = !!(this._backendClient?.isConnected)
+            console.log(`[Backup] ${node.label} (${host}) — backend: ${useBackend}`)
+            if (useBackend) {
                 const backupRes = await this._backendClient.backup(host, node.sshPort ?? 22, username, password, command)
-                result = { ok: backupRes.ok, output: backupRes.config ?? '', message: backupRes.error }
+                console.log(`[Backup] ${node.label} — backend response:`, backupRes?.ok, 'output length:', backupRes?.output?.length ?? 0)
+                result = { ok: backupRes.ok, output: backupRes.output ?? '', message: backupRes.message ?? '' }
             } else {
                 result = await api.sshRunCommand({
                     host, port: node.sshPort ?? 22, username, password,
@@ -909,7 +912,7 @@ export class InventoryService implements OnDestroy {
                         method: rule.actionConfig?.webhookMethod || 'POST',
                         headers: { 'Content-Type': 'application/json', ...(rule.actionConfig?.webhookHeaders || {}) },
                         body: JSON.stringify({ event, rule: { id: rule.id, name: rule.name }, timestamp: new Date().toISOString() }),
-                    }).catch(() => {})
+                    }).catch((err) => { console.warn('[Webhook] Failed:', url, err.message) })
                 }
                 break
             }
@@ -952,7 +955,8 @@ export class InventoryService implements OnDestroy {
                 let result: any
                 if (this._backendClient?.isConnected) {
                     const pollRes = await this._backendClient.pollDevice(host, node.sshPort ?? 22, node.sshUsername.trim(), node.sshPassword, [rule.actionConfig.checkCommand!])
-                    result = { ok: pollRes.ok, output: pollRes.outputs?.[0] ?? '', message: pollRes.error }
+                    const cmdOutput = Array.isArray(pollRes.results) ? pollRes.results[0]?.output ?? '' : ''
+                    result = { ok: pollRes.ok, output: cmdOutput, message: pollRes.message ?? '' }
                 } else {
                     result = await api.sshRunCommand({
                         host, port: node.sshPort ?? 22,

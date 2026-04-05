@@ -2649,8 +2649,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const host = (node.mgmtIp ?? '').split('/')[0]
                 if (!host || !api?.sshShellSession) { throw new Error('No SSH access') }
                 let result: any
-                if (this._backendSvc?.isConnected) {
-                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername ?? '', node.sshPassword ?? '', cmds.showRunningConfig)
+                if (this.invSvc.hasBackend) {
+                    result = await this.invSvc.backendClient.runCommand(host, node.sshPort ?? 22, node.sshUsername ?? '', node.sshPassword ?? '', cmds.showRunningConfig)
                 } else {
                     result = await api.sshShellSession({
                         host, port: node.sshPort ?? 22,
@@ -5727,8 +5727,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             if (!cmds.showRouteTable) { continue }
             try {
                 let result: any
-                if (this._backendSvc?.isConnected) {
-                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showRouteTable)
+                if (this.invSvc.hasBackend) {
+                    result = await this.invSvc.backendClient.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showRouteTable)
                 } else {
                     result = await api.sshRunCommand({
                         host, port: node.sshPort ?? 22,
@@ -5774,8 +5774,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             if (!cmds.showInterfaceCounters) { continue }
             try {
                 let result: any
-                if (this._backendSvc?.isConnected) {
-                    result = await this._backendSvc.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showInterfaceCounters)
+                if (this.invSvc.hasBackend) {
+                    result = await this.invSvc.backendClient.runCommand(host, node.sshPort ?? 22, node.sshUsername, node.sshPassword ?? '', cmds.showInterfaceCounters)
                 } else {
                     result = await api.sshRunCommand({
                         host, port: node.sshPort ?? 22,
@@ -12174,6 +12174,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
             // Wire backend client into inventory service for poll routing
             this.invSvc.setBackendClient(svc)
+            console.log('[Backend] Connected and wired to inventory service. isConnected:', svc.isConnected)
             this.statusMsg = `Connected to backend server at ${this.backendUrl} — polls will route through server`
         } catch (err) {
             this.statusMsg = `Backend connection failed: ${(err as Error).message}`
@@ -12457,8 +12458,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     }
                 } else if (method === 'ssh' && entry.host && api?.sshRunCommand) {
                     let result: any
-                    if (this._backendSvc?.isConnected) {
-                        result = await this._backendSvc.runCommand(entry.host, node.sshPort ?? 22, entry.username!, entry.password!, showCmd)
+                    if (this.invSvc.hasBackend) {
+                        result = await this.invSvc.backendClient.runCommand(entry.host, node.sshPort ?? 22, entry.username!, entry.password!, showCmd)
                     } else {
                         result = await api.sshRunCommand({
                             host: entry.host,
@@ -12740,8 +12741,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
                 const commands = [...preamble, ...configLines, ...postamble]
                 let result: any
-                if (this._backendSvc?.isConnected) {
-                    result = await this._backendSvc.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
+                if (this.invSvc.hasBackend) {
+                    result = await this.invSvc.backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
                 } else {
                     result = await api.sshShellSession({
                         host,
