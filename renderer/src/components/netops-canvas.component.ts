@@ -5213,7 +5213,10 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 this.statusMsg = this.twinStatusMsg
             } else {
                 const sources: string[] = []
-                if (hasLab) { sources.push(`${this.clabContainers.length} containers (💻 local Docker)`) }
+                if (hasLab) {
+                    const containerRoute = this.isRemoteLabDeploy ? '🖥 remote server' : '💻 local Docker'
+                    sources.push(`${this.clabContainers.length} containers (${containerRoute})`)
+                }
                 if (hasMapped) { sources.push(`${mappedNodes.length} devices (${viaServer ? '🖥 server SSH' : '💻 local SSH'})`) }
                 this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')}`
                 this.statusMsg = this.twinStatusMsg
@@ -10046,15 +10049,30 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    /** True when containers are deployed on a remote clab server (not local Docker) */
+    get isRemoteLabDeploy (): boolean {
+        return this.clabActiveServerId !== 'local'
+    }
+
     private async _pollLiveStatus (): Promise<void> {
         if (this._livePollRunning) { return }
         const api = (window as any).netopsAPI
-        if (!api?.clabPollLiveStatus || !this.clabContainers.length) { return }
+        if (!this.clabContainers.length) { return }
         this._livePollRunning = true
 
         try {
             const containers = this.clabContainers.map(c => ({ name: c.name, kind: c.kind }))
-            const result = await api.clabPollLiveStatus({ containers })
+            let result: any
+
+            if (this.isRemoteLabDeploy && this.invSvc.hasBackend) {
+                // Remote server containers — poll via backend server
+                console.log(`[LivePoll] ${containers.length} containers via 🖥 server (remote lab on ${this.clabActiveServerId})`)
+                result = await api.clabPollLiveStatus({ containers, serverId: this.clabActiveServerId })
+            } else {
+                // Local containers — poll via local Docker
+                if (!api?.clabPollLiveStatus) { this._livePollRunning = false; return }
+                result = await api.clabPollLiveStatus({ containers })
+            }
             if (!result?.ok) { return }
 
             let nodesUp = 0
