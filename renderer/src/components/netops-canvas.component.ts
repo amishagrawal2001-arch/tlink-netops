@@ -5207,16 +5207,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const hasMapped = mappedNodes.length > 0
 
             const viaServer = this.invSvc.hasBackend
-            const routeLabel = viaServer ? '🖥 via server' : '💻 local'
 
             if (!hasLab && !hasMapped) {
-                this.twinStatusMsg = `⚠ No data sources (${routeLabel}) — deploy a lab or map devices with SSH credentials`
+                this.twinStatusMsg = '⚠ No data sources — deploy a lab or map devices with SSH credentials'
                 this.statusMsg = this.twinStatusMsg
             } else {
                 const sources: string[] = []
-                if (hasLab) { sources.push(`${this.clabContainers.length} containers`) }
-                if (hasMapped) { sources.push(`${mappedNodes.length} mapped devices`) }
-                this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')} (${routeLabel})`
+                if (hasLab) { sources.push(`${this.clabContainers.length} containers (💻 local Docker)`) }
+                if (hasMapped) { sources.push(`${mappedNodes.length} devices (${viaServer ? '🖥 server SSH' : '💻 local SSH'})`) }
+                this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')}`
                 this.statusMsg = this.twinStatusMsg
             }
 
@@ -5229,12 +5228,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const healthNodes = this.twinNodeHealth.size
                 const alarmNodes = this.twinActiveAlarms.size
                 const driftNodes = this.twinConfigDrift.size
+                const routeSummary: string[] = []
+                if (hasLab) { routeSummary.push('containers: 💻 Docker') }
+                if (hasMapped) { routeSummary.push(`devices: ${viaServer ? '🖥 server' : '💻 local'}`) }
+                const routeInfo = routeSummary.length ? ` (${routeSummary.join(', ')})` : ''
+
                 if (healthNodes || alarmNodes || driftNodes) {
-                    this.twinStatusMsg = `🔮 Twin: ${healthNodes} nodes polled, ${alarmNodes} with alarms, ${driftNodes} with drift (${routeLabel})`
+                    this.twinStatusMsg = `🔮 Twin: ${healthNodes} nodes polled, ${alarmNodes} alarms, ${driftNodes} drift${routeInfo}`
                 } else if (!hasLab && !hasMapped) {
-                    this.twinStatusMsg = `⚠ Twin: no data (${routeLabel}) — deploy a lab or map devices first`
+                    this.twinStatusMsg = '⚠ Twin: no data — deploy a lab or map devices first'
                 } else {
-                    this.twinStatusMsg = `🔮 Twin active — next poll in 30s (${routeLabel})`
+                    this.twinStatusMsg = `🔮 Twin active — next poll in 30s${routeInfo}`
                 }
                 this.statusMsg = this.twinStatusMsg
                 this.cdr.markForCheck()
