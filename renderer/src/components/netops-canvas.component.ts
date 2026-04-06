@@ -10039,7 +10039,9 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.showLivePanel = true
         this.cdr.markForCheck()
         this._pollLiveStatus()
-        this._livePollTimer = setInterval(() => this._pollLiveStatus(), this.livePollingInterval)
+        // Use longer interval when polling through backend server (network latency)
+        const interval = this.invSvc.hasBackend ? Math.max(this.livePollingInterval, 15_000) : this.livePollingInterval
+        this._livePollTimer = setInterval(() => this._pollLiveStatus(), interval)
     }
 
     stopLivePolling (): void {
@@ -10075,21 +10077,35 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 if (!api?.clabPollLiveStatus) { this._livePollRunning = false; return }
                 result = await api.clabPollLiveStatus({ containers })
             }
-            if (!result?.ok) { return }
+            if (!result?.ok) { this._livePollRunning = false; return }
+
+            // Build a lookup map for fast node matching (avoid O(n²) find per container)
+            const nodeByName = new Map<string, any>()
+            for (const n of this.topology.nodes) {
+                const safeName = n.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
+                nodeByName.set(safeName, n)
+            }
 
             let nodesUp = 0
             let bgpUp = 0
             let bgpTotal = 0
 
             for (const cStatus of result.containers) {
-                // Update node status on canvas
-                const matchedNode = this.topology.nodes.find(n => {
-                    const safeName = n.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
-                    return cStatus.containerName.endsWith('-' + safeName)
-                })
+                // Fast node lookup
+                let matchedNode: any
+                for (const [safeName, node] of nodeByName) {
+                    if (cStatus.containerName.endsWith('-' + safeName)) {
+                        matchedNode = node
+                        break
+                    }
+                }
                 if (matchedNode) {
                     const isRunning = cStatus.state === 'running'
-                    this.svc.setNodeStatus(matchedNode.id, isRunning ? 'running' : 'stopped')
+                    // Batch status updates — only change if different (avoid unnecessary re-renders)
+                    const newStatus = isRunning ? 'running' as const : 'stopped' as const
+                    if (matchedNode.status !== newStatus) {
+                        this.svc.setNodeStatus(matchedNode.id, newStatus)
+                    }
                     if (isRunning) { nodesUp++ }
                 }
 
@@ -10105,6 +10121,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         } catch (err) { console.warn('Live poll failed:', (err as Error).message) }
 
         this._livePollRunning = false
+        // Single change detection trigger after all updates
         this.cdr.markForCheck()
     }
 
