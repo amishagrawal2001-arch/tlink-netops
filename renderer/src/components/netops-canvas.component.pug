@@ -3852,6 +3852,11 @@
       | {{ activeAlarmCount }} alarm{{ activeAlarmCount === 1 ? '' : 's' }}
     span.import-error(*ngIf='importError')  ⚠ {{ importError }}
     span.import-error(*ngIf='deviceMapError')  ⚠ {{ deviceMapError }}
+    span.status-backend(*ngIf='backendConnected', title='Backend server connected — SSH operations route through server')
+      span.status-backend-dot
+      | 🖥 Server
+    span.status-local(*ngIf='!backendConnected && (digitalTwinActive || livePollingActive)', title='Polling locally — connect a backend server for large-scale deployments')
+      | 💻 Local
 
   //- ── Troubleshoot dialog (top-level to avoid transform/overflow issues) ──
   .ts-overlay(

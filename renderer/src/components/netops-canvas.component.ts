@@ -5206,14 +5206,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const mappedNodes = this.topology.nodes.filter(n => n.mapped && n.mgmtIp && n.sshUsername)
             const hasMapped = mappedNodes.length > 0
 
+            const viaServer = this.invSvc.hasBackend
+            const routeLabel = viaServer ? '🖥 via server' : '💻 local'
+
             if (!hasLab && !hasMapped) {
-                this.twinStatusMsg = '⚠ No data sources — deploy a lab or map devices with SSH credentials to see live metrics'
+                this.twinStatusMsg = `⚠ No data sources (${routeLabel}) — deploy a lab or map devices with SSH credentials`
                 this.statusMsg = this.twinStatusMsg
             } else {
                 const sources: string[] = []
                 if (hasLab) { sources.push(`${this.clabContainers.length} containers`) }
                 if (hasMapped) { sources.push(`${mappedNodes.length} mapped devices`) }
-                this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')}…`
+                this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')} (${routeLabel})`
                 this.statusMsg = this.twinStatusMsg
             }
 
@@ -5227,11 +5230,11 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const alarmNodes = this.twinActiveAlarms.size
                 const driftNodes = this.twinConfigDrift.size
                 if (healthNodes || alarmNodes || driftNodes) {
-                    this.twinStatusMsg = `🔮 Twin: ${healthNodes} nodes polled, ${alarmNodes} with alarms, ${driftNodes} with drift`
+                    this.twinStatusMsg = `🔮 Twin: ${healthNodes} nodes polled, ${alarmNodes} with alarms, ${driftNodes} with drift (${routeLabel})`
                 } else if (!hasLab && !hasMapped) {
-                    this.twinStatusMsg = '⚠ Twin: no data — deploy a lab or map devices first'
+                    this.twinStatusMsg = `⚠ Twin: no data (${routeLabel}) — deploy a lab or map devices first`
                 } else {
-                    this.twinStatusMsg = '🔮 Twin active — waiting for next poll cycle (30s)'
+                    this.twinStatusMsg = `🔮 Twin active — next poll in 30s (${routeLabel})`
                 }
                 this.statusMsg = this.twinStatusMsg
                 this.cdr.markForCheck()
