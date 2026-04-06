@@ -110,7 +110,10 @@ export class InventoryService implements OnDestroy {
 
     // Optional backend client — set by canvas component when connected
     private _backendClient: any = null
-    setBackendClient (client: any): void { this._backendClient = client }
+    setBackendClient (client: any): void {
+        this._backendClient = client
+        console.log('[InventoryService] Backend client set:', client ? 'connected=' + client.isConnected : 'null')
+    }
     get hasBackend (): boolean { return this._backendClient?.isConnected ?? false }
     get backendClient (): any { return this._backendClient }
 
@@ -136,7 +139,9 @@ export class InventoryService implements OnDestroy {
         try {
             // Route through backend server if connected
             let result: any
-            if (this._backendClient?.isConnected) {
+            const useBackend = !!(this._backendClient?.isConnected)
+            console.log(`[Poll] ${node.label} (${host}) — route: ${useBackend ? '🖥 server' : '💻 local'}`)
+            if (useBackend) {
                 result = await this._backendClient.pollDevice(host, node.sshPort ?? 22, username, password, commands)
             } else {
                 result = await api.sshRunCommands({
