@@ -47,7 +47,8 @@
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            line-height: 1.6;
+            line-height: 1.7;
+            font-weight: 400;
             overflow-x: hidden;
         }
 
@@ -67,6 +68,10 @@
         h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); }
         h3 { font-size: 1.25rem; }
 
+        p {
+            font-weight: 300;
+        }
+
         a {
             color: var(--accent-cyan);
             text-decoration: none;
@@ -83,6 +88,26 @@
             color: var(--accent-cyan);
         }
 
+        /* ========== Scroll Fade-In Animations ========== */
+        .fade-in-section {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+        }
+        .fade-in-section.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ========== Gradient Divider ========== */
+        .gradient-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-blue), var(--accent-purple), transparent);
+            opacity: 0.3;
+            margin: 0;
+            border: none;
+        }
+
         /* ========== Buttons ========== */
         .btn {
             display: inline-flex;
@@ -94,7 +119,7 @@
             font-size: 14px;
             cursor: pointer;
             border: none;
-            transition: all 0.2s;
+            transition: all 0.3s;
             text-decoration: none;
             white-space: nowrap;
         }
@@ -106,8 +131,8 @@
         }
         .btn-primary:hover {
             color: white;
-            box-shadow: 0 6px 25px rgba(0, 210, 255, 0.4);
-            transform: translateY(-1px);
+            box-shadow: 0 8px 30px rgba(0, 210, 255, 0.5);
+            transform: translateY(-2px);
         }
 
         .btn-outline {
@@ -128,8 +153,8 @@
         .btn-ghost:hover { color: var(--text-primary); }
 
         .btn-lg {
-            padding: 14px 32px;
-            font-size: 16px;
+            padding: 16px 36px;
+            font-size: 17px;
             border-radius: var(--radius);
         }
 
@@ -141,6 +166,27 @@
         .btn-block {
             width: 100%;
             justify-content: center;
+        }
+
+        .btn-glow {
+            animation: btnGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes btnGlow {
+            0%, 100% { box-shadow: 0 4px 15px rgba(0, 210, 255, 0.25); }
+            50% { box-shadow: 0 8px 40px rgba(0, 210, 255, 0.45), 0 0 60px rgba(0, 210, 255, 0.15); }
+        }
+
+        .btn-github {
+            background: #24292e;
+            color: white;
+            border: 1px solid #444;
+        }
+        .btn-github:hover {
+            background: #2f363d;
+            color: white;
+            border-color: #666;
+            transform: translateY(-2px);
         }
 
         /* ========== Navbar ========== */
@@ -267,11 +313,34 @@
         }
 
         .hero-subtitle {
-            font-size: 18px;
+            font-size: 17px;
             color: var(--text-secondary);
             max-width: 680px;
-            margin: 0 auto 40px;
+            margin: 0 auto 20px;
             line-height: 1.7;
+            font-weight: 300;
+        }
+
+        .hero-bullets {
+            list-style: none;
+            display: flex;
+            gap: 32px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 0 auto 40px;
+            max-width: 780px;
+        }
+        .hero-bullets li {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 400;
+        }
+        .hero-bullets li i {
+            color: var(--accent-green);
+            font-size: 12px;
         }
 
         .hero-actions {
@@ -298,35 +367,42 @@
             color: var(--text-secondary);
         }
 
-        .hero-image-placeholder {
-            max-width: 1000px;
-            margin: 0 auto;
-            border-radius: var(--radius-lg);
+        /* ========== Screenshot Styling ========== */
+        .screenshot-wrapper {
+            border-radius: 16px;
             overflow: hidden;
             border: 1px solid var(--border);
-            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 210, 255, 0.08);
-            background: linear-gradient(135deg, rgba(0, 210, 255, 0.05), rgba(59, 130, 246, 0.05));
-            padding: 60px 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s ease;
+            background: var(--bg-card);
+        }
+        .screenshot-wrapper:hover {
+            border-color: rgba(0, 210, 255, 0.3);
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 210, 255, 0.08);
+        }
+        .screenshot-wrapper img {
+            width: 100%;
+            display: block;
+        }
+        .screenshot-caption {
+            padding: 12px 16px;
+            background: var(--bg-card);
             text-align: center;
-        }
-
-        .hero-image-placeholder .placeholder-icon {
-            font-size: 64px;
-            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 16px;
-        }
-
-        .hero-image-placeholder h3 {
-            font-size: 20px;
-            margin-bottom: 8px;
-        }
-
-        .hero-image-placeholder p {
+            font-size: 13px;
+            font-weight: 500;
             color: var(--text-secondary);
-            font-size: 14px;
+        }
+        .screenshot-caption i {
+            margin-right: 6px;
+        }
+
+        .screenshot-wrapper.accent-purple {
+            border-color: rgba(139, 92, 246, 0.3);
+        }
+        .screenshot-wrapper.accent-purple .screenshot-caption {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(139, 92, 246, 0.03));
+            color: #8b5cf6;
+            font-weight: 600;
         }
 
         /* ========== Stats Bar ========== */
@@ -357,11 +433,41 @@
             font-size: 13px;
             color: var(--text-secondary);
             margin-top: 4px;
+            font-weight: 400;
+        }
+
+        /* ========== Social Proof Numbers ========== */
+        .social-proof {
+            display: flex;
+            gap: 32px;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 20px 0;
+        }
+        .social-proof .proof-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .social-proof .proof-item .proof-num {
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 16px;
+        }
+        .social-proof .proof-item i {
+            color: var(--accent-cyan);
+            font-size: 12px;
         }
 
         /* ========== Sections ========== */
         .section {
-            padding: 100px 0;
+            padding: 80px 0;
         }
 
         .section-dark {
@@ -383,7 +489,7 @@
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.05em;
             margin-bottom: 16px;
         }
 
@@ -396,6 +502,7 @@
             font-size: 16px;
             max-width: 600px;
             margin: 0 auto;
+            font-weight: 300;
         }
 
         /* ========== Features Grid ========== */
@@ -451,7 +558,8 @@
         .feature-card p {
             color: var(--text-secondary);
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.7;
+            font-weight: 300;
         }
 
         .feature-tag {
@@ -464,6 +572,53 @@
             color: white;
             font-size: 11px;
             font-weight: 600;
+        }
+
+        /* ========== How It Works ========== */
+        .workflow-steps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+        .workflow-step {
+            text-align: center;
+            position: relative;
+        }
+        .workflow-step-num {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 20px;
+            color: white;
+            margin: 0 auto 16px;
+        }
+        .workflow-step h4 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .workflow-step p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 300;
+        }
+        .workflow-step .screenshot-wrapper {
+            margin-top: 16px;
+        }
+        /* Arrow connectors between steps */
+        .workflow-step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 24px;
+            right: -12px;
+            width: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            opacity: 0.4;
         }
 
         /* ========== Vendor Grid ========== */
@@ -558,8 +713,9 @@
         .template-card p {
             color: var(--text-secondary);
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.7;
             margin-bottom: 12px;
+            font-weight: 300;
         }
 
         .template-count {
@@ -606,6 +762,7 @@
         .flow-step p {
             font-size: 12px;
             color: var(--text-secondary);
+            font-weight: 300;
         }
 
         .flow-arrow {
@@ -647,7 +804,22 @@
         .auto-card p {
             color: var(--text-secondary);
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+
+        /* ========== Screenshot Pair Grid ========== */
+        .screenshot-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 32px;
+        }
+        .screenshot-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-top: 32px;
         }
 
         /* ========== 3D View Section ========== */
@@ -656,25 +828,6 @@
             grid-template-columns: 1fr 1fr;
             gap: 48px;
             align-items: center;
-        }
-
-        .view3d-placeholder {
-            border-radius: var(--radius-lg);
-            overflow: hidden;
-            border: 1px solid var(--border);
-            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
-            background: linear-gradient(135deg, rgba(0, 210, 255, 0.05), rgba(139, 92, 246, 0.05));
-            padding: 80px 40px;
-            text-align: center;
-        }
-
-        .view3d-placeholder .placeholder-icon {
-            font-size: 80px;
-            background: linear-gradient(135deg, var(--gradient-start), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 16px;
         }
 
         .view3d-features {
@@ -710,6 +863,7 @@
             margin: 0;
             color: var(--text-secondary);
             font-size: 14px;
+            font-weight: 300;
         }
 
         /* ========== Backend Section ========== */
@@ -749,7 +903,51 @@
         .backend-card p {
             color: var(--text-secondary);
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+
+        /* ========== Built With / Tech Stack ========== */
+        .tech-stack-bar {
+            padding: 60px 0;
+            background: var(--bg-secondary);
+            text-align: center;
+        }
+        .tech-stack-bar h3 {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 28px;
+        }
+        .tech-logos {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .tech-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        .tech-logo:hover {
+            color: var(--text-secondary);
+        }
+        .tech-logo i {
+            font-size: 32px;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+        }
+        .tech-logo:hover i {
+            opacity: 0.8;
         }
 
         /* ========== Pricing Grid ========== */
@@ -823,6 +1021,7 @@
             color: var(--text-secondary);
             margin-bottom: 24px;
             line-height: 1.5;
+            font-weight: 300;
         }
 
         .pricing-features {
@@ -839,6 +1038,7 @@
             gap: 10px;
             font-size: 14px;
             color: var(--text-secondary);
+            font-weight: 400;
         }
 
         .pricing-features li i {
@@ -925,6 +1125,7 @@
             color: var(--text-secondary);
             font-size: 16px;
             margin-bottom: 32px;
+            font-weight: 300;
         }
 
         .cta-actions {
@@ -952,6 +1153,7 @@
             font-size: 14px;
             margin-top: 12px;
             max-width: 280px;
+            font-weight: 300;
         }
 
         .footer-links {
@@ -972,6 +1174,45 @@
         }
         .footer-links a:hover { color: var(--text-primary); }
 
+        .newsletter-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .newsletter-form input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .newsletter-form input::placeholder {
+            color: var(--text-muted);
+        }
+        .newsletter-form input:focus {
+            border-color: var(--accent-cyan);
+        }
+        .newsletter-form button {
+            padding: 10px 18px;
+            border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            color: white;
+            border: none;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .newsletter-form button:hover {
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+        }
+
         .footer-bottom {
             padding-top: 24px;
             border-top: 1px solid var(--border);
@@ -981,6 +1222,12 @@
         .footer-bottom p {
             color: var(--text-muted);
             font-size: 13px;
+        }
+
+        .footer-tagline {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-top: 8px;
         }
 
         .footer-tech {
@@ -1073,6 +1320,12 @@
             .view3d-content {
                 grid-template-columns: 1fr;
             }
+            .workflow-steps {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .workflow-step::after {
+                display: none;
+            }
         }
 
         @media (max-width: 768px) {
@@ -1114,6 +1367,12 @@
             }
             .hero {
                 padding: 120px 0 60px;
+                text-align: center;
+            }
+            .hero-bullets {
+                flex-direction: column;
+                align-items: center;
+                gap: 12px;
             }
             .footer-grid {
                 grid-template-columns: 1fr;
@@ -1134,6 +1393,26 @@
                 padding: 8px 0;
                 margin-bottom: 0;
             }
+            .screenshot-grid-2,
+            .screenshot-grid-3 {
+                grid-template-columns: 1fr;
+            }
+            .workflow-steps {
+                grid-template-columns: 1fr;
+            }
+            .workflow-step::after {
+                display: none;
+            }
+            .social-proof {
+                gap: 16px;
+            }
+            .tech-logos {
+                gap: 24px;
+            }
+            .hero-actions {
+                flex-direction: column;
+                align-items: center;
+            }
         }
     </style>
 </head>
@@ -1147,6 +1426,7 @@
             </a>
             <div class="nav-links">
                 <a href="#features">Features</a>
+                <a href="#how-it-works">How It Works</a>
                 <a href="#view3d">3D View</a>
                 <a href="#templates">Templates</a>
                 <a href="#vendors">Vendors</a>
@@ -1165,7 +1445,7 @@
         </div>
     </nav>
 
-    <!-- Hero Section -->
+    <!-- ==================== HERO ==================== -->
     <section class="hero">
         <div class="hero-glow"></div>
         <div class="container">
@@ -1185,14 +1465,23 @@
                 <span class="gradient-text">Operate Networks &mdash; in 3D</span>
             </h1>
             <p class="hero-subtitle">
-                Professional network topology design with 3D visualization, containerlab simulation, digital twin monitoring, and automation for 13 vendors. 157 pre-built templates for datacenter, WAN, campus, and service provider networks.
+                The all-in-one desktop application for network topology design, containerlab simulation, digital twin monitoring, and multi-vendor automation.
             </p>
+            <ul class="hero-bullets">
+                <li><i class="fas fa-check"></i> Drag-and-drop 2D &amp; 3D topology design</li>
+                <li><i class="fas fa-check"></i> One-click containerlab deployment</li>
+                <li><i class="fas fa-check"></i> 13 vendors, 157 templates</li>
+                <li><i class="fas fa-check"></i> Digital twin with real-time monitoring</li>
+            </ul>
             <div class="hero-actions">
-                <a href="#download" class="btn btn-primary btn-lg">
+                <a href="#download" class="btn btn-primary btn-lg btn-glow">
                     <i class="fas fa-download"></i> Download NetOps Free
                 </a>
-                <a href="#features" class="btn btn-outline btn-lg">
-                    <i class="fas fa-play-circle"></i> See Features
+                <a href="#" class="btn btn-outline btn-lg">
+                    <i class="fas fa-book-open"></i> View Documentation
+                </a>
+                <a href="https://github.com/user/tlink-netops" class="btn btn-github btn-lg" target="_blank">
+                    <i class="fab fa-github"></i> Star on GitHub
                 </a>
             </div>
             <div class="hero-platforms">
@@ -1201,158 +1490,23 @@
                 <span><i class="fab fa-linux"></i> Linux</span>
             </div>
 
-            <!-- Hero Screenshots -->
-            <div style="margin-top:48px">
-                <div style="border-radius:12px;overflow:hidden;border:1px solid rgba(0,210,255,0.2);box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-                    <img src="main-topology-canvas-window.png" alt="NetOps Topology Canvas" style="width:100%;display:block" loading="eager">
-                    <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                        <i class="fas fa-diagram-project" style="color:#00d2ff;margin-right:6px"></i> Visual Topology Designer — Drag &amp; Drop Network Design
-                    </div>
-                </div>
-            </div>
-
-            <!-- Template & Deploy Screenshots -->
-            <div style="margin-top:32px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#00d2ff,#3b82f6);display:flex;align-items:center;justify-content:center;color:white;font-size:16px">
-                        <i class="fas fa-layer-group"></i>
-                    </div>
-                    <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:700">Templates &amp; One-Click Deploy</h3>
-                        <p style="margin:0;font-size:12px;color:#9898a8">157 pre-built templates with animated preview, hover to explore, click to deploy</p>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="3.1add-template-window.png" alt="Template Library" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-th-large" style="color:#00d2ff;margin-right:6px"></i> 157 Templates — Datacenter, WAN, Campus, SP
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="2.1.Hover-to-see-the-preview-and-deploy-download-config.png" alt="Template Preview" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-eye" style="color:#3b82f6;margin-right:6px"></i> Hover to Preview — Animated Topology Preview
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Deploy & Canvas Screenshots -->
-            <div style="margin-top:32px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#22c55e,#16a34a);display:flex;align-items:center;justify-content:center;color:white;font-size:16px">
-                        <i class="fas fa-rocket"></i>
-                    </div>
-                    <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:700">Deploy &amp; Simulate</h3>
-                        <p style="margin:0;font-size:12px;color:#9898a8">One-click containerlab deployment with auto config push and live monitoring</p>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="1.3.deploy-container-from-simulate.png" alt="Deploy from Simulate" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-play" style="color:#22c55e;margin-right:6px"></i> Deploy Containerlab — SONiC, cRPD, cEOS, SRL
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="2.3.post-select-sonic-container-topology-canvas-preview.png" alt="Topology Canvas" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-project-diagram" style="color:#f59e0b;margin-right:6px"></i> Canvas Preview — Nodes, Links, Status Indicators
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3D & Config Screenshots -->
-            <div style="margin-top:32px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);display:flex;align-items:center;justify-content:center;color:white;font-size:16px">
-                        <i class="fas fa-cube"></i>
-                    </div>
-                    <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:700">3D View &amp; Auto Configuration</h3>
-                        <p style="margin:0;font-size:12px;color:#9898a8">Immersive 3D WebGL visualization + vendor-specific config generation</p>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid rgba(139,92,246,0.3);box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="change-to-3D-view.png" alt="3D Topology View" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(139,92,246,0.03));text-align:center;font-size:12px;font-weight:600;color:#8b5cf6">
-                            <i class="fas fa-cube" style="margin-right:6px"></i> 3D WebGL — Orbit, Zoom, Fly-Through
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="Auto-generate-configuration.png" alt="Auto Config Generation" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-code" style="color:#00d2ff;margin-right:6px"></i> Auto-Generate Vendor Configs — 13 Vendors
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Device Mapping & IP Assignment -->
-            <div style="margin-top:32px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;color:white;font-size:16px">
-                        <i class="fas fa-link"></i>
-                    </div>
-                    <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:700">Device Mapping &amp; IP Management</h3>
-                        <p style="margin:0;font-size:12px;color:#9898a8">Map virtual topologies to physical devices, auto-assign IP addresses</p>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="mapping-physical-device.png" alt="Physical Device Mapping" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-link" style="color:#f59e0b;margin-right:6px"></i> Map to Physical Devices — CSV/JSON/LLDP
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="auto-assign-ip-address.png" alt="Auto IP Assignment" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-network-wired" style="color:#22c55e;margin-right:6px"></i> Auto-Assign IPv4/IPv6 Addresses
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Inventory & Automation -->
-            <div style="margin-top:32px;margin-bottom:32px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#ef4444,#dc2626);display:flex;align-items:center;justify-content:center;color:white;font-size:16px">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div>
-                        <h3 style="margin:0;font-size:16px;font-weight:700">Inventory &amp; Automation</h3>
-                        <p style="margin:0;font-size:12px;color:#9898a8">Device inventory management, scheduled jobs, compliance, and vendor mapping</p>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="Inventory-management.png" alt="Inventory Management" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-server" style="color:#ef4444;margin-right:6px"></i> Inventory Management
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="mapping-devcie-vendor.png" alt="Vendor Mapping" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-industry" style="color:#3b82f6;margin-right:6px"></i> Vendor Device Mapping
-                        </div>
-                    </div>
-                    <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
-                        <img src="Automate-and-schedule-jobs.png" alt="Automation & Scheduled Jobs" style="width:100%;display:block" loading="lazy">
-                        <div style="padding:10px 16px;background:#16161f;text-align:center;font-size:12px;font-weight:500;color:#9898a8">
-                            <i class="fas fa-clock" style="color:#f59e0b;margin-right:6px"></i> Automate &amp; Schedule Jobs
-                        </div>
-                    </div>
+            <!-- Single Hero Screenshot -->
+            <div class="screenshot-wrapper" style="max-width:1000px;margin:0 auto;box-shadow:0 25px 80px rgba(0,0,0,0.5), 0 0 40px rgba(0,210,255,0.08);border-color:rgba(0,210,255,0.2)">
+                <img src="main-topology-canvas-window.png" alt="NetOps Topology Canvas" loading="eager">
+                <div class="screenshot-caption">
+                    <i class="fas fa-diagram-project" style="color:#00d2ff"></i> Visual Topology Designer &mdash; Drag &amp; Drop Network Design
                 </div>
             </div>
         </div>
     </section>
+
+    <!-- Social Proof Numbers -->
+    <div class="social-proof" style="padding:16px 0;border-bottom:1px solid var(--border)">
+        <div class="proof-item"><i class="fas fa-building"></i> <span class="proof-num">13</span> Vendors</div>
+        <div class="proof-item"><i class="fas fa-layer-group"></i> <span class="proof-num">157</span> Templates</div>
+        <div class="proof-item"><i class="fas fa-vial"></i> <span class="proof-num">871</span> Tests</div>
+        <div class="proof-item"><i class="fas fa-code-branch"></i> Open Source</div>
+    </div>
 
     <!-- Stats Bar -->
     <section class="stats-bar">
@@ -1378,8 +1532,10 @@
         </div>
     </section>
 
-    <!-- Features Section -->
-    <section id="features" class="section">
+    <hr class="gradient-divider">
+
+    <!-- ==================== FEATURES ==================== -->
+    <section id="features" class="section fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Features</span>
@@ -1435,8 +1591,69 @@
         </div>
     </section>
 
-    <!-- 3D View Section -->
-    <section id="view3d" class="section section-dark">
+    <hr class="gradient-divider">
+
+    <!-- ==================== HOW IT WORKS ==================== -->
+    <section id="how-it-works" class="section section-dark fade-in-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">How It Works</span>
+                <h2>From template to production in 4 steps</h2>
+                <p>Select a topology template, deploy a containerlab, auto-generate configs, and monitor everything in real time.</p>
+            </div>
+            <div class="workflow-steps">
+                <div class="workflow-step">
+                    <div class="workflow-step-num" style="background:linear-gradient(135deg,#00d2ff,#3b82f6)">1</div>
+                    <h4>Select Template</h4>
+                    <p>Choose from 157 pre-built network topologies across datacenter, WAN, campus, and SP architectures.</p>
+                    <div class="screenshot-wrapper" style="margin-top:16px">
+                        <img src="1.1.Select-template-type-example-sonic.png" alt="Select Template" loading="lazy">
+                        <div class="screenshot-caption">
+                            <i class="fas fa-list" style="color:#00d2ff"></i> Select Template Type
+                        </div>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-step-num" style="background:linear-gradient(135deg,#22c55e,#16a34a)">2</div>
+                    <h4>Deploy Lab</h4>
+                    <p>One-click containerlab deployment with SONiC, cEOS, cRPD, SRL, and more. Instant topology creation.</p>
+                    <div class="screenshot-wrapper" style="margin-top:16px">
+                        <img src="1.3.deploy-container-from-simulate.png" alt="Deploy Lab" loading="lazy">
+                        <div class="screenshot-caption">
+                            <i class="fas fa-play" style="color:#22c55e"></i> Deploy Containerlab
+                        </div>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">3</div>
+                    <h4>Configure</h4>
+                    <p>Auto-generate vendor-specific configurations for all 13 supported vendors. Push configs to every node.</p>
+                    <div class="screenshot-wrapper" style="margin-top:16px">
+                        <img src="Auto-generate-configuration.png" alt="Auto Configuration" loading="lazy">
+                        <div class="screenshot-caption">
+                            <i class="fas fa-code" style="color:#f59e0b"></i> Auto-Generate Configs
+                        </div>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-step-num" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)">4</div>
+                    <h4>Monitor</h4>
+                    <p>Switch to 3D view, monitor device health, track inventory, and manage your entire network in real time.</p>
+                    <div class="screenshot-wrapper" style="margin-top:16px">
+                        <img src="change-to-3D-view.png" alt="3D Monitor View" loading="lazy">
+                        <div class="screenshot-caption">
+                            <i class="fas fa-cube" style="color:#8b5cf6"></i> 3D View &amp; Monitor
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <hr class="gradient-divider">
+
+    <!-- ==================== 3D VIEW ==================== -->
+    <section id="view3d" class="section fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">3D Visualization</span>
@@ -1444,10 +1661,10 @@
                 <p>Three.js-powered immersive 3D topology with real-time data overlays and interactive navigation.</p>
             </div>
             <div class="view3d-content">
-                <div style="border-radius:12px;overflow:hidden;border:1px solid rgba(139,92,246,0.3);box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-                    <img src="change-to-3D-view.png" alt="3D Topology View" style="width:100%;display:block" loading="lazy">
-                    <div style="padding:12px 16px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(0,210,255,0.05));text-align:center;font-size:13px;font-weight:600;color:#8b5cf6">
-                        <i class="fas fa-cube" style="margin-right:6px"></i> 3D WebGL Topology — Orbit, Zoom, Fly-Through, Traffic Particles
+                <div class="screenshot-wrapper accent-purple" style="box-shadow:0 25px 80px rgba(0,0,0,0.5)">
+                    <img src="change-to-3D-view.png" alt="3D Topology View" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-cube"></i> 3D WebGL Topology &mdash; Orbit, Zoom, Fly-Through, Traffic Particles
                     </div>
                 </div>
                 <div class="view3d-features">
@@ -1492,8 +1709,10 @@
         </div>
     </section>
 
-    <!-- Templates Section -->
-    <section id="templates" class="section">
+    <hr class="gradient-divider">
+
+    <!-- ==================== TEMPLATES ==================== -->
+    <section id="templates" class="section section-dark fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Templates</span>
@@ -1501,23 +1720,39 @@
                 <p>Production-ready topologies for every network architecture. Deploy EVPN/VXLAN fabrics in one click.</p>
             </div>
             <!-- Template Screenshots -->
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:32px">
-                <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
-                    <img src="1.1.Select-template-type-example-sonic.png" alt="Select Template" style="width:100%;display:block" loading="lazy">
-                    <div style="padding:8px 12px;background:#16161f;text-align:center;font-size:11px;color:#9898a8">
-                        <i class="fas fa-list" style="color:#00d2ff;margin-right:4px"></i> Select Template Type
+            <div class="screenshot-grid-3" style="margin-top:0;margin-bottom:40px">
+                <div class="screenshot-wrapper">
+                    <img src="3.1add-template-window.png" alt="Template Library" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-th-large" style="color:#00d2ff"></i> 157 Templates &mdash; Datacenter, WAN, Campus, SP
                     </div>
                 </div>
-                <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
-                    <img src="3.2add-template-and-build.png" alt="Build Topology" style="width:100%;display:block" loading="lazy">
-                    <div style="padding:8px 12px;background:#16161f;text-align:center;font-size:11px;color:#9898a8">
-                        <i class="fas fa-hammer" style="color:#f59e0b;margin-right:4px"></i> Add Template &amp; Build
+                <div class="screenshot-wrapper">
+                    <img src="2.1.Hover-to-see-the-preview-and-deploy-download-config.png" alt="Template Preview" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-eye" style="color:#3b82f6"></i> Hover to Preview &mdash; Animated Topology
                     </div>
                 </div>
-                <div style="border-radius:12px;overflow:hidden;border:1px solid #2a2a3a;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
-                    <img src="3.3change-view-in-the-topology.png" alt="Change View" style="width:100%;display:block" loading="lazy">
-                    <div style="padding:8px 12px;background:#16161f;text-align:center;font-size:11px;color:#9898a8">
-                        <i class="fas fa-eye" style="color:#8b5cf6;margin-right:4px"></i> Change View — IP, BGP, VLAN, 3D
+                <div class="screenshot-wrapper">
+                    <img src="3.3change-view-in-the-topology.png" alt="Change View" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-eye" style="color:#8b5cf6"></i> Change View &mdash; IP, BGP, VLAN, 3D
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deploy Screenshots -->
+            <div class="screenshot-grid-2" style="margin-top:0;margin-bottom:40px">
+                <div class="screenshot-wrapper">
+                    <img src="2.2.Click-deploy-sonic-container-config-confirm.png" alt="Deploy Config" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-rocket" style="color:#22c55e"></i> Click Deploy &mdash; SONiC Container Config
+                    </div>
+                </div>
+                <div class="screenshot-wrapper">
+                    <img src="2.3.post-select-sonic-container-topology-canvas-preview.png" alt="Canvas Preview" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-project-diagram" style="color:#f59e0b"></i> Canvas Preview &mdash; Nodes, Links, Status
                     </div>
                 </div>
             </div>
@@ -1567,8 +1802,10 @@
         </div>
     </section>
 
-    <!-- Vendors Section -->
-    <section id="vendors" class="section section-dark">
+    <hr class="gradient-divider">
+
+    <!-- ==================== VENDORS ==================== -->
+    <section id="vendors" class="section fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Vendors</span>
@@ -1671,8 +1908,51 @@
         </div>
     </section>
 
-    <!-- Automation Section -->
-    <section id="automation" class="section">
+    <hr class="gradient-divider">
+
+    <!-- ==================== DEVICE MAPPING ==================== -->
+    <section class="section section-dark fade-in-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge" style="background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.25);color:#f59e0b">Device Mapping</span>
+                <h2>Map virtual to physical &mdash; automatically</h2>
+                <p>Bridge the gap between your simulated topologies and production hardware with intelligent device mapping and IP management.</p>
+            </div>
+            <div class="screenshot-grid-2" style="margin-top:0">
+                <div class="screenshot-wrapper">
+                    <img src="mapping-physical-device.png" alt="Physical Device Mapping" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-link" style="color:#f59e0b"></i> Map to Physical Devices &mdash; CSV/JSON/LLDP
+                    </div>
+                </div>
+                <div class="screenshot-wrapper">
+                    <img src="auto-assign-ip-address.png" alt="Auto IP Assignment" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-network-wired" style="color:#22c55e"></i> Auto-Assign IPv4/IPv6 Addresses
+                    </div>
+                </div>
+            </div>
+            <div class="screenshot-grid-2" style="margin-top:20px">
+                <div class="screenshot-wrapper">
+                    <img src="mapping-devcie-vendor.png" alt="Vendor Mapping" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-industry" style="color:#3b82f6"></i> Vendor Device Mapping
+                    </div>
+                </div>
+                <div class="screenshot-wrapper">
+                    <img src="Inventory-management.png" alt="Inventory Management" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-server" style="color:#ef4444"></i> Inventory Management
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <hr class="gradient-divider">
+
+    <!-- ==================== AUTOMATION ==================== -->
+    <section id="automation" class="section fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Automation</span>
@@ -1707,7 +1987,23 @@
                 </div>
             </div>
 
-            <div class="automation-features" style="margin-top:48px">
+            <!-- Automation Screenshots -->
+            <div class="screenshot-grid-2" style="margin-top:16px;margin-bottom:48px">
+                <div class="screenshot-wrapper">
+                    <img src="Automate-and-schedule-jobs.png" alt="Automation & Scheduled Jobs" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-clock" style="color:#f59e0b"></i> Automate &amp; Schedule Jobs
+                    </div>
+                </div>
+                <div class="screenshot-wrapper">
+                    <img src="Inventory-management.png" alt="Inventory Management" loading="lazy">
+                    <div class="screenshot-caption">
+                        <i class="fas fa-server" style="color:#ef4444"></i> Inventory Management Dashboard
+                    </div>
+                </div>
+            </div>
+
+            <div class="automation-features">
                 <div class="auto-card">
                     <h4><i class="fas fa-code"></i> Workflow Builder</h4>
                     <p>Visual drag-and-drop workflow editor. Chain actions together: collect data, transform, decide, execute, verify. Loops and conditionals supported.</p>
@@ -1759,8 +2055,10 @@
         </div>
     </section>
 
-    <!-- Backend Server Section -->
-    <section class="section section-dark">
+    <hr class="gradient-divider">
+
+    <!-- ==================== BACKEND SERVER ==================== -->
+    <section class="section section-dark fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Backend Server</span>
@@ -1802,8 +2100,45 @@
         </div>
     </section>
 
-    <!-- Pricing Section -->
-    <section id="pricing" class="section">
+    <hr class="gradient-divider">
+
+    <!-- ==================== BUILT WITH ==================== -->
+    <div class="tech-stack-bar fade-in-section">
+        <div class="container">
+            <h3>Built With</h3>
+            <div class="tech-logos">
+                <div class="tech-logo">
+                    <i class="fab fa-angular"></i>
+                    <span>Angular</span>
+                </div>
+                <div class="tech-logo">
+                    <i class="fas fa-atom"></i>
+                    <span>Electron</span>
+                </div>
+                <div class="tech-logo">
+                    <i class="fas fa-cube"></i>
+                    <span>Three.js</span>
+                </div>
+                <div class="tech-logo">
+                    <i class="fab fa-docker"></i>
+                    <span>Docker</span>
+                </div>
+                <div class="tech-logo">
+                    <i class="fas fa-network-wired"></i>
+                    <span>Containerlab</span>
+                </div>
+                <div class="tech-logo">
+                    <i class="fab fa-node-js"></i>
+                    <span>Node.js</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="gradient-divider">
+
+    <!-- ==================== PRICING ==================== -->
+    <section id="pricing" class="section fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Pricing</span>
@@ -1857,8 +2192,10 @@
         </div>
     </section>
 
-    <!-- Download Section -->
-    <section id="download" class="section section-dark">
+    <hr class="gradient-divider">
+
+    <!-- ==================== DOWNLOAD ==================== -->
+    <section id="download" class="section section-dark fade-in-section">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Download</span>
@@ -1904,19 +2241,20 @@ npm install &amp;&amp; npm run build</pre>
         </div>
     </section>
 
-    <!-- CTA Section -->
-    <section class="cta-section">
+    <!-- ==================== CTA ==================== -->
+    <section class="cta-section fade-in-section">
         <div class="container">
             <h2>Ready to reimagine network operations?</h2>
             <p>Join network engineers who design, simulate, and operate networks in a single application.</p>
             <div class="cta-actions">
-                <a href="#download" class="btn btn-primary btn-lg"><i class="fas fa-download"></i> Download NetOps Free</a>
-                <a href="https://github.com/user/tlink-netops" class="btn btn-outline btn-lg" target="_blank"><i class="fab fa-github"></i> Star on GitHub</a>
+                <a href="#download" class="btn btn-primary btn-lg btn-glow"><i class="fas fa-download"></i> Download NetOps Free</a>
+                <a href="#" class="btn btn-outline btn-lg"><i class="fas fa-book-open"></i> View Documentation</a>
+                <a href="https://github.com/user/tlink-netops" class="btn btn-github btn-lg" target="_blank"><i class="fab fa-github"></i> Star on GitHub</a>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
+    <!-- ==================== FOOTER ==================== -->
     <footer class="footer">
         <div class="container">
             <div class="footer-grid">
@@ -1926,6 +2264,10 @@ npm install &amp;&amp; npm run build</pre>
                         <span class="brand-text">NetOps</span>
                     </div>
                     <p>Professional network topology design with 3D visualization, simulation, and automation. Open source and cross-platform.</p>
+                    <div class="newsletter-form">
+                        <input type="email" placeholder="Enter your email">
+                        <button type="button">Subscribe</button>
+                    </div>
                 </div>
                 <div class="footer-links">
                     <h4>Product</h4>
@@ -1952,6 +2294,7 @@ npm install &amp;&amp; npm run build</pre>
             </div>
             <div class="footer-bottom">
                 <p>&copy; 2025 NetOps. MIT License.</p>
+                <p class="footer-tagline">Made with &#10084;&#65039; by Tlink Technologies</p>
                 <div class="footer-tech">
                     <span><i class="fab fa-angular"></i> Angular</span>
                     <span><i class="fab fa-js"></i> Electron</span>
@@ -1963,9 +2306,10 @@ npm install &amp;&amp; npm run build</pre>
         </div>
     </footer>
 
-    <!-- Animated Stats Counter -->
+    <!-- ==================== SCRIPTS ==================== -->
     <script>
-        const observerOptions = { threshold: 0.5 };
+        // Animated Stats Counter
+        const statsObserverOptions = { threshold: 0.5 };
         const statsObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -1986,10 +2330,23 @@ npm install &amp;&amp; npm run build</pre>
                     statsObserver.unobserve(entry.target);
                 }
             });
-        }, observerOptions);
+        }, statsObserverOptions);
 
         const statsBar = document.querySelector('.stats-bar');
         if (statsBar) statsObserver.observe(statsBar);
+
+        // Scroll fade-in animations using IntersectionObserver
+        const fadeObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.fade-in-section').forEach(el => {
+            fadeObserver.observe(el);
+        });
     </script>
 </body>
 </html>
