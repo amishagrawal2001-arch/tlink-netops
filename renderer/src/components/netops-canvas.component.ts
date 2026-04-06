@@ -5195,20 +5195,58 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // ── Digital Twin ──────────────────────────────────────────────────────
 
+    twinStatusMsg = ''
+    twinPolling = false
+
     toggleDigitalTwin (): void {
         this.digitalTwinActive = !this.digitalTwinActive
         if (this.digitalTwinActive) {
+            // Check what data sources are available
+            const hasLab = this.clabDeployed && this.clabContainers?.length > 0
+            const mappedNodes = this.topology.nodes.filter(n => n.mapped && n.mgmtIp && n.sshUsername)
+            const hasMapped = mappedNodes.length > 0
+
+            if (!hasLab && !hasMapped) {
+                this.twinStatusMsg = '⚠ No data sources — deploy a lab or map devices with SSH credentials to see live metrics'
+                this.statusMsg = this.twinStatusMsg
+            } else {
+                const sources: string[] = []
+                if (hasLab) { sources.push(`${this.clabContainers.length} containers`) }
+                if (hasMapped) { sources.push(`${mappedNodes.length} mapped devices`) }
+                this.twinStatusMsg = `🔮 Twin active — polling ${sources.join(' + ')}…`
+                this.statusMsg = this.twinStatusMsg
+            }
+
             // Start all monitoring sources
-            if (!this.livePollingActive) { this.startLivePolling() }
-            this._pollTwinState()
+            if (!this.livePollingActive && hasLab) { this.startLivePolling() }
+            this.twinPolling = true
+            this.cdr.markForCheck()
+            this._pollTwinState().then(() => {
+                this.twinPolling = false
+                const healthNodes = this.twinNodeHealth.size
+                const alarmNodes = this.twinActiveAlarms.size
+                const driftNodes = this.twinConfigDrift.size
+                if (healthNodes || alarmNodes || driftNodes) {
+                    this.twinStatusMsg = `🔮 Twin: ${healthNodes} nodes polled, ${alarmNodes} with alarms, ${driftNodes} with drift`
+                } else if (!hasLab && !hasMapped) {
+                    this.twinStatusMsg = '⚠ Twin: no data — deploy a lab or map devices first'
+                } else {
+                    this.twinStatusMsg = '🔮 Twin active — waiting for next poll cycle (30s)'
+                }
+                this.statusMsg = this.twinStatusMsg
+                this.cdr.markForCheck()
+            })
             this._twinPollTimer = setInterval(() => this._pollTwinState(), 30_000)
         } else {
-            // Stop twin-specific polling (keep live polling if user started it independently)
+            // Stop twin-specific polling
             if (this._twinPollTimer) { clearInterval(this._twinPollTimer); this._twinPollTimer = null }
             this.twinNodeHealth.clear()
             this.twinConfigDrift.clear()
             this.twinActiveAlarms.clear()
             this.showTwinDashboard = false
+            this.twinStatusMsg = ''
+            this.twinPolling = false
+            this.statusMsg = 'Twin deactivated'
         }
         this.cdr.markForCheck()
     }

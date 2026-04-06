@@ -4181,6 +4181,15 @@
     (closed)='showBackupHistory = false; cdr.markForCheck()'
   )
 
+  //- ── Digital Twin Status Indicator ────────────────────────────────────────
+  .twin-status-indicator(*ngIf='digitalTwinActive')
+    .twin-status-dot([class.polling]='twinPolling')
+    span.twin-status-text {{ twinStatusMsg || '🔮 Twin active' }}
+    button.twin-status-dashboard(
+      type='button',
+      (click)='showTwinDashboard = !showTwinDashboard; cdr.markForCheck()'
+    ) {{ showTwinDashboard ? 'Hide Dashboard' : 'Show Dashboard' }}
+
   //- ── Digital Twin Dashboard Panel ──────────────────────────────────────────
   .twin-dashboard-panel(*ngIf='showTwinDashboard && digitalTwinActive')
     .twin-dashboard-header

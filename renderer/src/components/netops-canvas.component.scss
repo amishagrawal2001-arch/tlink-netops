@@ -736,6 +736,52 @@ netops-3d-canvas {
   color: #fff !important;
 }
 
+// Twin status floating indicator
+.twin-status-indicator {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 20px;
+  z-index: 10;
+  animation: fadeSlideIn 0.3s ease-out;
+}
+
+.twin-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #8b5cf6;
+  &.polling { animation: twin-dot-blink 1s infinite; }
+}
+
+@keyframes twin-dot-blink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px #8b5cf6; }
+  50% { opacity: 0.3; box-shadow: none; }
+}
+
+.twin-status-text {
+  font-size: 11px;
+  color: #c4b5fd;
+  white-space: nowrap;
+}
+
+.twin-status-dashboard {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: transparent;
+  color: #a78bfa;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { background: rgba(139, 92, 246, 0.2); color: #fff; }
+}
+
 // Alarm pulse ring on nodes
 .twin-alarm-ring {
   fill: none;
