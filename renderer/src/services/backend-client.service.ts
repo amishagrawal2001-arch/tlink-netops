@@ -168,6 +168,24 @@ export class BackendClientService {
     }
 
     /** Check backend server health. */
+    /** Poll container status + BGP via the backend server (for remote labs) */
+    async containerPoll (containers: Array<{ name: string; kind: string }>): Promise<any> {
+        try {
+            if (!this._url || !this._connected) {
+                return { ok: false, error: 'Backend not connected', containers: [] }
+            }
+            const res = await fetch(`${this._url}/api/container-poll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ containers }),
+            })
+            if (!res.ok) { return { ok: false, error: `HTTP ${res.status}`, containers: [] } }
+            return res.json()
+        } catch (err: any) {
+            return { ok: false, error: err.message, containers: [] }
+        }
+    }
+
     async status (): Promise<any> {
         try {
             if (!this._url || !this._connected) {

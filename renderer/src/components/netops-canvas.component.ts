@@ -10065,9 +10065,9 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             let result: any
 
             if (this.isRemoteLabDeploy && this.invSvc.hasBackend) {
-                // Remote server containers — poll via backend server
+                // Remote server containers — poll via backend server's Docker
                 console.log(`[LivePoll] ${containers.length} containers via 🖥 server (remote lab on ${this.clabActiveServerId})`)
-                result = await api.clabPollLiveStatus({ containers, serverId: this.clabActiveServerId })
+                result = await this.invSvc.backendClient.containerPoll(containers)
             } else {
                 // Local containers — poll via local Docker
                 if (!api?.clabPollLiveStatus) { this._livePollRunning = false; return }
