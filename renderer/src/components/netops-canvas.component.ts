@@ -5295,17 +5295,20 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             } catch (err) { console.warn('Twin poll failed:', (err as Error).message) }
         }
 
-        // Config drift detection for containerlab nodes
-        if (api?.clabFetchConfig && this.clabContainers?.length) {
+        // Config drift detection — only for mapped physical devices (not containers)
+        // Container startup config (set commands) differs from running config (curly-brace),
+        // causing false drift on every poll. Physical devices use the same format for both.
+        // Container drift detection is disabled.
+        if (false) {  // DISABLED — was causing false drift on all containers
             for (const node of this.topology.nodes) {
                 if (!node.vendor || !node.startupConfig?.trim()) { continue }
                 const safeName = node.label.replace(/\s+/g, '-').toLowerCase()
-                const ctn = this.clabContainers.find(c => c.name.endsWith('-' + safeName) && c.state === 'running')
+                const ctn = this.clabContainers.find((c: any) => c.name.endsWith('-' + safeName) && c.state === 'running')
                 if (!ctn) { continue }
                 try {
-                    const result = await api.clabFetchConfig({ containerName: ctn.name, kind: ctn.kind })
+                    const result = await (window as any).netopsAPI.clabFetchConfig({ containerName: ctn!.name, kind: ctn!.kind })
                     if (result.ok && result.output) {
-                        const drift = this._computeConfigDrift(node.startupConfig, result.output)
+                        const drift = this._computeConfigDrift(node.startupConfig!, result.output)
                         if (drift.hasDrift) {
                             this.twinConfigDrift.set(node.id, drift)
                         } else {
