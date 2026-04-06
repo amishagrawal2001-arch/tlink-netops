@@ -1602,10 +1602,12 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
             // Keep inventory panel, alarm indicators, and status bar reactive
             this.invSvc.store$.subscribe(() => { this.cdr.markForCheck() }),
         )
-        // Initialize server heartbeat and attempt auto-reconnect
-        this._loadClabServers().then(() => {
-            this._startHeartbeat()
-            this._autoReconnectOnStartup()
+        // Auto-reconnect to backend server first, then clab servers
+        this._autoReconnectBackend().then(() => {
+            this._loadClabServers().then(() => {
+                this._startHeartbeat()
+                this._autoReconnectOnStartup()
+            })
         })
 
         // Listen for Docker progress events (pull/load streaming)
@@ -12197,6 +12199,35 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     // ── Firmware Upgrade Planner ───────────────────────────────────────
 
     // ── Backend Server Connection ─────────────────────────────────────
+
+    /** Auto-reconnect to last-used backend server on app startup */
+    private async _autoReconnectBackend (): Promise<void> {
+        const api = (window as any).netopsAPI
+        const savedUrl = await api?.prefGet?.('backend-url')
+        if (!savedUrl) { return }
+
+        this.backendUrl = savedUrl
+        const svc = this._getBackendSvc()
+
+        try {
+            svc.connect(savedUrl)
+            // Wait up to 3s for connection
+            await new Promise<void>((resolve, reject) => {
+                let checks = 0
+                const timer = setInterval(() => {
+                    if (svc.isConnected) { clearInterval(timer); resolve() }
+                    else if (++checks > 30) { clearInterval(timer); reject(new Error('timeout')) }
+                }, 100)
+            })
+
+            this.invSvc.setBackendClient(svc)
+            console.log('[Backend] Auto-reconnected to', savedUrl)
+            this.statusMsg = `Auto-connected to backend server at ${savedUrl}`
+        } catch {
+            console.log('[Backend] Auto-reconnect failed for', savedUrl, '— using local polling')
+        }
+        this.cdr.markForCheck()
+    }
 
     private _backendSvc: any = null  // lazy-loaded BackendClientService
 
