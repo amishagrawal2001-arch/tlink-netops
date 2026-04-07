@@ -304,7 +304,7 @@ function createWindow (initialTopologyJson?: string): BrowserWindow {
 
     win.loadFile(htmlPath, { query })
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (!app.isPackaged && process.env.NODE_ENV !== 'production') {
         win.webContents.openDevTools({ mode: 'detach' })
     }
 
