@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#001219"/>
+      <stop offset="100%" style="stop-color:#005f73"/>
+    </linearGradient>
+    <linearGradient id="wire" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00e5ff"/>
+      <stop offset="100%" style="stop-color:#00bfa5"/>
+    </linearGradient>
+    <radialGradient id="pulse" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#00e5ff;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#00e5ff;stop-opacity:0"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg4)"/>
+  <!-- Center glow -->
+  <circle cx="256" cy="256" r="160" fill="url(#pulse)"/>
+  <!-- Circuit traces - horizontal -->
+  <path d="M 80,200 L 180,200 L 200,220 L 256,220" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 80,310 L 160,310 L 180,290 L 256,290" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 432,200 L 332,200 L 312,220 L 256,220" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 432,310 L 352,310 L 332,290 L 256,290" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <!-- Circuit traces - vertical -->
+  <path d="M 210,80 L 210,180 L 230,200 L 230,256" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 302,80 L 302,180 L 282,200 L 282,256" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 210,432 L 210,332 L 230,312 L 230,256" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 302,432 L 302,332 L 282,312 L 282,256" stroke="url(#wire)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <!-- Diagonal traces -->
+  <path d="M 120,120 L 190,190 L 220,220" stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.4"/>
+  <path d="M 392,120 L 322,190 L 292,220" stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.4"/>
+  <path d="M 120,392 L 190,322 L 220,292" stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.4"/>
+  <path d="M 392,392 L 322,322 L 292,292" stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.4"/>
+  <!-- Endpoint nodes (edges) -->
+  <circle cx="80" cy="200" r="8" fill="#00e5ff" opacity="0.6"/>
+  <circle cx="80" cy="310" r="8" fill="#00e5ff" opacity="0.6"/>
+  <circle cx="432" cy="200" r="8" fill="#00bfa5" opacity="0.6"/>
+  <circle cx="432" cy="310" r="8" fill="#00bfa5" opacity="0.6"/>
+  <circle cx="210" cy="80" r="8" fill="#00e5ff" opacity="0.6"/>
+  <circle cx="302" cy="80" r="8" fill="#00e5ff" opacity="0.6"/>
+  <circle cx="210" cy="432" r="8" fill="#00bfa5" opacity="0.6"/>
+  <circle cx="302" cy="432" r="8" fill="#00bfa5" opacity="0.6"/>
+  <!-- Corner nodes -->
+  <circle cx="120" cy="120" r="6" fill="#00e5ff" opacity="0.4"/>
+  <circle cx="392" cy="120" r="6" fill="#00e5ff" opacity="0.4"/>
+  <circle cx="120" cy="392" r="6" fill="#00e5ff" opacity="0.4"/>
+  <circle cx="392" cy="392" r="6" fill="#00e5ff" opacity="0.4"/>
+  <!-- Center hub -->
+  <circle cx="256" cy="256" r="36" fill="#001219" stroke="url(#wire)" stroke-width="5"/>
+  <circle cx="256" cy="256" r="20" fill="url(#wire)"/>
+  <circle cx="256" cy="256" r="8" fill="white"/>
+  <!-- Junction nodes -->
+  <rect x="218" y="218" width="8" height="8" rx="2" fill="#00e5ff"/>
+  <rect x="286" y="218" width="8" height="8" rx="2" fill="#00e5ff"/>
+  <rect x="218" y="286" width="8" height="8" rx="2" fill="#00e5ff"/>
+  <rect x="286" y="286" width="8" height="8" rx="2" fill="#00e5ff"/>
+</svg>

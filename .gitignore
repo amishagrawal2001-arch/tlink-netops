@@ -1,6 +1,8 @@
 node_modules/
+dist/
 app/dist/
 renderer/dist/
+server/dist/
 coverage/
 *.log
 *.topo.json

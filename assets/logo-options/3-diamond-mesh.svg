@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="dia" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="50%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="dia2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg3)"/>
+  <!-- Outer diamond -->
+  <polygon points="256,60 456,256 256,452 56,256" fill="none" stroke="url(#dia)" stroke-width="6" opacity="0.2"/>
+  <!-- Middle diamond -->
+  <polygon points="256,120 396,256 256,392 116,256" fill="none" stroke="url(#dia)" stroke-width="4" opacity="0.15"/>
+  <!-- Inner diamond (filled) -->
+  <polygon points="256,170 346,256 256,342 166,256" fill="url(#dia)" opacity="0.15"/>
+  <polygon points="256,170 346,256 256,342 166,256" fill="none" stroke="url(#dia)" stroke-width="5"/>
+  <!-- Mesh lines from center -->
+  <line x1="256" y1="170" x2="256" y2="60" stroke="#06b6d4" stroke-width="3" opacity="0.4" stroke-dasharray="6,4"/>
+  <line x1="346" y1="256" x2="456" y2="256" stroke="#3b82f6" stroke-width="3" opacity="0.4" stroke-dasharray="6,4"/>
+  <line x1="256" y1="342" x2="256" y2="452" stroke="#8b5cf6" stroke-width="3" opacity="0.4" stroke-dasharray="6,4"/>
+  <line x1="166" y1="256" x2="56" y2="256" stroke="#06b6d4" stroke-width="3" opacity="0.4" stroke-dasharray="6,4"/>
+  <!-- Cross mesh lines -->
+  <line x1="256" y1="170" x2="346" y2="256" stroke="url(#dia2)" stroke-width="4" opacity="0.6"/>
+  <line x1="346" y1="256" x2="256" y2="342" stroke="url(#dia2)" stroke-width="4" opacity="0.6"/>
+  <line x1="256" y1="342" x2="166" y2="256" stroke="url(#dia2)" stroke-width="4" opacity="0.6"/>
+  <line x1="166" y1="256" x2="256" y2="170" stroke="url(#dia2)" stroke-width="4" opacity="0.6"/>
+  <!-- Diagonal mesh -->
+  <line x1="256" y1="170" x2="256" y2="342" stroke="#3b82f6" stroke-width="3" opacity="0.3"/>
+  <line x1="166" y1="256" x2="346" y2="256" stroke="#3b82f6" stroke-width="3" opacity="0.3"/>
+  <!-- Corner nodes on outer diamond -->
+  <circle cx="256" cy="60" r="12" fill="#06b6d4" opacity="0.6"/>
+  <circle cx="456" cy="256" r="12" fill="#3b82f6" opacity="0.6"/>
+  <circle cx="256" cy="452" r="12" fill="#8b5cf6" opacity="0.6"/>
+  <circle cx="56" cy="256" r="12" fill="#06b6d4" opacity="0.6"/>
+  <!-- Inner diamond nodes -->
+  <circle cx="256" cy="170" r="20" fill="#06b6d4"/>
+  <circle cx="346" cy="256" r="20" fill="#3b82f6"/>
+  <circle cx="256" cy="342" r="20" fill="#8b5cf6"/>
+  <circle cx="166" cy="256" r="20" fill="#06b6d4"/>
+  <!-- Center node -->
+  <circle cx="256" cy="256" r="24" fill="url(#dia)"/>
+  <circle cx="256" cy="256" r="10" fill="white"/>
+  <!-- Inner node dots -->
+  <circle cx="256" cy="170" r="7" fill="white"/>
+  <circle cx="346" cy="256" r="7" fill="white"/>
+  <circle cx="256" cy="342" r="7" fill="white"/>
+  <circle cx="166" cy="256" r="7" fill="white"/>
+</svg>
