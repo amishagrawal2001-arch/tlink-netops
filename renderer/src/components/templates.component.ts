@@ -132,6 +132,17 @@ export class TemplatesComponent implements OnDestroy {
         return tpl.nodes.some(n => !!n.vendor)
     }
 
+    /** Return the primary vendor(s) used in a template, e.g. "SONiC" or "Juniper · Arista" */
+    vendorLabel (tpl: TopologyTemplate): string {
+        const vendors = new Set<string>()
+        for (const n of tpl.nodes) {
+            if (n.vendor) { vendors.add(n.vendor) }
+        }
+        if (!vendors.size) { return '' }
+        const arr = [...vendors]
+        return arr.length <= 2 ? arr.join(' · ') : `${arr[0]} +${arr.length - 1}`
+    }
+
     /** Generate and download all startup configs for vendor-configured nodes */
     downloadConfig (tpl: TopologyTemplate, $event: Event): void {
         $event.stopPropagation()

@@ -168,16 +168,23 @@ export class BackendClientService {
     }
 
     /** Check backend server health. */
-    /** Poll container status + BGP via the backend server (for remote labs) */
-    async containerPoll (containers: Array<{ name: string; kind: string }>): Promise<any> {
+    /** Poll container status + BGP via the backend server (for remote labs).
+     *  When `server` is provided, the backend SSHes into that host to run docker commands.
+     *  When omitted, the backend runs docker commands locally on its own host. */
+    async containerPoll (
+        containers: Array<{ name: string; kind: string }>,
+        server?: { host: string; port?: number; username: string; password: string },
+    ): Promise<any> {
         try {
             if (!this._url || !this._connected) {
                 return { ok: false, error: 'Backend not connected', containers: [] }
             }
+            const body: any = { containers }
+            if (server) { body.server = server }
             const res = await fetch(`${this._url}/api/container-poll`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ containers }),
+                body: JSON.stringify(body),
             })
             if (!res.ok) { return { ok: false, error: `HTTP ${res.status}`, containers: [] } }
             return res.json()

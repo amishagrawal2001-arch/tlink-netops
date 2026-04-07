@@ -220,16 +220,50 @@ $radius:    10px;
     }
 }
 
+.tpl-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
 .tpl-card-icon {
     font-size: 28px;
     line-height: 1;
-    margin-bottom: 2px;
+}
+
+.tpl-type-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+.tpl-type-container {
+    background: rgba(0, 210, 255, 0.12);
+    color: #00d2ff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+}
+
+.tpl-type-design {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .tpl-card-name {
     font-size: 14px;
     font-weight: 700;
     color: var(--text);
+}
+
+.tpl-card-vendor {
+    font-size: 10px;
+    font-weight: 600;
+    color: #22c55e;
+    letter-spacing: 0.3px;
 }
 
 .tpl-card-desc {

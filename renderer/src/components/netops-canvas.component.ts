@@ -10072,9 +10072,14 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             let result: any
 
             if (this.isRemoteLabDeploy && this.invSvc.hasBackend) {
-                // Remote server containers — poll via backend server's Docker
-                console.log(`[LivePoll] ${containers.length} containers via 🖥 server (remote lab on ${this.clabActiveServerId})`)
-                result = await this.invSvc.backendClient.containerPoll(containers)
+                // Remote server containers — poll via backend server, SSH into the Docker host
+                const srv = this.clabServers.find(s => s.id === this.clabActiveServerId)
+                const server = srv?.type === 'ssh' && srv.host ? {
+                    host: srv.host, port: srv.port ?? 22,
+                    username: srv.username ?? '', password: srv.password ?? '',
+                } : undefined
+                console.log(`[LivePoll] ${containers.length} containers via 🖥 server${server ? ` → SSH ${server.host}` : ''} (remote lab on ${this.clabActiveServerId})`)
+                result = await this.invSvc.backendClient.containerPoll(containers, server)
             } else {
                 // Local containers — poll via local Docker
                 if (!api?.clabPollLiveStatus) { this._livePollRunning = false; return }

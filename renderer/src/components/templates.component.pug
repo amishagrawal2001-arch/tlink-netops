@@ -46,8 +46,14 @@
         (mouseleave)='onLeave()',
         (click)='load(tpl)'
       )
-        .tpl-card-icon {{ tpl.icon }}
+        .tpl-card-top
+          .tpl-card-icon {{ tpl.icon }}
+          span.tpl-type-badge(
+            [class.tpl-type-container]='hasVendorNodes(tpl)',
+            [class.tpl-type-design]='!hasVendorNodes(tpl)'
+          ) {{ hasVendorNodes(tpl) ? '🐳 Container' : '📐 Design' }}
         .tpl-card-name {{ tpl.name }}
+        .tpl-card-vendor(*ngIf='vendorLabel(tpl)') {{ vendorLabel(tpl) }}
         .tpl-card-desc {{ tpl.description }}
         .tpl-card-meta
           span.tpl-badge {{ tpl.nodes.length }} nodes
