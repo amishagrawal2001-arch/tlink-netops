@@ -10,15 +10,29 @@ import { Client } from 'ssh2'
 const app = express()
 app.use(express.json())
 
+// CORS — allow connections from any origin (Electron app)
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*')
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.header('Access-Control-Allow-Headers', 'Content-Type')
+    if (req.method === 'OPTIONS') { return res.sendStatus(204) }
+    next()
+})
+
 const server = createServer(app)
 const wss = new WebSocketServer({ server })
 
 // ─── WebSocket client tracking ─────────────────────────────────────────────
 
 const clients = new Set<WebSocket>()
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+    const ip = req.socket.remoteAddress || 'unknown'
+    console.log(`[WS] Client connected from ${ip} (${clients.size + 1} total)`)
     clients.add(ws)
-    ws.on('close', () => clients.delete(ws))
+    ws.on('close', () => {
+        clients.delete(ws)
+        console.log(`[WS] Client disconnected (${clients.size} remaining)`)
+    })
 })
 
 function broadcast (data: any): void {
@@ -101,6 +115,76 @@ function sshRunCommands (params: SshParams): Promise<{ ok: boolean; outputs: str
     })
 }
 
+// ─── SSH shell session (interactive) ────────────────────────────────────────
+
+interface ShellParams {
+    host: string
+    port?: number
+    username: string
+    password: string
+    commands: string[]
+    delayMs?: number
+}
+
+function sshShellSession (params: ShellParams): Promise<{ ok: boolean; output: string; error?: string }> {
+    return new Promise((resolve) => {
+        const client = new Client()
+        const delay = params.delayMs || 300
+        let output = ''
+        let settled = false
+
+        function done (result: { ok: boolean; output: string; error?: string }): void {
+            if (settled) { return }
+            settled = true
+            try { client.end() } catch { /* no-op */ }
+            resolve(result)
+        }
+
+        client.on('ready', () => {
+            client.shell((err, stream) => {
+                if (err) { done({ ok: false, output: '', error: err.message }); return }
+
+                stream.on('data', (data: Buffer) => { output += data.toString() })
+                stream.on('close', () => { done({ ok: true, output }) })
+
+                // Send commands with delays
+                let i = 0
+                const sendNext = (): void => {
+                    if (i < params.commands.length) {
+                        stream.write(params.commands[i] + '\n')
+                        i++
+                        setTimeout(sendNext, delay)
+                    } else {
+                        setTimeout(() => stream.end(), delay * 2)
+                    }
+                }
+                sendNext()
+            })
+        })
+
+        client.on('error', (err) => { done({ ok: false, output, error: err.message }) })
+
+        try {
+            client.connect({
+                host: params.host,
+                port: params.port || 22,
+                username: params.username,
+                password: params.password,
+                readyTimeout: 15000,
+                algorithms: {
+                    kex: [
+                        'ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521',
+                        'diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256',
+                        'diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1',
+                    ],
+                },
+            })
+        } catch (err: any) {
+            done({ ok: false, output: '', error: `SSH connect error: ${err.message}` })
+        }
+    })
+}
+
 // ─── Concurrency limiter ────────────────────────────────────────────────────
 
 async function runWithConcurrency<T> (tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
@@ -125,9 +209,12 @@ app.get('/api/status', (_req, res) => {
 app.post('/api/poll', async (req, res) => {
     const { host, port, username, password, commands, timeoutMs } = req.body
     if (!host || !username || !password || !commands?.length) {
-        return res.status(400).json({ ok: false, error: 'Missing required fields (host, username, password, commands)' })
+        console.log(`[POLL] ❌ Rejected — missing fields: host=${host || 'EMPTY'}, user=${username || 'EMPTY'}, cmds=${commands?.length || 0}`)
+        return res.status(400).json({ ok: false, error: `Missing required fields: ${!host ? 'host ' : ''}${!username ? 'username ' : ''}${!password ? 'password ' : ''}${!commands?.length ? 'commands' : ''}`.trim() })
     }
+    console.log(`[POLL] ${host}:${port || 22} — ${commands.length} commands`)
     const result = await sshRunCommands({ host, port, username, password, commands, timeoutMs })
+    console.log(`[POLL] ${host} — ${result.ok ? 'OK' : 'FAILED: ' + (result.error || 'unknown')}`)
     const pollResult = {
         type: 'poll_result',
         nodeId: host,
@@ -171,14 +258,16 @@ app.post('/api/poll-all', async (req, res) => {
 
 app.post('/api/backup', async (req, res) => {
     const { host, port, username, password, command, timeoutMs } = req.body
+    console.log(`[BACKUP] ${host}:${port || 22} — ${command || 'show running-config'}`)
     if (!host || !username || !password) {
         return res.status(400).json({ ok: false, error: 'Missing required fields (host, username, password)' })
     }
     const backupCmd = command || 'show running-config'
     const result = await sshRunCommands({ host, port, username, password, commands: [backupCmd], timeoutMs })
+    console.log(`[BACKUP] ${host} — ${result.ok ? 'OK (' + (result.outputs?.[0]?.length ?? 0) + ' chars)' : 'FAILED: ' + (result.error || 'unknown')}`)
     res.json({
         ok: result.ok,
-        config: result.outputs?.[0] ?? '',
+        output: result.outputs?.[0] ?? '',
         error: result.error,
         timestamp: new Date().toISOString(),
     })
@@ -197,6 +286,159 @@ app.post('/api/discover', async (req, res) => {
         error: result.error,
         timestamp: new Date().toISOString(),
     })
+})
+
+app.post('/api/load-config', async (req, res) => {
+    const { host, port, username, password, commands, delayMs } = req.body
+    console.log(`[LOAD-CONFIG] ${host}:${port || 22} — ${commands?.length || 0} commands`)
+    if (!host || !username || !password || !commands?.length) {
+        return res.status(400).json({ ok: false, error: 'Missing required fields' })
+    }
+    const result = await sshShellSession({ host, port, username, password, commands, delayMs: delayMs || 300 })
+    console.log(`[LOAD-CONFIG] ${host} — ${result.ok ? 'OK' : 'FAILED'}`)
+    res.json(result)
+})
+
+// ─── Container live polling (for remote labs) ──────────────────────────────
+
+import { execSync, exec as execCb } from 'child_process'
+import { promisify } from 'util'
+const execAsync = promisify(execCb)
+
+interface DockerServer { host: string; port?: number; username: string; password: string }
+
+/**
+ * Run a docker command either locally or on a remote server via SSH.
+ * When `server` is provided, the command is executed over SSH on that host.
+ * When omitted, the command runs locally via child_process.
+ */
+async function dockerCmd (
+    cmd: string,
+    server?: DockerServer,
+    timeoutMs = 15000,
+): Promise<{ stdout: string; stderr: string }> {
+    if (!server) {
+        return execAsync(cmd, { timeout: timeoutMs })
+    }
+    // Remote: run docker command over SSH on the target server
+    const result = await sshRunCommands({
+        host: server.host,
+        port: server.port ?? 22,
+        username: server.username,
+        password: server.password,
+        commands: [cmd],
+        timeoutMs,
+    })
+    if (!result.ok) { throw new Error(result.error || 'SSH command failed') }
+    return { stdout: result.outputs[0] || '', stderr: '' }
+}
+
+app.post('/api/container-poll', async (req, res) => {
+    const { containers, server } = req.body  // containers: Array<{name, kind}>, server?: {host, port, username, password}
+    if (!Array.isArray(containers) || !containers.length) {
+        return res.status(400).json({ ok: false, error: 'Missing containers array' })
+    }
+
+    const remote: DockerServer | undefined = server?.host ? server : undefined
+    console.log(`[CONTAINER-POLL] ${containers.length} containers${remote ? ` via SSH → ${remote.host}` : ' (local)'}`)
+    const results: Array<{ containerName: string; state: string; bgpNeighbors: any[] }> = []
+
+    // Step 1: Docker inspect all containers for state
+    try {
+        const ids = containers.map(c => c.name).join(' ')
+        const { stdout } = await dockerCmd(`docker inspect --format '{{.Name}}|{{.State.Status}}' ${ids}`, remote, 10_000)
+        const stateMap = new Map<string, string>()
+        for (const line of stdout.trim().split('\n')) {
+            if (!line.includes('|')) continue
+            const sepIdx = line.lastIndexOf('|')
+            const rawName = line.slice(0, sepIdx).replace(/^\//, '')
+            const state = line.slice(sepIdx + 1)
+            stateMap.set(rawName, state)
+        }
+
+        // Step 2: For running containers, get BGP summary
+        for (const c of containers) {
+            const state = stateMap.get(c.name) ?? 'unknown'
+            const entry: any = { containerName: c.name, state, bgpNeighbors: [] }
+
+            if (state === 'running') {
+                let bgpCmd: string[] | null = null
+                const kind = (c.kind || '').toLowerCase()
+                if (kind.includes('sonic') || kind.includes('frr')) { bgpCmd = ['vtysh', '-c', 'show bgp summary json'] }
+                else if (kind.includes('srl') || kind.includes('nokia')) { bgpCmd = ['sr_cli', '-d', 'show network-instance default protocols bgp neighbor'] }
+                else if (kind.includes('ceos') || kind.includes('arista')) { bgpCmd = ['Cli', '-p', '15', '-c', 'show bgp summary | json'] }
+                else if (kind.includes('crpd') || kind.includes('juniper') || kind.includes('junos')) { bgpCmd = ['cli', '-c', 'show bgp summary'] }
+
+                if (bgpCmd) {
+                    try {
+                        const quotedArgs = bgpCmd.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')
+                        const cmdStr = `docker exec ${c.name} ${quotedArgs}`
+                        console.log(`[CONTAINER-POLL] BGP cmd: ${cmdStr}${remote ? ` (via ${remote.host})` : ''}`)
+                        const { stdout: bgpOut, stderr: bgpErr } = await dockerCmd(cmdStr, remote, 15_000)
+                        if (bgpErr) { console.log(`[CONTAINER-POLL] BGP stderr: ${bgpErr.trim().slice(0, 100)}`) }
+                        console.log(`[CONTAINER-POLL] BGP output (${bgpOut.length} chars): ${bgpOut.trim().slice(0, 200)}`)
+                        // Parse BGP output — try JSON first (FRR/SONiC/Arista), fall back to regex
+                        let parsed = false
+                        try {
+                            const json = JSON.parse(bgpOut.trim())
+                            // FRR/SONiC: { ipv4Unicast: { peers: { "10.0.0.1": { remoteAs, state, pfxRcd } } } }
+                            const afi = json.ipv4Unicast ?? json.ipv6Unicast ?? json
+                            const peers = afi.peers ?? json.peers ?? {}
+                            for (const [ip, info] of Object.entries<any>(peers)) {
+                                const rawState = (info.state || info.bgpState || '').toLowerCase()
+                                const state = rawState.includes('establ') ? 'established'
+                                    : rawState.includes('active') ? 'active'
+                                    : rawState.includes('connect') ? 'connect'
+                                    : rawState.includes('idle') ? 'idle'
+                                    : rawState.includes('opensent') ? 'opensent'
+                                    : rawState.includes('openconfirm') ? 'openconfirm'
+                                    : rawState || 'unknown'
+                                entry.bgpNeighbors.push({
+                                    neighborIp: ip,
+                                    state,
+                                    asn: info.remoteAs ?? info.asn ?? 0,
+                                    prefixCount: info.pfxRcd ?? info.prefixReceivedCount ?? 0,
+                                })
+                            }
+                            parsed = Object.keys(peers).length > 0
+                            if (parsed) { console.log(`[CONTAINER-POLL] ${c.name}: parsed ${entry.bgpNeighbors.length} BGP peers from JSON`) }
+                        } catch { /* not JSON, fall through to regex */ }
+
+                        // Regex fallback for text-based outputs (Nokia SRL, Juniper cRPD, etc.)
+                        if (!parsed) {
+                            const ipRe = /(\d+\.\d+\.\d+\.\d+)/
+                            const stateWords = ['establ', 'active', 'connect', 'idle', 'openconfirm', 'opensent']
+                            for (const line of bgpOut.split('\n')) {
+                                const ipMatch = line.match(ipRe)
+                                if (!ipMatch) continue
+                                const lower = line.toLowerCase()
+                                let bgpState = 'unknown'
+                                for (const sw of stateWords) {
+                                    if (lower.includes(sw)) { bgpState = sw === 'establ' ? 'established' : sw; break }
+                                }
+                                if (bgpState === 'unknown' && !lower.includes('neighbor')) continue
+                                const asnMatch = line.match(/\b(\d{4,6})\b/)
+                                entry.bgpNeighbors.push({
+                                    neighborIp: ipMatch[1],
+                                    state: bgpState,
+                                    asn: asnMatch ? Number(asnMatch[1]) : 0,
+                                    prefixCount: 0,
+                                })
+                            }
+                        }
+                    } catch (bgpErr: any) { console.log(`[CONTAINER-POLL] BGP failed for ${c.name}: ${bgpErr.message?.slice(0, 100)}`) }
+                }
+            }
+
+            results.push(entry)
+        }
+
+        console.log(`[CONTAINER-POLL] ${results.length} polled — ${results.filter(r => r.state === 'running').length} running`)
+        res.json({ ok: true, containers: results })
+    } catch (err: any) {
+        console.log(`[CONTAINER-POLL] ❌ Failed: ${err.message}`)
+        res.json({ ok: false, error: err.message, containers: [] })
+    }
 })
 
 // ─── Start server ───────────────────────────────────────────────────────────

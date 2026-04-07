@@ -105,9 +105,53 @@ jobs:
             dist/*.deb
             dist/*.rpm
 
+  build-server:
+    name: Build NetOps Server
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install
+
+      - name: Compile TypeScript
+        working-directory: server
+        run: npx tsc
+
+      - name: Install production dependencies only
+        working-directory: server
+        run: npm prune --production
+
+      - name: Create server tarball
+        run: |
+          VERSION=$(node -p "require('./server/package.json').version")
+          mkdir -p server-build/netops-server-${VERSION}
+          cp server/package.json server/install.sh server/Dockerfile server/docker-compose.yml server-build/netops-server-${VERSION}/
+          [ -f server/README.md ] && cp server/README.md server-build/netops-server-${VERSION}/ || true
+          cp -R server/src server-build/netops-server-${VERSION}/src
+          cp -R server/dist server-build/netops-server-${VERSION}/dist
+          cp -R server/node_modules server-build/netops-server-${VERSION}/node_modules
+          cd server-build
+          tar czf netops-server-${VERSION}-linux.tar.gz netops-server-${VERSION}/
+          echo "✅ Server tarball: netops-server-${VERSION}-linux.tar.gz ($(du -h netops-server-${VERSION}-linux.tar.gz | cut -f1))"
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netops-server
+          path: server-build/*.tar.gz
+
   release:
     name: Create Release
-    needs: [build-mac, build-windows, build-linux]
+    needs: [build-mac, build-windows, build-linux, build-server]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     env:
@@ -121,7 +165,7 @@ jobs:
         uses: actions/download-artifact@v4
 
       - name: List artifacts
-        run: find . -type f -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" -o -name "*.msi"
+        run: find . -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" -o -name "*.msi" -o -name "*.tar.gz" \)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -130,5 +174,6 @@ jobs:
             netops-mac/*
             netops-windows/*
             netops-linux/*
+            netops-server/*
           generate_release_notes: true
           draft: false
