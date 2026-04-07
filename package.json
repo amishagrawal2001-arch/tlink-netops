@@ -2,7 +2,11 @@
   "name": "tlink-netops",
   "version": "1.0.0",
   "description": "Professional Network Topology Design & Management Tool",
-  "author": "Tlink Technologies",
+  "author": {
+    "name": "Tlink Technologies",
+    "email": "support@tlink.io"
+  },
+  "homepage": "https://github.com/amishagrawal2001-arch/tlink-netops",
   "license": "SEE LICENSE IN LICENSE",
   "main": "app/dist/main.js",
   "type": "commonjs",
