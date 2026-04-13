@@ -1217,6 +1217,56 @@ export class TopologyService {
     // ── Service Profiles ──────────────────────────────────────────────────────
 
     /**
+     * Bulk-assign a routing protocol to topology nodes.
+     * Clears previous protocol fields and sets new ones based on role.
+     * @param nodeIds  If provided, only apply to these nodes; otherwise apply to all.
+     * @returns Number of nodes affected.
+     */
+    applyProtocol (
+        proto: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis',
+        config: { spineAsnStart?: number; leafAsnStart?: number; ospfArea?: number; isisLevel?: 1 | 2 | 12 },
+        nodeIds?: Set<string>,
+    ): number {
+        const nodes = nodeIds?.size
+            ? this.topology.nodes.filter(n => nodeIds.has(n.id))
+            : this.topology.nodes
+
+        // Clear old protocol fields
+        for (const n of nodes) {
+            n.asn = undefined
+            n.ospfArea = undefined
+            n.isisLevel = undefined
+        }
+
+        if (proto === 'ebgp') {
+            const spineAsnStart = config.spineAsnStart ?? 65000
+            const leafAsnStart  = config.leafAsnStart ?? 65100
+            let spineIdx = 0, leafIdx = 0, otherIdx = 0
+            for (const n of nodes) {
+                if (n.role === 'spine' || n.role === 'super-spine') { n.asn = spineAsnStart + spineIdx++ }
+                else if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') { n.asn = leafAsnStart + leafIdx++ }
+                else { n.asn = (leafAsnStart) + 200 + otherIdx++ }
+            }
+        } else if (proto === 'ibgp-rr') {
+            const sharedAsn = config.spineAsnStart ?? 65000
+            for (const n of nodes) { n.asn = sharedAsn; n.ospfArea = 0 }
+        } else if (proto === 'ospf' || proto === 'ospfv3') {
+            for (const n of nodes) { n.ospfArea = config.ospfArea ?? 0 }
+        } else if (proto === 'isis') {
+            let sidIdx = 1
+            for (const n of nodes) {
+                if (n.role === 'spine' || n.role === 'super-spine') { n.isisLevel = config.isisLevel ?? 2 }
+                else if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') { n.isisLevel = 12 }
+                else { n.isisLevel = config.isisLevel ?? 2 }
+                n.nodeSid = sidIdx++
+            }
+        }
+
+        this.topology.underlayProtocol = proto === 'none' ? undefined : proto as any
+        return nodes.length
+    }
+
+    /**
      * Apply a service profile to the current topology.
      * Sets VLANs on all nodes and configures port modes based on role + link direction.
      * @param overwrite  If true, overwrites existing VLAN/port configs; otherwise skips already-configured ports.
@@ -1277,18 +1327,20 @@ export class TopologyService {
                 const isFree = !isConnected
 
                 // Find first matching rule for this port
+                let ruleMatched = false
                 for (const rule of profile.portRules) {
                     if (!rule.roles.includes(nodeRole)) { continue }
 
-                    let matches = false
+                    let scopeMatch = false
                     switch (rule.scope) {
-                        case 'uplinks':       matches = isUplink; break
-                        case 'downlinks':     matches = isDownlink; break
-                        case 'all-connected': matches = isConnected; break
-                        case 'free-ports':    matches = isFree; break
+                        case 'uplinks':       scopeMatch = isUplink; break
+                        case 'downlinks':     scopeMatch = isDownlink; break
+                        case 'all-connected': scopeMatch = isConnected; break
+                        case 'free-ports':    scopeMatch = isFree; break
                     }
-                    if (!matches) { continue }
+                    if (!scopeMatch) { continue }
 
+                    ruleMatched = true
                     // Skip if port already configured and not overwriting
                     if (!overwrite && port.vlanMode) { break }
 
@@ -1298,6 +1350,16 @@ export class TopologyService {
                         vlan: rule.vlanMode === 'access' ? rule.accessVlan : port.vlan,
                         trunkNativeVlan: rule.vlanMode === 'trunk' ? rule.trunkNativeVlan : port.trunkNativeVlan,
                         trunkAllowedVlans: rule.vlanMode === 'trunk' ? rule.trunkAllowedVlans : port.trunkAllowedVlans,
+                    }
+                }
+
+                // Fallback: if no rule matched (e.g. node role not in any rule),
+                // default connected ports to trunk and free ports to access
+                if (!ruleMatched && (overwrite || !port.vlanMode)) {
+                    if (isConnected) {
+                        return { ...port, vlanMode: 'trunk' as const, trunkNativeVlan: 999, trunkAllowedVlans: 'all' }
+                    } else if (isFree && vlans.length) {
+                        return { ...port, vlanMode: 'access' as const, vlan: vlans[0].id }
                     }
                 }
 

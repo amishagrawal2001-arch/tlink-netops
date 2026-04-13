@@ -466,6 +466,15 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // Health summary widget
     showHealthWidget = false
 
+    // Set Protocol dialog
+    showProtocolDialog = false
+    protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' = 'none'
+    protocolSpineAsn = 65000
+    protocolLeafAsn = 65100
+    protocolOspfArea = 0
+    protocolIsisLevel: 1 | 2 | 12 = 2
+    protocolScope: 'all' | 'selected' = 'all'
+
     // Bulk credential dialog
     showBulkCredDialog = false
     bulkCredVendor = ''
@@ -547,11 +556,12 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         { selector: '.netops-svg', title: 'Connect Shapes', description: 'Hover over a device edge to see a green dot. Drag from it to another device to create a link between them.', position: 'bottom', demo: true },
         { selector: '.netops-svg', title: 'Link Styling', description: 'Right-click any link to change its color, dash pattern, arrow style, and line weight.', position: 'bottom', demo: 'styling' },
         { selector: '.netops-svg', title: 'Link Labels', description: 'Double-click any link to add a text label. Click an existing label to edit it, or drag to reposition.', position: 'bottom', demo: 'labels' },
-        { selector: '.netops-svg', title: 'Templates', description: 'Load pre-built topology templates instantly. Templates include Flowchart, 3-Tier Network, Cloud Architecture, and more. Click a template in the palette to apply it.', position: 'bottom', demo: 'template' },
-        { selector: '.netops-svg', title: 'Build Custom Topology', description: 'Combine shapes, devices, links, labels, and images to build your own custom network diagram. Use snap guides for precise alignment.', position: 'bottom', demo: 'custom' },
+        { selector: '.netops-svg', title: 'Templates (157 Presets)', description: '157 pre-built templates across 13 vendors. Container templates deploy with one click. Design templates are vendor-agnostic starting points.', position: 'bottom', demo: 'template' },
+        { selector: '.netops-svg', title: 'Set Protocol & Services', description: 'After loading a template, use Devices → Set Protocol to bulk-assign BGP/OSPF/ISIS, and Devices → Apply Service Profile to configure VLANs and port modes.', position: 'bottom', demo: 'custom' },
+        { selector: '.netops-svg', title: 'Deploy & Monitor', description: 'Deploy to containerlab via Simulate → Deploy Containerlab. Switch to the Twin tab to see real-time CPU, memory, BGP state, and alarms across all containers.', position: 'bottom' },
         { selector: '.zoom-controls', title: 'Zoom Controls', description: 'Use these controls to zoom in/out, reset to 100%, or fit all elements in view. You can also scroll to zoom.', position: 'top' },
         { selector: '.canvas-minimap', title: 'Minimap', description: 'The minimap shows an overview of your entire topology. Click on it to navigate quickly.', position: 'top' },
-        { selector: '.topbar-actions', title: 'Export & Tools', description: 'Save, undo/redo, toggle link mode, switch themes, and export your topology as SVG or PNG.', position: 'bottom' },
+        { selector: '.topbar-actions', title: 'Export & Tools', description: 'Save, undo/redo, toggle link mode, switch themes, and export your topology as SVG, PNG, Ansible, Terraform, or containerlab YAML.', position: 'bottom' },
         { selector: '.topbar-actions', title: 'Keyboard Shortcuts', description: 'Press ? at any time to see all available keyboard shortcuts, or check the Help panel for the full list.', position: 'bottom' },
     ]
 
@@ -559,20 +569,24 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         {
             id: 'whats-new', title: "What's New", icon: '✦', content: `
 <div class="help-whats-new-cards">
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Traffic Flow Visualization</strong> — Simulate and visualize traffic paths across your topology</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>BGP Neighbor Table</strong> — View and manage BGP peering sessions per device</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Config Backup & Diff</strong> — Snapshot and compare device configurations over time</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Set Protocol Dialog</strong> — Bulk-assign BGP, OSPF, or IS-IS to all nodes via Devices &rarr; Set Protocol</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Template Type Badges</strong> — Templates now show Container or Design badges with vendor labels</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Multi-Server Container Polling</strong> — Monitor containers deployed on any remote server via SSH</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Digital Twin Dashboard</strong> — Live CPU, memory, BGP, alarms, and config drift monitoring</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Service Profiles</strong> — Apply EVPN-VXLAN, MPLS SP, Campus LAN profiles via Devices &rarr; Apply Service Profile</div>
 </div>`
         },
         {
             id: 'common-tasks', title: 'Common Tasks', icon: '⚡', content: `
 <div class="help-quickref">
   <div class="help-quickref-item"><span class="help-qr-icon">➕</span><div><strong>Add a device</strong><br><span class="help-muted">Drag from palette onto canvas</span></div></div>
-  <div class="help-quickref-item"><span class="help-qr-icon">🔗</span><div><strong>Connect devices</strong><br><span class="help-muted">Hover edge → drag green dot</span></div></div>
-  <div class="help-quickref-item"><span class="help-qr-icon">🏷</span><div><strong>Add a label</strong><br><span class="help-muted">Double-click any link</span></div></div>
-  <div class="help-quickref-item"><span class="help-qr-icon">💾</span><div><strong>Save topology</strong><br><span class="help-muted"><kbd>Ctrl</kbd>+<kbd>S</kbd></span></div></div>
-  <div class="help-quickref-item"><span class="help-qr-icon">📤</span><div><strong>Export image</strong><br><span class="help-muted">File → Export as PNG/SVG</span></div></div>
-  <div class="help-quickref-item"><span class="help-qr-icon">📋</span><div><strong>Load a template</strong><br><span class="help-muted">File → Templates</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">🔗</span><div><strong>Connect devices</strong><br><span class="help-muted">Hover edge &rarr; drag green dot</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">📋</span><div><strong>Load a template</strong><br><span class="help-muted">File &rarr; Templates (157 presets)</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">⚙</span><div><strong>Set routing protocol</strong><br><span class="help-muted">Devices &rarr; Set Protocol (BGP/OSPF/ISIS)</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">⬡</span><div><strong>Apply service profile</strong><br><span class="help-muted">Devices &rarr; Apply Service Profile</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">◌</span><div><strong>Auto-assign IPs</strong><br><span class="help-muted">Devices &rarr; Auto-Assign IPv4 /30 IPs</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">▶</span><div><strong>Deploy lab</strong><br><span class="help-muted">Simulate &rarr; Deploy Containerlab</span></div></div>
+  <div class="help-quickref-item"><span class="help-qr-icon">📡</span><div><strong>Start live monitor</strong><br><span class="help-muted">Simulate &rarr; Start Live Monitor (Twin tab)</span></div></div>
 </div>`
         },
         {
@@ -689,19 +703,63 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         },
         {
             id: 'templates', title: 'Templates', icon: '▤', content: `
-<p class="help-desc">Load pre-built network topology templates instantly:</p>
-<div class="help-template-chips">
-  <span class="help-chip">↔ Point-to-Point</span>
-  <span class="help-chip">✦ Hub & Spoke</span>
-  <span class="help-chip">△ Three-Tier LAN</span>
-  <span class="help-chip">○ Ring</span>
-  <span class="help-chip">◆ Full Mesh</span>
-  <span class="help-chip">🛡 DMZ / Perimeter</span>
-  <span class="help-chip">🏗 Spine-Leaf</span>
-  <span class="help-chip">☸ K8s Fabric</span>
-</div>
-<p class="help-desc">Access templates from <strong>File → Templates</strong> or the Templates section in the palette.</p>
-<div class="help-tryit">💡 <strong>Try it:</strong> Click "Load Template" below to try a pre-built topology!</div>`
+<p class="help-desc">157 pre-built templates across 13 vendors and 11 categories.</p>
+<h4 class="help-h4">Template Types</h4>
+<ul class="help-list">
+  <li><strong style="color:#00d2ff">Container</strong> — Vendor-specific templates (SONiC, Juniper, Arista, etc.) with Deploy &amp; Config buttons. One-click containerlab deployment.</li>
+  <li><strong style="color:#f59e0b">Design</strong> — Generic topology patterns (Point-to-Point, Hub &amp; Spoke, Ring, Mesh). Set vendor and protocol after loading.</li>
+</ul>
+<h4 class="help-h4">Workflow for Design Templates</h4>
+<ol class="help-steps">
+  <li>Load template &rarr; <strong>Devices &rarr; Set Protocol</strong> (assign BGP/OSPF/ISIS)</li>
+  <li>Set vendor on nodes (click node or use Bulk Credentials)</li>
+  <li><strong>Devices &rarr; Auto-Assign IPs</strong></li>
+  <li>Click node &rarr; Config tab &rarr; <strong>Regenerate Config</strong></li>
+</ol>
+<p class="help-desc">Access templates from <strong>File &rarr; Templates</strong> or the Templates section in the palette.</p>`
+        },
+        {
+            id: 'protocols', title: 'Protocols & Services', icon: '⚙', content: `
+<h4 class="help-h4">Set Protocol (Devices &rarr; Set Protocol...)</h4>
+<p class="help-desc">Bulk-assign a routing protocol to all or selected nodes:</p>
+<ul class="help-list">
+  <li><strong>eBGP Clos</strong> — Unique ASN per node based on role (spine: 65000+, leaf: 65100+)</li>
+  <li><strong>iBGP with Route Reflector</strong> — Shared ASN, spines as route reflectors, OSPF area 0 for IGP</li>
+  <li><strong>OSPF / OSPFv3</strong> — Assign OSPF area to all nodes</li>
+  <li><strong>IS-IS</strong> — Assign IS-IS level (L1, L2, L1/L2) with auto Node-SID</li>
+</ul>
+<h4 class="help-h4">Apply Service Profile (Devices &rarr; Apply Service Profile...)</h4>
+<p class="help-desc">Bulk-configure VLANs and port modes based on node roles:</p>
+<ul class="help-list">
+  <li><strong>EVPN-VXLAN DC Fabric</strong> — Spine trunks, leaf access/trunk, tenant VLANs</li>
+  <li><strong>3-Tier DC</strong> — Core/agg/access with standard DC VLANs</li>
+  <li><strong>Campus LAN</strong> — Data, voice, guest, IoT VLANs</li>
+  <li><strong>MPLS SP Core</strong> — PE-CE with customer VRF VLANs</li>
+  <li><strong>K8s Container Fabric</strong> — Compute, storage, management VLANs</li>
+  <li><strong>Branch Office</strong> — WAN uplink trunks, local access</li>
+</ul>
+<div class="help-tryit">Tip: Service profiles work best when nodes have <strong>roles</strong> assigned (spine, leaf, etc.). For design templates without roles, a sensible default is applied.</div>`
+        },
+        {
+            id: 'simulation', title: 'Simulation & Twin', icon: '📡', content: `
+<h4 class="help-h4">Deploy Containerlab</h4>
+<ol class="help-steps">
+  <li>Load a container template (or set vendors on design template nodes)</li>
+  <li><strong>Simulate &rarr; Deploy Containerlab</strong></li>
+  <li>Wait for containers to start and configs to push</li>
+  <li>BGP sessions establish automatically</li>
+</ol>
+<h4 class="help-h4">Digital Twin Dashboard</h4>
+<p class="help-desc">Click the <strong>Twin</strong> tab in the bottom bar to open the live dashboard:</p>
+<ul class="help-list">
+  <li><strong>Status</strong> — Running/stopped per container</li>
+  <li><strong>CPU &amp; Memory</strong> — Real-time gauges</li>
+  <li><strong>BGP</strong> — Neighbor count and session states</li>
+  <li><strong>Alarms</strong> — Threshold-based alerts</li>
+  <li><strong>Drift</strong> — Config drift detection</li>
+</ul>
+<h4 class="help-h4">Multi-Server Monitoring</h4>
+<p class="help-desc">Monitor containers on any server. The backend server SSHes into remote Docker hosts to poll containers. Configure servers via <strong>Simulate &rarr; Server Manager</strong>.</p>`
         },
         {
             id: 'import-export', title: 'Import & Export', icon: '⤓', content: `
@@ -773,13 +831,13 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     ]
 
     readonly welcomeFeatures = [
-        { icon: '⬡', title: 'Draw Shapes', desc: 'Rectangles, circles, diamonds, and more' },
-        { icon: '⤢', title: 'Connect Shapes', desc: 'Drag from edges to create links' },
-        { icon: '🎨', title: 'Style Links', desc: 'Arrows, colors, dashes, weight' },
-        { icon: '✎', title: 'Add Labels', desc: 'Double-click links to label them' },
-        { icon: '🖼', title: 'Import Images', desc: 'Drag & drop PNG, JPG, SVG, GIF' },
-        { icon: '▤', title: 'Use Templates', desc: 'Pre-built network diagrams' },
-        { icon: '⤓', title: 'Export', desc: 'SVG, PNG, and JSON formats' },
+        { icon: '▤', title: '157 Templates', desc: '13 vendors, container & design types' },
+        { icon: '⚙', title: 'Set Protocol', desc: 'Bulk-assign BGP, OSPF, or IS-IS' },
+        { icon: '⬡', title: 'Service Profiles', desc: 'EVPN-VXLAN, MPLS, Campus LAN' },
+        { icon: '▶', title: 'Deploy Lab', desc: 'One-click containerlab deployment' },
+        { icon: '📡', title: 'Digital Twin', desc: 'Live CPU, BGP, alarms dashboard' },
+        { icon: '🔗', title: 'Device Mapping', desc: 'Map virtual to physical devices' },
+        { icon: '⤓', title: 'Export Anywhere', desc: 'Ansible, Terraform, clab YAML' },
         { icon: '⌨', title: 'Shortcuts', desc: 'Press ? for keyboard shortcuts' },
     ]
 
@@ -5722,6 +5780,37 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             bgpUp: this.liveSummary.bgpUp,
             bgpTotal: this.liveSummary.bgpTotal,
         }
+    }
+
+    // ── Set Protocol dialog ────────────────────────────────────────────────
+
+    openProtocolDialog (): void {
+        const current = this.topology.underlayProtocol
+        this.protocolChoice = current ?? 'none'
+        this.protocolSpineAsn = 65000
+        this.protocolLeafAsn = 65100
+        this.protocolOspfArea = 0
+        this.protocolIsisLevel = 2
+        this.protocolScope = this.selectedNodeIds.size > 0 ? 'selected' : 'all'
+        this.showProtocolDialog = true
+        this.cdr.markForCheck()
+    }
+
+    applyProtocol (): void {
+        const nodeIds = this.protocolScope === 'selected' && this.selectedNodeIds.size
+            ? this.selectedNodeIds
+            : undefined
+        const count = this.svc.applyProtocol(this.protocolChoice, {
+            spineAsnStart: this.protocolSpineAsn,
+            leafAsnStart: this.protocolLeafAsn,
+            ospfArea: this.protocolOspfArea,
+            isisLevel: this.protocolIsisLevel,
+        }, nodeIds)
+        this.showProtocolDialog = false
+        this.statusMsg = this.protocolChoice === 'none'
+            ? `Cleared protocol from ${count} node(s)`
+            : `Applied ${this.protocolChoice.toUpperCase()} to ${count} node(s)`
+        this.cdr.markForCheck()
     }
 
     // ── Bulk credential setting ──────────────────────────────────────────────

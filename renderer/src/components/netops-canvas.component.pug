@@ -335,6 +335,9 @@
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openServiceDialog(); closeMenus()')
           span.mi-icon ⬡
           span.mi-label Apply Service Profile…
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openProtocolDialog(); closeMenus()')
+          span.mi-icon ⚙
+          span.mi-label Set Protocol…
 
     //- ── Inventory ────────────────────────
     .menu-item-wrap
@@ -3414,6 +3417,51 @@
       .auto-ip-actions
         button.btn-tool(type='button', (click)='applyBulkCredentials()') Apply
         button.btn-tool(type='button', (click)='showBulkCredDialog = false') Cancel
+
+  //- ── Set Protocol dialog ────────────────────────────────────────────
+  .auto-ip-overlay(*ngIf='showProtocolDialog', (click)='showProtocolDialog = false')
+    .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()')
+      .auto-ip-title Set Routing Protocol
+      .bulk-cred-form
+        .bulk-cred-row
+          span.bulk-cred-label Protocol
+          select.bulk-cred-input([(ngModel)]='protocolChoice')
+            option(value='none') — None (clear) —
+            option(value='ebgp') eBGP Clos (unique ASN/node)
+            option(value='ibgp-rr') iBGP with Route Reflector
+            option(value='ospf') OSPF
+            option(value='ospfv3') OSPFv3 (IPv6)
+            option(value='isis') IS-IS
+        ng-container(*ngIf='protocolChoice === "ebgp"')
+          .bulk-cred-row
+            span.bulk-cred-label Spine ASN Start
+            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolSpineAsn')
+          .bulk-cred-row
+            span.bulk-cred-label Leaf ASN Start
+            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolLeafAsn')
+        ng-container(*ngIf='protocolChoice === "ibgp-rr"')
+          .bulk-cred-row
+            span.bulk-cred-label Shared ASN
+            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolSpineAsn')
+        ng-container(*ngIf='protocolChoice === "ospf" || protocolChoice === "ospfv3"')
+          .bulk-cred-row
+            span.bulk-cred-label OSPF Area
+            input.bulk-cred-input(type='number', min='0', [(ngModel)]='protocolOspfArea', placeholder='0 (backbone)')
+        ng-container(*ngIf='protocolChoice === "isis"')
+          .bulk-cred-row
+            span.bulk-cred-label IS-IS Level
+            select.bulk-cred-input([(ngModel)]='protocolIsisLevel')
+              option([ngValue]='1') Level 1
+              option([ngValue]='2') Level 2
+              option([ngValue]='12') L1/L2
+        .bulk-cred-row
+          span.bulk-cred-label Scope
+          select.bulk-cred-input([(ngModel)]='protocolScope')
+            option(value='all') All nodes ({{ topology.nodes.length }})
+            option(value='selected') Selected nodes ({{ selectedNodeIds.size }})
+      .auto-ip-actions
+        button.btn-tool(type='button', (click)='applyProtocol()') Apply
+        button.btn-tool(type='button', (click)='showProtocolDialog = false') Cancel
 
   //- ── vrnetlab Image Builder ────────────────────────────────────────
   .auto-ip-overlay(*ngIf='showVrnetlabBuilder', (click)='closeVrnetlabBuilder()')
