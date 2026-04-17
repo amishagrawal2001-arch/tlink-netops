@@ -265,9 +265,11 @@
               .form-row
                 label IRB Mode
                 select([(ngModel)]='irbMode')
-                  option(value='none') None (L2 only)
-                  option(value='symmetric') Symmetric IRB (L3 VNI + Type-5 VRF)
-                  option(value='asymmetric') Asymmetric IRB (all VLANs on all leaves)
+                  option(value='none') None (L2 only — no inter-VLAN routing)
+                  option(value='symmetric') ERB — Edge-Routed Bridging (symmetric, distributed gateway on leaves)
+                  option(value='asymmetric') CRB — Centrally-Routed Bridging (asymmetric, centralized gateway on spines)
+              .form-hint(*ngIf='irbMode === "symmetric"') ERB: spines are pure L3 route reflectors. Each leaf has IRB gateway + L3 VNI for inter-subnet routing.
+              .form-hint(*ngIf='irbMode === "asymmetric"') CRB: spines have IRB for centralized inter-VLAN routing. Leaves are L2-only bridges.
               .form-row(*ngIf='irbMode !== "none"')
                 label Gateway Base
                 input(type='text', [(ngModel)]='irbGatewayBase', placeholder='192.168')
@@ -358,8 +360,8 @@
             span.preview-label EVPN Overlay
             span.preview-value VNI {{ vniBase }}+
           .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
-            span.preview-label IRB Mode
-            span.preview-value {{ irbMode === 'symmetric' ? 'Symmetric (L3 VNI)' : 'Asymmetric' }}
+            span.preview-label Routing Model
+            span.preview-value {{ irbMode === 'symmetric' ? 'ERB (Symmetric IRB)' : 'CRB (Asymmetric IRB)' }}
           .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
             span.preview-label Gateway
             span.preview-value {{ irbGatewayBase }}.&lt;vlan&gt;.1/24
@@ -463,7 +465,7 @@
             span.preview-value {{ bulkVlanPreview.count }}
           .preview-stat(*ngIf='irbMode !== "none" && overlayEnabled')
             span.preview-label IRB
-            span.preview-value {{ irbMode === 'symmetric' ? 'Sym' : 'Asym' }}
+            span.preview-value {{ irbMode === 'symmetric' ? 'ERB' : 'CRB' }}
 
         //- Service profile details
         .svc-preview-panel(*ngIf='servicePreview')

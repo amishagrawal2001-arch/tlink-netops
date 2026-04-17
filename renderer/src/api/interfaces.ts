@@ -37,6 +37,9 @@ export interface ContainerLiveStatus {
     containerName: string
     state: string
     bgpNeighbors: BgpNeighborEntry[]
+    srEnabled?: boolean         // SR-MPLS status (polled on supported vendors)
+    srLabelsCount?: number      // SR-MPLS label binding count
+    vniActive?: number          // Active VXLAN VNI count
 }
 
 export interface LiveStatusPollResult {
@@ -1518,6 +1521,208 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         ],
     },
 
+    // ── CRB (Centrally-Routed Bridging) Templates ──────────────────────────────
+
+    {
+        id: 'jnpr-crb-fabric-large',
+        name: 'Juniper CRB Fabric (Large)',
+        description: '2 QFX5220 spines (centralized L3 gateway + IRB) + 4 QFX5120 leafs (L2 bridges). Asymmetric IRB with EVPN-VXLAN.',
+        icon: '🔶',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 220, y: 60,
+                vendor: 'Juniper', model: 'QFX5220-32CD', switchFamily: 'QFX', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                    { id: 'e3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to Leaf-4', ipAddress: '10.10.0.6/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 460, y: 60,
+                vendor: 'Juniper', model: 'QFX5220-32CD', switchFamily: 'QFX', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                    { id: 'e3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to Leaf-4', ipAddress: '10.10.1.6/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 60, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                    { id: 'e3', label: 'xe-0/0/3', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 240, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-3' },
+                    { id: 'e3', label: 'xe-0/0/3', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-4' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 420, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-5' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-4', x: 600, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.14/32', asn: 65014, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.7/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.7/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-6' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 20, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 100, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 200, y: 440 },
+            { type: 'server', label: 'Srv-4', x: 280, y: 440 },
+            { type: 'server', label: 'Srv-5', x: 420, y: 440 },
+            { type: 'server', label: 'Srv-6', x: 600, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 5, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 2, sourcePort: 'e3', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e3', targetNode: 9, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 10, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e2', targetNode: 11, targetPort: 'eth0' },
+        ],
+    },
+
+    // ── ERB (Edge-Routed Bridging) Templates ─────────────────────────────────
+
+    {
+        id: 'jnpr-erb-fabric-large',
+        name: 'Juniper ERB Fabric (Large)',
+        description: '2 QFX5220 spines (L3-only RR) + 4 QFX5120 leafs (distributed IRB gateway). Symmetric IRB with L3 VNI.',
+        icon: '🔹',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 220, y: 60,
+                vendor: 'Juniper', model: 'QFX5220-32CD', switchFamily: 'QFX', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                    { id: 'e3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to Leaf-4', ipAddress: '10.10.0.6/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 460, y: 60,
+                vendor: 'Juniper', model: 'QFX5220-32CD', switchFamily: 'QFX', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                    { id: 'e3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to Leaf-4', ipAddress: '10.10.1.6/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 60, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                    { id: 'e3', label: 'xe-0/0/3', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 240, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-3' },
+                    { id: 'e3', label: 'xe-0/0/3', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-4' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 420, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-5' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-4', x: 600, y: 280,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX', loopbackIp: '10.0.0.14/32', asn: 65014, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.7/31' },
+                    { id: 'e1', label: 'xe-0/0/1', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.7/31' },
+                    { id: 'e2', label: 'xe-0/0/2', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-6' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 20, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 100, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 200, y: 440 },
+            { type: 'server', label: 'Srv-4', x: 280, y: 440 },
+            { type: 'server', label: 'Srv-5', x: 420, y: 440 },
+            { type: 'server', label: 'Srv-6', x: 600, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 5, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 5, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 2, sourcePort: 'e3', targetNode: 7, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 8, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e3', targetNode: 9, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 10, targetPort: 'eth0' },
+            { sourceNode: 5, sourcePort: 'e2', targetNode: 11, targetPort: 'eth0' },
+        ],
+    },
+
     {
         id: 'jnpr-dc-evpn-vxlan',
         name: 'Juniper EVPN-VXLAN Fabric',
@@ -2209,6 +2414,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -12610,6 +12816,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -12944,6 +13151,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -13036,6 +13244,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'asymmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -13129,6 +13338,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         overlayEnabled: true,
         macVrfEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '10.10',
         vniBase: 50000,
         nodes: [
@@ -13315,6 +13525,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         overlayEnabled: true,
         macVrfEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '10.10',
         vniBase: 50000,
         nodes: [
@@ -13423,6 +13634,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         overlayEnabled: true,
         macVrfEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '10.10',
         vniBase: 50000,
         nodes: [
@@ -13540,6 +13752,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -13802,6 +14015,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         underlayProtocol: 'ebgp',
         overlayEnabled: true,
         irbEnabled: true,
+        irbMode: 'symmetric',
         irbGatewayBase: '192.168',
         vniBase: 10000,
         nodes: [
@@ -14725,6 +14939,89 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
 
     // ── Cisco IOS-XR SR-MPLS Core ─────────────────────────────────────────────
     {
+        id: 'cisco-iosxr-srv6',
+        name: 'Cisco IOS-XR SRv6',
+        description: '2 ASR 9910 P-routers + 3 ASR 9006 PE-routers. SRv6 with IS-IS underlay and locator prefixes.',
+        icon: '🟠',
+        category: 'segment-routing',
+        underlayProtocol: 'isis',
+        nodes: [
+            {
+                type: 'router', label: 'P-1', x: 200, y: 60,
+                vendor: 'Cisco', model: 'ASR 9910',
+                loopbackIp: '10.0.0.1/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srv6Locator: 'fc00:0:1::/48',
+                ports: [
+                    { id: 'e0', label: 'HundredGigE0/0/0/0', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.0.0/31' },
+                    { id: 'e1', label: 'HundredGigE0/0/0/1', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.1.0/31' },
+                    { id: 'e2', label: 'HundredGigE0/0/0/2', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.2.0/31' },
+                    { id: 'e3', label: 'HundredGigE0/0/0/3', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.3.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'P-2', x: 480, y: 60,
+                vendor: 'Cisco', model: 'ASR 9910',
+                loopbackIp: '10.0.0.2/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srv6Locator: 'fc00:0:2::/48',
+                ports: [
+                    { id: 'e0', label: 'HundredGigE0/0/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.0.1/31' },
+                    { id: 'e1', label: 'HundredGigE0/0/0/1', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.4.0/31' },
+                    { id: 'e2', label: 'HundredGigE0/0/0/2', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.5.0/31' },
+                    { id: 'e3', label: 'HundredGigE0/0/0/3', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.6.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-1', x: 80, y: 260,
+                vendor: 'Cisco', model: 'ASR 9006',
+                loopbackIp: '10.0.0.3/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srv6Locator: 'fc00:0:3::/48',
+                ports: [
+                    { id: 'e0', label: 'HundredGigE0/0/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.1.1/31' },
+                    { id: 'e1', label: 'HundredGigE0/0/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.4.1/31' },
+                    { id: 'e2', label: 'TenGigE0/0/0/10', enabled: true, speed: '10G', description: 'CE-1' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-2', x: 340, y: 260,
+                vendor: 'Cisco', model: 'ASR 9006',
+                loopbackIp: '10.0.0.4/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srv6Locator: 'fc00:0:4::/48',
+                ports: [
+                    { id: 'e0', label: 'HundredGigE0/0/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.2.1/31' },
+                    { id: 'e1', label: 'HundredGigE0/0/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.5.1/31' },
+                    { id: 'e2', label: 'TenGigE0/0/0/10', enabled: true, speed: '10G', description: 'CE-2' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-3', x: 600, y: 260,
+                vendor: 'Cisco', model: 'ASR 9006',
+                loopbackIp: '10.0.0.5/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srv6Locator: 'fc00:0:5::/48',
+                ports: [
+                    { id: 'e0', label: 'HundredGigE0/0/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.3.1/31' },
+                    { id: 'e1', label: 'HundredGigE0/0/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.6.1/31' },
+                    { id: 'e2', label: 'TenGigE0/0/0/10', enabled: true, speed: '10G', description: 'CE-3' },
+                ],
+            },
+            { type: 'server', label: 'CE-1', x: 80, y: 440 },
+            { type: 'server', label: 'CE-2', x: 340, y: 440 },
+            { type: 'server', label: 'CE-3', x: 600, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 1, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
         id: 'cisco-iosxr-sr-mpls',
         name: 'Cisco IOS-XR SR-MPLS Core',
         description: '2 ASR 9910 P-routers + 4 ASR 9006 PE-routers. SR-MPLS with IS-IS underlay, TI-LFA, and Node SIDs.',
@@ -14821,6 +15118,861 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 3, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
             { sourceNode: 4, sourcePort: 'e2', targetNode: 8, targetPort: 'eth0' },
             { sourceNode: 5, sourcePort: 'e2', targetNode: 9, targetPort: 'eth0' },
+        ],
+    },
+
+    // ── Multi-vendor CRB/ERB templates ──────────────────────────────────────────
+
+    {
+        id: 'arista-crb-fabric',
+        name: 'Arista CRB Fabric',
+        description: '2 7280R3 spines (centralized IRB gateway) + 3 7050X3 leafs (L2 bridges). Asymmetric IRB with EVPN-VXLAN.',
+        icon: '🔶',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'arista-erb-fabric',
+        name: 'Arista ERB Fabric',
+        description: '2 7280R3 spines (L3-only RR) + 3 7050X3 leafs (distributed IRB gateway). Symmetric IRB with L3 VNI.',
+        icon: '🔹',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '25G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '25G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'cisco-nxos-crb-fabric',
+        name: 'Cisco NX-OS CRB Fabric',
+        description: '2 Nexus 9364C spines (centralized IRB gateway) + 3 Nexus 93180YC leafs (L2 bridges). Asymmetric IRB with EVPN-VXLAN.',
+        icon: '🔶',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Cisco', model: 'Nexus 9364C', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Cisco', model: 'Nexus 9364C', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'nokia-srl-crb-fabric',
+        name: 'Nokia SR Linux CRB Fabric',
+        description: '2 7250-IXR spines (centralized IRB gateway) + 3 7220-IXR-D3 leafs (L2 bridges). Asymmetric IRB with EVPN-VXLAN.',
+        icon: '🔶',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'sonic-crb-fabric',
+        name: 'SONiC CRB Fabric',
+        description: '2 AS7726-32X spines (centralized IRB gateway) + 3 AS7326-56X leafs (L2 bridges). Asymmetric IRB with EVPN-VXLAN.',
+        icon: '🔶',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'SONiC', model: 'Edgecore AS7726-32X', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet8', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'SONiC', model: 'Edgecore AS7726-32X', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet8', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'cisco-nxos-erb-fabric',
+        name: 'Cisco NX-OS ERB Fabric',
+        description: '2 Nexus 9364C spines (L3-only RR) + 3 Nexus 93180YC leafs (distributed IRB + L3 VNI). Symmetric IRB with EVPN-VXLAN.',
+        icon: '🔹',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Cisco', model: 'Nexus 9364C', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Cisco', model: 'Nexus 9364C', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Cisco', model: 'Nexus 93180YC-EX', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet1/49', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet1/50', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet1/1', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'nokia-srl-erb-fabric',
+        name: 'Nokia SR Linux ERB Fabric',
+        description: '2 7250-IXR spines (L3-only RR) + 3 7220-IXR-D3 leafs (distributed IRB). Symmetric IRB with EVPN-VXLAN.',
+        icon: '🔹',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    {
+        id: 'sonic-erb-fabric',
+        name: 'SONiC ERB Fabric',
+        description: '2 AS7726-32X spines (L3-only RR) + 3 AS7326-56X leafs (distributed IRB). Symmetric IRB with EVPN-VXLAN.',
+        icon: '🔹',
+        category: 'datacenter',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        nodes: [
+            {
+                type: 'switch', label: 'Spine-1', x: 200, y: 60,
+                vendor: 'SONiC', model: 'Edgecore AS7726-32X', loopbackIp: '10.0.0.1/32', asn: 65001, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.0.0/31' },
+                    { id: 'e1', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.0.2/31' },
+                    { id: 'e2', label: 'Ethernet8', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.0.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Spine-2', x: 440, y: 60,
+                vendor: 'SONiC', model: 'Edgecore AS7726-32X', loopbackIp: '10.0.0.2/32', asn: 65002, role: 'spine',
+                ports: [
+                    { id: 'e0', label: 'Ethernet0', enabled: true, speed: '100G', description: 'to Leaf-1', ipAddress: '10.10.1.0/31' },
+                    { id: 'e1', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to Leaf-2', ipAddress: '10.10.1.2/31' },
+                    { id: 'e2', label: 'Ethernet8', enabled: true, speed: '100G', description: 'to Leaf-3', ipAddress: '10.10.1.4/31' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-1', x: 80, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.11/32', asn: 65011, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.1/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.1/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-1' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-2', x: 320, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.12/32', asn: 65012, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.3/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.3/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 200, description: 'Srv-2' },
+                ],
+            },
+            {
+                type: 'switch', label: 'Leaf-3', x: 560, y: 280,
+                vendor: 'SONiC', model: 'Edgecore AS7326-56X', loopbackIp: '10.0.0.13/32', asn: 65013, role: 'leaf',
+                vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+                ports: [
+                    { id: 'e0', label: 'Ethernet48', enabled: true, speed: '100G', description: 'to Spine-1', ipAddress: '10.10.0.5/31' },
+                    { id: 'e1', label: 'Ethernet52', enabled: true, speed: '100G', description: 'to Spine-2', ipAddress: '10.10.1.5/31' },
+                    { id: 'e2', label: 'Ethernet0', enabled: true, speed: '25G', vlanMode: 'access', vlan: 100, description: 'Srv-3' },
+                ],
+            },
+            { type: 'server', label: 'Srv-1', x: 80, y: 440 },
+            { type: 'server', label: 'Srv-2', x: 320, y: 440 },
+            { type: 'server', label: 'Srv-3', x: 560, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e0', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    // ── Arista SR-MPLS ──────────────────────────────────────────────────────────
+    {
+        id: 'arista-sr-mpls-core',
+        name: 'Arista SR-MPLS Core',
+        description: '2 7280R3 P-routers + 3 7050X3 PE-routers. SR-MPLS with IS-IS underlay and Node SIDs.',
+        icon: '🟢',
+        category: 'segment-routing',
+        underlayProtocol: 'isis',
+        nodes: [
+            {
+                type: 'router', label: 'P-1', x: 200, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.1/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 1,
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.0.0/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.1.0/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.2.0/31' },
+                    { id: 'e3', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.3.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'P-2', x: 480, y: 60,
+                vendor: 'Arista', model: '7280R3', loopbackIp: '10.0.0.2/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 2,
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.0.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.4.0/31' },
+                    { id: 'e2', label: 'Ethernet3', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.5.0/31' },
+                    { id: 'e3', label: 'Ethernet4', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.6.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-1', x: 100, y: 260,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.3/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 3,
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.1.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.4.1/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', description: 'CE-1' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-2', x: 340, y: 260,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.4/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 4,
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.2.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.5.1/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', description: 'CE-2' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-3', x: 580, y: 260,
+                vendor: 'Arista', model: '7050X3', loopbackIp: '10.0.0.5/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 5,
+                ports: [
+                    { id: 'e0', label: 'Ethernet1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.3.1/31' },
+                    { id: 'e1', label: 'Ethernet2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.6.1/31' },
+                    { id: 'e2', label: 'Ethernet49', enabled: true, speed: '10G', description: 'CE-3' },
+                ],
+            },
+            { type: 'server', label: 'CE-1', x: 100, y: 440 },
+            { type: 'server', label: 'CE-2', x: 340, y: 440 },
+            { type: 'server', label: 'CE-3', x: 580, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 1, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    // ── Nokia SR Linux SR-MPLS ───────────────────────────────────────────────
+    {
+        id: 'nokia-srl-sr-mpls',
+        name: 'Nokia SR Linux SR-MPLS',
+        description: '2 7250-IXR P-routers + 3 7220-IXR PE-routers. SR-MPLS with IS-IS underlay and Node SIDs.',
+        icon: '🔵',
+        category: 'segment-routing',
+        underlayProtocol: 'isis',
+        nodes: [
+            {
+                type: 'router', label: 'P-1', x: 200, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.1/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 1,
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.0.0/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.1.0/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.2.0/31' },
+                    { id: 'e3', label: 'ethernet-1/4', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.3.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'P-2', x: 480, y: 60,
+                vendor: 'Nokia', model: '7250 IXR-10', loopbackIp: '10.0.0.2/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 2,
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.0.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.4.0/31' },
+                    { id: 'e2', label: 'ethernet-1/3', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.5.0/31' },
+                    { id: 'e3', label: 'ethernet-1/4', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.6.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-1', x: 100, y: 260,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.3/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 3,
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.1.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.4.1/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '10G', description: 'CE-1' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-2', x: 340, y: 260,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.4/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 4,
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.2.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.5.1/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '10G', description: 'CE-2' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-3', x: 580, y: 260,
+                vendor: 'Nokia', model: '7220 IXR-D3', loopbackIp: '10.0.0.5/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 5,
+                ports: [
+                    { id: 'e0', label: 'ethernet-1/1', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.3.1/31' },
+                    { id: 'e1', label: 'ethernet-1/2', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.6.1/31' },
+                    { id: 'e2', label: 'ethernet-1/10', enabled: true, speed: '10G', description: 'CE-3' },
+                ],
+            },
+            { type: 'server', label: 'CE-1', x: 100, y: 440 },
+            { type: 'server', label: 'CE-2', x: 340, y: 440 },
+            { type: 'server', label: 'CE-3', x: 580, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 1, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    // ── Huawei SR-MPLS ───────────────────────────────────────────────────────
+    {
+        id: 'huawei-sr-mpls-core',
+        name: 'Huawei SR-MPLS Core',
+        description: '2 NE40E P-routers + 3 NE40E PE-routers. SR-MPLS with IS-IS underlay and Node SIDs.',
+        icon: '🔴',
+        category: 'segment-routing',
+        underlayProtocol: 'isis',
+        nodes: [
+            {
+                type: 'router', label: 'P-1', x: 200, y: 60,
+                vendor: 'Huawei', model: 'NE40E-X8', loopbackIp: '10.0.0.1/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 1,
+                ports: [
+                    { id: 'e0', label: '100GE1/0/0', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.0.0/31' },
+                    { id: 'e1', label: '100GE1/0/1', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.1.0/31' },
+                    { id: 'e2', label: '100GE1/0/2', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.2.0/31' },
+                    { id: 'e3', label: '100GE1/0/3', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.3.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'P-2', x: 480, y: 60,
+                vendor: 'Huawei', model: 'NE40E-X8', loopbackIp: '10.0.0.2/32', asn: 65000, role: 'spine',
+                isisLevel: 2, srgbStart: 16000, srgbEnd: 23999, nodeSid: 2,
+                ports: [
+                    { id: 'e0', label: '100GE1/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.0.1/31' },
+                    { id: 'e1', label: '100GE1/0/1', enabled: true, speed: '100G', description: 'to PE-1', ipAddress: '10.100.4.0/31' },
+                    { id: 'e2', label: '100GE1/0/2', enabled: true, speed: '100G', description: 'to PE-2', ipAddress: '10.100.5.0/31' },
+                    { id: 'e3', label: '100GE1/0/3', enabled: true, speed: '100G', description: 'to PE-3', ipAddress: '10.100.6.0/31' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-1', x: 100, y: 260,
+                vendor: 'Huawei', model: 'NE40E-X3', loopbackIp: '10.0.0.3/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 3,
+                ports: [
+                    { id: 'e0', label: '100GE1/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.1.1/31' },
+                    { id: 'e1', label: '100GE1/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.4.1/31' },
+                    { id: 'e2', label: '10GE1/0/0', enabled: true, speed: '10G', description: 'CE-1' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-2', x: 340, y: 260,
+                vendor: 'Huawei', model: 'NE40E-X3', loopbackIp: '10.0.0.4/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 4,
+                ports: [
+                    { id: 'e0', label: '100GE1/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.2.1/31' },
+                    { id: 'e1', label: '100GE1/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.5.1/31' },
+                    { id: 'e2', label: '10GE1/0/0', enabled: true, speed: '10G', description: 'CE-2' },
+                ],
+            },
+            {
+                type: 'router', label: 'PE-3', x: 580, y: 260,
+                vendor: 'Huawei', model: 'NE40E-X3', loopbackIp: '10.0.0.5/32', asn: 65000, role: 'leaf',
+                isisLevel: 12, srgbStart: 16000, srgbEnd: 23999, nodeSid: 5,
+                ports: [
+                    { id: 'e0', label: '100GE1/0/0', enabled: true, speed: '100G', description: 'to P-1', ipAddress: '10.100.3.1/31' },
+                    { id: 'e1', label: '100GE1/0/1', enabled: true, speed: '100G', description: 'to P-2', ipAddress: '10.100.6.1/31' },
+                    { id: 'e2', label: '10GE1/0/0', enabled: true, speed: '10G', description: 'CE-3' },
+                ],
+            },
+            { type: 'server', label: 'CE-1', x: 100, y: 440 },
+            { type: 'server', label: 'CE-2', x: 340, y: 440 },
+            { type: 'server', label: 'CE-3', x: 580, y: 440 },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'e0', targetNode: 1, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e1', targetNode: 2, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e2', targetNode: 3, targetPort: 'e0' },
+            { sourceNode: 0, sourcePort: 'e3', targetNode: 4, targetPort: 'e0' },
+            { sourceNode: 1, sourcePort: 'e1', targetNode: 2, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e2', targetNode: 3, targetPort: 'e1' },
+            { sourceNode: 1, sourcePort: 'e3', targetNode: 4, targetPort: 'e1' },
+            { sourceNode: 2, sourcePort: 'e2', targetNode: 5, targetPort: 'eth0' },
+            { sourceNode: 3, sourcePort: 'e2', targetNode: 6, targetPort: 'eth0' },
+            { sourceNode: 4, sourcePort: 'e2', targetNode: 7, targetPort: 'eth0' },
         ],
     },
 
@@ -15285,6 +16437,9 @@ export interface ServiceProfile {
     category: 'datacenter' | 'enterprise' | 'service-provider'
     vlanTemplateId: string
     portRules: ServicePortRule[]
+    overlayEnabled?: boolean   // When true, enables EVPN-VXLAN overlay on the topology
+    irbEnabled?: boolean       // When true, enables IRB gateways for inter-VLAN routing
+    irbMode?: 'symmetric' | 'asymmetric'  // IRB routing mode
 }
 
 export const SERVICE_PROFILES: ServiceProfile[] = [
@@ -15298,11 +16453,46 @@ export const SERVICE_PROFILES: ServiceProfile[] = [
         icon: '🔷',
         category: 'datacenter',
         vlanTemplateId: 'dc-leaf-spine',
+        overlayEnabled: true,
         portRules: [
             { roles: ['spine', 'super-spine'],        scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
             { roles: ['leaf', 'border-leaf'],         scope: 'uplinks',       vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
             { roles: ['leaf'],                        scope: 'free-ports',    vlanMode: 'access', accessVlan: 100 },
             { roles: ['border-leaf'],                 scope: 'free-ports',    vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: '100-102,200,900' },
+        ],
+    },
+    {
+        id: 'svc-crb',
+        name: 'CRB (Centrally-Routed Bridging)',
+        description: 'EVPN-VXLAN with routing centralized on spines/border-leafs. Leafs are L2-only bridges. Spines have IRB gateways for inter-VLAN routing.',
+        icon: '🔶',
+        category: 'datacenter',
+        vlanTemplateId: 'dc-leaf-spine',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'asymmetric',
+        portRules: [
+            { roles: ['spine', 'super-spine'],        scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['border-leaf'],                 scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf'],                        scope: 'uplinks',       vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf'],                        scope: 'free-ports',    vlanMode: 'access', accessVlan: 100 },
+        ],
+    },
+    {
+        id: 'svc-erb',
+        name: 'ERB (Edge-Routed Bridging)',
+        description: 'EVPN-VXLAN with distributed routing on every leaf. All leafs have IRB gateways. Spines are L3-only route reflectors with no VLANs.',
+        icon: '🔹',
+        category: 'datacenter',
+        vlanTemplateId: 'dc-leaf-spine',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        portRules: [
+            { roles: ['spine', 'super-spine'],        scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf', 'border-leaf'],         scope: 'uplinks',       vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf'],                        scope: 'free-ports',    vlanMode: 'access', accessVlan: 100 },
+            { roles: ['border-leaf'],                 scope: 'free-ports',    vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: '100-102,200-202,900' },
         ],
     },
     {
@@ -15377,6 +16567,20 @@ export const SERVICE_PROFILES: ServiceProfile[] = [
             { roles: ['gateway', 'border-leaf'],       scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
             { roles: ['leaf', 'aggregation', 'tor', 'access'], scope: 'uplinks', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: '100,200,300' },
             { roles: ['leaf', 'aggregation', 'tor', 'access'], scope: 'free-ports', vlanMode: 'access', accessVlan: 100 },
+        ],
+    },
+    {
+        id: 'svc-sr-mpls-l3vpn',
+        name: 'SR-MPLS L3VPN Backbone',
+        description: 'IS-IS with SR-MPLS underlay + BGP L3VPN overlay. P-routers are transit; PE-routers host customer VRFs.',
+        icon: '🏷',
+        category: 'service-provider',
+        vlanTemplateId: 'sp-mpls-pe',
+        overlayEnabled: true,
+        portRules: [
+            { roles: ['spine', 'super-spine', 'core'], scope: 'all-connected', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf', 'border-leaf', 'gateway'], scope: 'uplinks', vlanMode: 'trunk', trunkNativeVlan: 999, trunkAllowedVlans: 'all' },
+            { roles: ['leaf', 'border-leaf', 'gateway'], scope: 'free-ports', vlanMode: 'access', accessVlan: 100 },
         ],
     },
 ]

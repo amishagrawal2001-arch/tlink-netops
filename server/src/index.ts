@@ -341,7 +341,7 @@ app.post('/api/container-poll', async (req, res) => {
 
     const remote: DockerServer | undefined = server?.host ? server : undefined
     console.log(`[CONTAINER-POLL] ${containers.length} containers${remote ? ` via SSH → ${remote.host}` : ' (local)'}`)
-    const results: Array<{ containerName: string; state: string; bgpNeighbors: any[] }> = []
+    const results: Array<{ containerName: string; state: string; bgpNeighbors: any[]; srEnabled?: boolean; srLabelsCount?: number; vniActive?: number }> = []
 
     // Step 1: Docker inspect all containers for state
     try {
@@ -427,6 +427,44 @@ app.post('/api/container-poll', async (req, res) => {
                             }
                         }
                     } catch (bgpErr: any) { console.log(`[CONTAINER-POLL] BGP failed for ${c.name}: ${bgpErr.message?.slice(0, 100)}`) }
+                }
+
+                // SR label count (best-effort, supports SONiC/FRR, Arista, Juniper, Nokia SRL)
+                let srCmd: string[] | null = null
+                if (kind.includes('sonic') || kind.includes('frr')) { srCmd = ['vtysh', '-c', 'show mpls table'] }
+                else if (kind.includes('ceos') || kind.includes('arista')) { srCmd = ['Cli', '-p', '15', '-c', 'show mpls label range'] }
+                else if (kind.includes('srl') || kind.includes('nokia')) { srCmd = ['sr_cli', '-d', 'show network-instance default segment-routing mpls'] }
+                else if (kind.includes('crpd') || kind.includes('juniper') || kind.includes('junos')) { srCmd = ['cli', '-c', 'show route table mpls.0'] }
+                if (srCmd) {
+                    try {
+                        const quoted = srCmd.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')
+                        const { stdout: srOut } = await dockerCmd(`docker exec ${c.name} ${quoted}`, remote, 10_000)
+                        const labels = (srOut || '').split('\n').filter(l => /\b(1[6-9]\d{3}|2\d{4})\b/.test(l))
+                        entry.srEnabled = labels.length > 0
+                        entry.srLabelsCount = labels.length
+                    } catch { /* skip */ }
+                }
+
+                // VNI count (best-effort, supports SONiC/FRR, Arista, Nokia SRL, Juniper)
+                let vniCmd: string[] | null = null
+                if (kind.includes('sonic') || kind.includes('frr')) { vniCmd = ['vtysh', '-c', 'show evpn vni json'] }
+                else if (kind.includes('ceos') || kind.includes('arista')) { vniCmd = ['Cli', '-p', '15', '-c', 'show vxlan vni | json'] }
+                else if (kind.includes('srl') || kind.includes('nokia')) { vniCmd = ['sr_cli', '-d', 'show tunnel-interface vxlan1 vxlan-interface 0'] }
+                else if (kind.includes('crpd') || kind.includes('juniper') || kind.includes('junos')) { vniCmd = ['cli', '-c', 'show ethernet-switching vxlan-tunnel-end-point remote'] }
+                if (vniCmd) {
+                    try {
+                        const quoted = vniCmd.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')
+                        const { stdout: vniOut } = await dockerCmd(`docker exec ${c.name} ${quoted}`, remote, 10_000)
+                        if (kind.includes('sonic') || kind.includes('frr')) {
+                            try {
+                                const json = JSON.parse(vniOut.trim())
+                                entry.vniActive = typeof json === 'object' ? Object.keys(json).length : 0
+                            } catch { entry.vniActive = 0 }
+                        } else {
+                            const vniLines = (vniOut || '').split('\n').filter(l => /\bvni\b/i.test(l) && /\d{4,}/.test(l))
+                            entry.vniActive = vniLines.length
+                        }
+                    } catch { /* skip */ }
                 }
             }
 

@@ -15,29 +15,52 @@ Design, visualize, and manage complex network topologies with an enterprise-grad
 ## Features
 
 ### Topology Design
-- **Interactive SVG Canvas** -- drag-and-drop topology editor with pan, zoom, and grid snapping
-- **Device Library** -- routers, switches, firewalls, servers, cloud nodes, and custom devices
-- **Link Management** -- create, style, and label connections between devices with waypoint support
-- **Annotations** -- rectangles, ellipses, text labels, and embedded images on the canvas
-- **Templates** -- pre-built topology templates for common network architectures
-- **Multi-Select & Group Operations** -- rubber-band selection, bulk move, bulk delete
+- **Interactive 2D + 3D Canvas** -- drag-and-drop editor with pan/zoom, plus immersive Three.js WebGL 3D view
+- **170+ Pre-built Templates** -- datacenter, WAN, campus, SP, EVPN-VXLAN, SR-MPLS, SRv6, CRB, ERB
+- **13 Vendors** -- Juniper, Cisco (IOS/NX-OS/IOS-XR), Arista, Nokia (SRL/SROS), SONiC, Huawei, Dell, HPE, MikroTik, Extreme
+- **Device Library** -- routers, switches, firewalls, servers, cloud nodes, hosts, bridges
+- **Link Management** -- styled connections with waypoints, auto IP assignment (/24–/31), labels
+- **Annotations** -- rectangles, ellipses, text labels, and embedded images
 
-### Monitoring & Management
-- **SNMP Polling** -- real-time device status via SNMP queries
-- **Syslog Server** -- built-in syslog receiver for log collection
-- **Integrated Terminal** -- SSH terminal powered by xterm.js for direct device access
-- **Inventory Management** -- comprehensive device inventory with export capabilities
+### Routing Protocols & Services
+- **Set Protocol Dialog** -- bulk-assign eBGP, iBGP-RR, OSPF, OSPFv3, IS-IS with auto-loopbacks & validation warnings
+- **Segment Routing** -- SR-MPLS (Node-SID + SRGB) and SRv6 (unique locators) with one-click enablement
+- **TI-LFA** -- topology-independent fast reroute with node protection (Juniper)
+- **Service Profiles** -- EVPN-VXLAN, CRB (centrally-routed), ERB (edge-routed), 3-Tier DC, Campus LAN, MPLS SP Core, SR-MPLS L3VPN, K8s Fabric, Branch Office
+- **Auto-Generate Configs** -- vendor-specific startup configs for all 13 vendors
+- **Vendor Config Export** -- complete, deployment-ready configs per node
+
+### Simulation & Deployment
+- **One-Click Containerlab Deploy** -- deploy topology as containerlab lab with auto-configured BGP/EVPN
+- **Multi-Server Support** -- deploy labs on any remote Docker host via SSH
+- **Ansible / Terraform / GNS3 Export** -- infrastructure-as-code for real deployments
+- **Firmware Upgrade Plans** -- staged, ordered upgrade workflows
+
+### Digital Twin & Monitoring
+- **Live Dashboard** -- real-time CPU, memory, BGP state, alarms, config drift
+- **SSH & SNMP Polling** -- with connection pooling (3/host, 50 total)
+- **LLDP/CDP Auto-Discovery** -- BFS neighbor walking to build topologies from live networks
+- **Physical Device Mapping** -- map virtual topology nodes to real hardware, bulk CSV/JSON import
+- **Multi-Server Container Polling** -- backend server SSHes into remote Docker hosts
+- **Integrated SSH Terminal** -- xterm.js-powered console
+
+### Automation
+- **Event-Driven Rules** -- 8 triggers × 5 actions (webhooks, SSH commands, Slack, etc.)
+- **Workflow Editor** -- drag-and-drop workflow builder with loops and conditionals
+- **Change Management** -- propose → approve → deploy → verify → rollback with audit trail
+- **Compliance Checks** -- automated policy validation
+- **Scheduled Jobs** -- cron-based recurring tasks
 
 ### Productivity
-- **Undo / Redo** -- snapshot-based state management for all operations
-- **Keyboard Shortcuts** -- comprehensive shortcuts for power users
+- **Undo / Redo** -- snapshot-based state management
+- **Keyboard Shortcuts** -- F1 for help, ? for shortcuts overlay, 170+ keyboard shortcuts
 - **Viewport Culling** -- performance optimization for large topologies (80+ nodes)
-- **Context Menus** -- right-click context menus on nodes, links, and canvas
-- **Multi-Tab Workspace** -- work on multiple topologies simultaneously
+- **Context Menus** -- right-click actions on nodes, links, and canvas
+- **Guided Tour** -- 14-step interactive onboarding
 
 ### Enterprise
-- **Cross-Platform** -- available for macOS, Windows, and Linux
-- **Export Options** -- export topologies to JSON and inventory reports
+- **Cross-Platform** -- macOS (Intel/Apple Silicon), Windows, Linux (AppImage/deb/rpm)
+- **Optional Backend Server** -- standalone Node.js server for large-scale polling & shared labs
 - **Dark & Light Themes** -- professional interface with theme support
 
 ---

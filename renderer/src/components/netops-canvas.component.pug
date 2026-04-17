@@ -320,7 +320,7 @@
         .menu-sep
         button.menu-item(type='button', [disabled]='linkCount === 0', (click)='autoAddressTopology(); closeMenus()')
           span.mi-icon ◌
-          span.mi-label Auto-Assign IPv4 /30 IPs
+          span.mi-label Auto-Assign IPv4 IPs…
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoGenerateLoopbacks(); closeMenus()')
           span.mi-icon Lo
           span.mi-label Auto-Assign IPv4 Loopbacks
@@ -338,6 +338,7 @@
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openProtocolDialog(); closeMenus()')
           span.mi-icon ⚙
           span.mi-label Set Protocol…
+          span.mi-shortcut Ctrl+Shift+P
 
     //- ── Inventory ────────────────────────
     .menu-item-wrap
@@ -2774,7 +2775,7 @@
   .auto-ip-overlay(*ngIf='showAutoIpDialog', (click)='cancelAutoIpDialog()')
     .auto-ip-dialog((click)='$event.stopPropagation()')
       .auto-ip-title Auto-address links
-      .auto-ip-subtitle Assign /30 interface pairs across all links from a base CIDR.
+      .auto-ip-subtitle Assign interface IPs across all links from a base CIDR.
       label.auto-ip-label(for='autoIpSubnet') Base subnet (CIDR)
       input#autoIpSubnet.auto-ip-input(
         type='text',
@@ -2782,6 +2783,20 @@
         placeholder='10.20.0.0/16',
         (keydown.enter)='applyAutoIpDialog()'
       )
+      label.auto-ip-label Link subnet size
+      select.auto-ip-input([(ngModel)]='autoIpLinkPrefix')
+        option([ngValue]='31') /31 — 2 hosts (point-to-point, RFC 3021)
+        option([ngValue]='30') /30 — 2 usable hosts (traditional)
+        option([ngValue]='29') /29 — 6 usable hosts
+        option([ngValue]='28') /28 — 14 usable hosts
+        option([ngValue]='27') /27 — 30 usable hosts
+        option([ngValue]='26') /26 — 62 usable hosts
+        option([ngValue]='25') /25 — 126 usable hosts
+        option([ngValue]='24') /24 — 254 usable hosts
+      .auto-ip-hint(*ngIf='autoIpCapacity.needed > 0')
+        | {{ autoIpCapacity.available }} subnets available, {{ autoIpCapacity.needed }} links need addressing
+        span(*ngIf='!autoIpCapacity.sufficient', style='color:#ef4444;font-weight:600')  — insufficient space!
+        span(*ngIf='autoIpCapacity.sufficient', style='color:#22c55e')  ✓
       label.auto-ip-check(*ngIf='autoIpHasExisting')
         input(type='checkbox', [(ngModel)]='autoIpOverwriteExisting')
         span Overwrite existing linked interface IPs
@@ -2791,7 +2806,7 @@
       .auto-ip-actions
         button.btn-tool(type='button', (click)='cancelAutoIpDialog()')
           span Cancel
-        button.btn-tool(type='button', (click)='applyAutoIpDialog()')
+        button.btn-tool(type='button', [disabled]='!autoIpCapacity.sufficient', (click)='applyAutoIpDialog()')
           span Apply
 
   //- ── IPv6 auto-address dialog ─────────────────────────────────────────
@@ -3425,7 +3440,7 @@
       .bulk-cred-form
         .bulk-cred-row
           span.bulk-cred-label Protocol
-          select.bulk-cred-input([(ngModel)]='protocolChoice')
+          select.bulk-cred-input([(ngModel)]='protocolChoice', (ngModelChange)='protocolSrMpls = $event === "isis"')
             option(value='none') — None (clear) —
             option(value='ebgp') eBGP Clos (unique ASN/node)
             option(value='ibgp-rr') iBGP with Route Reflector
@@ -3454,11 +3469,44 @@
               option([ngValue]='1') Level 1
               option([ngValue]='2') Level 2
               option([ngValue]='12') L1/L2
+        ng-container(*ngIf='protocolChoice === "isis" || protocolChoice === "ospf" || protocolChoice === "ospfv3"')
+          .bulk-cred-row
+            span.bulk-cred-label SR-MPLS
+            select.bulk-cred-input([(ngModel)]='protocolSrMpls')
+              option([ngValue]='false') Disabled
+              option([ngValue]='true') Enabled (auto Node-SID + SRGB)
+          ng-container(*ngIf='protocolSrMpls')
+            .bulk-cred-row
+              span.bulk-cred-label SRGB Start
+              input.bulk-cred-input(type='number', min='16', [(ngModel)]='protocolSrgbStart')
+            .bulk-cred-row
+              span.bulk-cred-label SRGB End
+              input.bulk-cred-input(type='number', min='16', [(ngModel)]='protocolSrgbEnd')
+          .bulk-cred-row
+            span.bulk-cred-label SRv6
+            select.bulk-cred-input([(ngModel)]='protocolSrv6')
+              option([ngValue]='false') Disabled
+              option([ngValue]='true') Enabled (auto locator per node)
+          ng-container(*ngIf='protocolSrv6')
+            .bulk-cred-row
+              span.bulk-cred-label SRv6 Locator Base
+              input.bulk-cred-input(type='text', [(ngModel)]='protocolSrv6LocatorBase', placeholder='fc00:0')
         .bulk-cred-row
           span.bulk-cred-label Scope
           select.bulk-cred-input([(ngModel)]='protocolScope')
             option(value='all') All nodes ({{ topology.nodes.length }})
             option(value='selected') Selected nodes ({{ selectedNodeIds.size }})
+        ng-container(*ngIf='protocolChoice !== "none"')
+          .bulk-cred-row
+            label(style='display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer')
+              input(type='checkbox', [(ngModel)]='protocolAutoAssignLoopbacks')
+              span Auto-assign loopback IPs (recommended — required for router-ID, iBGP, EVPN, SR)
+          .bulk-cred-row
+            label(style='display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer')
+              input(type='checkbox', [(ngModel)]='protocolAutoAssignLinks')
+              span Auto-assign link IPs (for BGP adjacency / IGP interfaces)
+        .auto-ip-error(*ngIf='protocolWarnings.length > 0')
+          div(*ngFor='let w of protocolWarnings') ⚠ {{ w }}
       .auto-ip-actions
         button.btn-tool(type='button', (click)='applyProtocol()') Apply
         button.btn-tool(type='button', (click)='showProtocolDialog = false') Cancel
@@ -4260,6 +4308,8 @@
             th CPU
             th Mem
             th BGP
+            th SR
+            th VNI
             th Alarms
             th Drift
         tbody
@@ -4280,6 +4330,12 @@
               span(*ngIf='getTwinMem(node.id) >= 0', [style.color]='getTwinMem(node.id) > 80 ? "#ef4444" : getTwinMem(node.id) > 50 ? "#f59e0b" : "#22c55e"') {{ getTwinMem(node.id) }}%
               span(*ngIf='getTwinMem(node.id) < 0') —
             td {{ getNodeBgpCount(node.id) }}
+            td
+              span(*ngIf='getTwinSrLabels(node.id) > 0', style='color:#00d2ff') {{ getTwinSrLabels(node.id) }}
+              span(*ngIf='getTwinSrLabels(node.id) === 0') —
+            td
+              span(*ngIf='getTwinVniCount(node.id) > 0', style='color:#8b5cf6') {{ getTwinVniCount(node.id) }}
+              span(*ngIf='getTwinVniCount(node.id) === 0') —
             td
               span.twin-alarm-count(*ngIf='twinActiveAlarms.has(node.id)') {{ twinActiveAlarms.get(node.id)?.length }}
               span(*ngIf='!twinActiveAlarms.has(node.id)') 0

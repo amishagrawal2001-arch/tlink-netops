@@ -102,8 +102,8 @@ export function parseHostCidr (cidr: string): { networkStart: number; networkEnd
 export function parseBaseCidr (cidr: string): { networkStart: number; networkEnd: number } {
     const [ipRaw, prefixRaw] = cidr.trim().split('/')
     const prefix = Number(prefixRaw)
-    if (!ipRaw || !Number.isInteger(prefix) || prefix < 0 || prefix > 30) {
-        throw new Error('Subnet must be valid CIDR, /0 through /30 (example: 10.20.0.0/16)')
+    if (!ipRaw || !Number.isInteger(prefix) || prefix < 0 || prefix > 31) {
+        throw new Error('Subnet must be valid CIDR, /0 through /31 (example: 10.20.0.0/16)')
     }
 
     const ip = ipToInt(ipRaw)

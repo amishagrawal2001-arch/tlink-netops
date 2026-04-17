@@ -1946,6 +1946,22 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         this.svc.regenerateConfigs()
     }
 
+    applySrgbStart (): void {
+        if (!this.nodeId) { return }
+        const raw = this.draft.srgbStart
+        const srgbStart = (raw != null && Number.isFinite(raw) && raw >= 16) ? Math.trunc(raw) : undefined
+        this.svc.updateNodeConfig(this.nodeId, { srgbStart })
+        this.svc.regenerateConfigs()
+    }
+
+    applySrgbEnd (): void {
+        if (!this.nodeId) { return }
+        const raw = this.draft.srgbEnd
+        const srgbEnd = (raw != null && Number.isFinite(raw) && raw >= 16) ? Math.trunc(raw) : undefined
+        this.svc.updateNodeConfig(this.nodeId, { srgbEnd })
+        this.svc.regenerateConfigs()
+    }
+
     applyMplsLdp (): void {
         if (!this.nodeId) { return }
         const mplsLdp = this.draft.mplsLdp === true ? true : undefined
@@ -2128,7 +2144,7 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         }
     }
 
-    onInfoKeydown (ev: KeyboardEvent, field: 'label' | 'description' | 'image' | 'vendor' | 'model' | 'desiredPortCount' | 'portSuffix' | 'asn' | 'ospfArea' | 'isisLevel' | 'nodeSid' | 'srv6Locator' | 'mgmtIp' | 'loopbackIp' | 'loopbackIpv6' | 'sshUsername' | 'sshPort' | 'sshPassword' | 'serialNumber' | 'sourceId'): void {
+    onInfoKeydown (ev: KeyboardEvent, field: 'label' | 'description' | 'image' | 'vendor' | 'model' | 'desiredPortCount' | 'portSuffix' | 'asn' | 'ospfArea' | 'isisLevel' | 'nodeSid' | 'srgbStart' | 'srgbEnd' | 'srv6Locator' | 'mgmtIp' | 'loopbackIp' | 'loopbackIpv6' | 'sshUsername' | 'sshPort' | 'sshPassword' | 'serialNumber' | 'sourceId'): void {
         if (ev.key === 'Enter' && field !== 'description') {
             if (field === 'label')       { this.applyLabel() }
             else if (field === 'image')  { this.applyImage() }
@@ -2140,6 +2156,8 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             else if (field === 'ospfArea') { this.applyOspfArea() }
             else if (field === 'isisLevel') { this.applyIsisLevel() }
             else if (field === 'nodeSid') { this.applyNodeSid() }
+            else if (field === 'srgbStart') { this.applySrgbStart() }
+            else if (field === 'srgbEnd') { this.applySrgbEnd() }
             else if (field === 'srv6Locator') { this.applySrv6Locator() }
             else if (field === 'mgmtIp') { this.applyMgmtIp() }
             else if (field === 'loopbackIp') { this.applyLoopbackIp() }
@@ -2370,6 +2388,11 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     bridgeListLoading = false
 
     get isBridgeNode (): boolean { return this.node?.type === 'bridge' }
+
+    /** True when node has IGP (ISIS/OSPF) configured — SR fields are only relevant then */
+    get hasIgpRouting (): boolean {
+        return !!(this.node && (this.node.isisLevel != null || this.node.ospfArea != null))
+    }
 
     isBridgeAlreadyAdded (name: string): boolean {
         return !!this.node?.ports.some(p => p.label === name)

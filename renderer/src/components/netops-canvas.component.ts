@@ -171,6 +171,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     autoLoopbackBaseCidr = '172.16.0.0/16'
     showAutoIpDialog = false
     autoIpInput = this.autoIpBaseCidr
+    autoIpLinkPrefix = 30
     autoIpOverwriteExisting = false
     autoIpHasExisting = false
     autoIpDialogError = ''
@@ -233,6 +234,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     private _livePollTimer: ReturnType<typeof setInterval> | null = null
     private _livePollRunning = false
     liveBgpState = new Map<string, BgpNeighborEntry[]>()
+    liveSrState = new Map<string, { srEnabled: boolean; labelsCount: number }>()
+    liveVniState = new Map<string, number>()
     liveSummary = { nodesUp: 0, nodesTotal: 0, bgpUp: 0, bgpTotal: 0 }
     showLivePanel = false
     // prereq state
@@ -473,6 +476,13 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     protocolLeafAsn = 65100
     protocolOspfArea = 0
     protocolIsisLevel: 1 | 2 | 12 = 2
+    protocolSrMpls = false
+    protocolSrv6 = false
+    protocolSrgbStart = 16000
+    protocolSrgbEnd = 23999
+    protocolSrv6LocatorBase = 'fc00:0'
+    protocolAutoAssignLoopbacks = true
+    protocolAutoAssignLinks = false
     protocolScope: 'all' | 'selected' = 'all'
 
     // Bulk credential dialog
@@ -557,7 +567,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         { selector: '.netops-svg', title: 'Link Styling', description: 'Right-click any link to change its color, dash pattern, arrow style, and line weight.', position: 'bottom', demo: 'styling' },
         { selector: '.netops-svg', title: 'Link Labels', description: 'Double-click any link to add a text label. Click an existing label to edit it, or drag to reposition.', position: 'bottom', demo: 'labels' },
         { selector: '.netops-svg', title: 'Templates (157 Presets)', description: '157 pre-built templates across 13 vendors. Container templates deploy with one click. Design templates are vendor-agnostic starting points.', position: 'bottom', demo: 'template' },
-        { selector: '.netops-svg', title: 'Set Protocol & Services', description: 'After loading a template, use Devices → Set Protocol to bulk-assign BGP/OSPF/ISIS, and Devices → Apply Service Profile to configure VLANs and port modes.', position: 'bottom', demo: 'custom' },
+        { selector: '.netops-svg', title: 'Set Protocol & Services', description: 'After loading a template, use Devices → Set Protocol to bulk-assign BGP/OSPF/ISIS. The dialog validates prerequisites and auto-assigns loopbacks & link IPs. Use Apply Service Profile for VLANs, CRB/ERB, MPLS.', position: 'bottom', demo: 'custom' },
+        { selector: '.netops-svg', title: 'Segment Routing (SR-MPLS/SRv6)', description: 'In Set Protocol dialog, pick IS-IS or OSPF and toggle SR-MPLS or SRv6. Auto-assigns Node-SID (1,2,3...) + SRGB (16000-23999) for SR-MPLS, or unique locators (fc00:0:N::/48) for SRv6. Supported on Juniper, Arista, Cisco, Nokia, Huawei.', position: 'bottom' },
         { selector: '.netops-svg', title: 'Deploy & Monitor', description: 'Deploy to containerlab via Simulate → Deploy Containerlab. Switch to the Twin tab to see real-time CPU, memory, BGP state, and alarms across all containers.', position: 'bottom' },
         { selector: '.zoom-controls', title: 'Zoom Controls', description: 'Use these controls to zoom in/out, reset to 100%, or fit all elements in view. You can also scroll to zoom.', position: 'top' },
         { selector: '.canvas-minimap', title: 'Minimap', description: 'The minimap shows an overview of your entire topology. Click on it to navigate quickly.', position: 'top' },
@@ -569,9 +580,12 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         {
             id: 'whats-new', title: "What's New", icon: '✦', content: `
 <div class="help-whats-new-cards">
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Set Protocol Dialog</strong> — Bulk-assign BGP, OSPF, or IS-IS to all nodes via Devices &rarr; Set Protocol</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Template Type Badges</strong> — Templates now show Container or Design badges with vendor labels</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Multi-Server Container Polling</strong> — Monitor containers deployed on any remote server via SSH</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>CRB &amp; ERB Templates</strong> — Pre-built EVPN-VXLAN fabrics for Juniper, Arista, Cisco, Nokia, SONiC</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Segment Routing</strong> — SR-MPLS and SRv6 via Set Protocol + templates for 5 vendors</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Set Protocol Dialog</strong> — Bulk-assign BGP, OSPF, or IS-IS with optional SR, auto-loopbacks, validation warnings</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Variable Subnet Sizes</strong> — Auto-Assign IPs now supports /24 through /31 with capacity hints</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Template Type Badges</strong> — Templates show Container or Design badges with vendor labels</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Multi-Server Container Polling</strong> — Monitor containers on any remote server via SSH</div>
   <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Digital Twin Dashboard</strong> — Live CPU, memory, BGP, alarms, and config drift monitoring</div>
   <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Service Profiles</strong> — Apply EVPN-VXLAN, MPLS SP, Campus LAN profiles via Devices &rarr; Apply Service Profile</div>
 </div>`
@@ -703,18 +717,29 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         },
         {
             id: 'templates', title: 'Templates', icon: '▤', content: `
-<p class="help-desc">157 pre-built templates across 13 vendors and 11 categories.</p>
+<p class="help-desc">170+ pre-built templates across 13 vendors and 11 categories.</p>
 <h4 class="help-h4">Template Types</h4>
 <ul class="help-list">
   <li><strong style="color:#00d2ff">Container</strong> — Vendor-specific templates (SONiC, Juniper, Arista, etc.) with Deploy &amp; Config buttons. One-click containerlab deployment.</li>
   <li><strong style="color:#f59e0b">Design</strong> — Generic topology patterns (Point-to-Point, Hub &amp; Spoke, Ring, Mesh). Set vendor and protocol after loading.</li>
 </ul>
+<h4 class="help-h4">New EVPN-VXLAN Templates</h4>
+<ul class="help-list">
+  <li><strong>CRB Fabrics</strong> — Juniper, Arista, Cisco NX-OS, Nokia SR Linux, SONiC (centrally-routed bridging, spines have IRB)</li>
+  <li><strong>ERB Fabrics</strong> — Juniper, Arista, Cisco NX-OS, Nokia SR Linux, SONiC (edge-routed bridging, distributed IRB)</li>
+</ul>
+<h4 class="help-h4">New Segment Routing Templates</h4>
+<ul class="help-list">
+  <li><strong>SR-MPLS Core</strong> — Juniper (4 variants), Cisco IOS-XR, Arista, Nokia SR Linux, Huawei</li>
+  <li><strong>SRv6</strong> — Juniper SP / 3-node / 5-node, Cisco IOS-XR</li>
+  <li><strong>TI-LFA Ring</strong> — Juniper fast-reroute with node protection</li>
+</ul>
 <h4 class="help-h4">Workflow for Design Templates</h4>
 <ol class="help-steps">
-  <li>Load template &rarr; <strong>Devices &rarr; Set Protocol</strong> (assign BGP/OSPF/ISIS)</li>
+  <li>Load template &rarr; <strong>Devices &rarr; Set Protocol</strong> (assign BGP/OSPF/ISIS, enable SR if needed)</li>
   <li>Set vendor on nodes (click node or use Bulk Credentials)</li>
-  <li><strong>Devices &rarr; Auto-Assign IPs</strong></li>
-  <li>Click node &rarr; Config tab &rarr; <strong>Regenerate Config</strong></li>
+  <li><strong>Devices &rarr; Auto-Assign IPs</strong> (or let Set Protocol do it)</li>
+  <li>Click node &rarr; Config tab (auto-regenerated)</li>
 </ol>
 <p class="help-desc">Access templates from <strong>File &rarr; Templates</strong> or the Templates section in the palette.</p>`
         },
@@ -725,20 +750,55 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 <ul class="help-list">
   <li><strong>eBGP Clos</strong> — Unique ASN per node based on role (spine: 65000+, leaf: 65100+)</li>
   <li><strong>iBGP with Route Reflector</strong> — Shared ASN, spines as route reflectors, OSPF area 0 for IGP</li>
-  <li><strong>OSPF / OSPFv3</strong> — Assign OSPF area to all nodes</li>
-  <li><strong>IS-IS</strong> — Assign IS-IS level (L1, L2, L1/L2) with auto Node-SID</li>
+  <li><strong>OSPF / OSPFv3</strong> — Assign OSPF area to all nodes. Optionally enable SR-MPLS or SRv6.</li>
+  <li><strong>IS-IS</strong> — Assign IS-IS level (L1, L2, L1/L2). SR-MPLS enabled by default with auto Node-SID.</li>
 </ul>
+<h4 class="help-h4">Segment Routing (SR-MPLS &amp; SRv6)</h4>
+<p class="help-desc">When selecting <strong>IS-IS</strong> or <strong>OSPF</strong>, toggle Segment Routing options in the dialog:</p>
+<ul class="help-list">
+  <li><strong>SR-MPLS</strong> — Auto-assigns Node-SID (1, 2, 3...) and SRGB range (default 16000&ndash;23999) per node</li>
+  <li><strong>SRv6</strong> — Auto-assigns a unique locator per node (e.g. <code>fc00:0:1::/48</code>, <code>fc00:0:2::/48</code>)</li>
+  <li>Both can be enabled simultaneously for dual-stack SR</li>
+</ul>
+<p class="help-desc"><strong>SR Workflow (simplified with auto-assign):</strong></p>
+<ol class="help-steps">
+  <li><strong>Devices &rarr; Set Protocol</strong> &rarr; IS-IS &rarr; Enable SR-MPLS (auto) and/or SRv6</li>
+  <li>Check "Auto-assign loopback IPs" and "Auto-assign link IPs" &rarr; <strong>Apply</strong> (one-click setup)</li>
+  <li>Set vendor on nodes (Juniper, Cisco, Arista, Nokia, Huawei)</li>
+  <li>Click node &rarr; Config tab &mdash; SR stanzas are auto-generated</li>
+</ol>
+<div class="help-tryit">The dialog shows <strong>validation warnings</strong> when nodes are missing loopbacks, vendors, or link IPs &mdash; enabling the checkbox fixes them automatically.</div>
+<p class="help-desc"><strong>Vendor support:</strong> Juniper, Arista, Cisco, Nokia SRL, Huawei, Dell, HPE. Not supported on SONiC, MikroTik, Extreme.</p>
+<p class="help-desc"><strong>Per-node SRGB:</strong> Click a node &rarr; edit SRGB Start (default 16000) and SRGB End (default 23999) in the properties panel.</p>
 <h4 class="help-h4">Apply Service Profile (Devices &rarr; Apply Service Profile...)</h4>
 <p class="help-desc">Bulk-configure VLANs and port modes based on node roles:</p>
 <ul class="help-list">
-  <li><strong>EVPN-VXLAN DC Fabric</strong> — Spine trunks, leaf access/trunk, tenant VLANs</li>
+  <li><strong>EVPN-VXLAN DC Fabric</strong> — Basic VXLAN overlay, spine trunks, leaf access/trunk</li>
+  <li><strong>CRB (Centrally-Routed Bridging)</strong> — Routing on spines only, leafs are L2 bridges, asymmetric IRB</li>
+  <li><strong>ERB (Edge-Routed Bridging)</strong> — Distributed routing on every leaf, symmetric IRB with L3 VNI</li>
   <li><strong>3-Tier DC</strong> — Core/agg/access with standard DC VLANs</li>
   <li><strong>Campus LAN</strong> — Data, voice, guest, IoT VLANs</li>
   <li><strong>MPLS SP Core</strong> — PE-CE with customer VRF VLANs</li>
+  <li><strong>SR-MPLS L3VPN Backbone</strong> — IS-IS + SR-MPLS + BGP L3VPN for transit P-routers and PE VRFs</li>
   <li><strong>K8s Container Fabric</strong> — Compute, storage, management VLANs</li>
   <li><strong>Branch Office</strong> — WAN uplink trunks, local access</li>
 </ul>
-<div class="help-tryit">Tip: Service profiles work best when nodes have <strong>roles</strong> assigned (spine, leaf, etc.). For design templates without roles, a sensible default is applied.</div>`
+<p class="help-desc"><strong>Service Profile Workflow:</strong></p>
+<ol class="help-steps">
+  <li>Load a topology template (design or container)</li>
+  <li>Set vendor on nodes (or use Bulk Credentials dialog)</li>
+  <li><strong>Devices &rarr; Set Protocol</strong> &rarr; pick eBGP/OSPF/ISIS &rarr; Apply</li>
+  <li><strong>Devices &rarr; Apply Service Profile</strong> &rarr; pick profile &rarr; check "Overwrite" &rarr; Apply</li>
+  <li><strong>Devices &rarr; Auto-Assign IPv4 IPs</strong> (only L3 links get IPs; L2 access/trunk ports are skipped)</li>
+  <li><strong>Devices &rarr; Auto-Assign IPv4 Loopbacks</strong> (router-ID, VTEP source, EVPN local-address)</li>
+  <li>Click node &rarr; Config tab &mdash; complete config with VLANs, ports, BGP, and overlay</li>
+</ol>
+<p class="help-desc"><strong>CRB vs ERB:</strong></p>
+<ul class="help-list">
+  <li><strong>CRB</strong> &mdash; Spines have VLANs + VNI + IRB (centralized gateway). Leafs are L2 only (no IRB).</li>
+  <li><strong>ERB</strong> &mdash; Leafs have VLANs + VNI + IRB + L3 VNI VRF (distributed gateway). Spines are pure L3 route reflectors (no VLANs).</li>
+</ul>
+<div class="help-tryit">Tip: Node roles are inferred from labels (e.g. "Spine-1" &rarr; spine, "Leaf-2" &rarr; leaf). Servers and PCs are excluded from protocol and IP assignment automatically.</div>`
         },
         {
             id: 'simulation', title: 'Simulation & Twin', icon: '📡', content: `
@@ -754,10 +814,13 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 <ul class="help-list">
   <li><strong>Status</strong> — Running/stopped per container</li>
   <li><strong>CPU &amp; Memory</strong> — Real-time gauges</li>
-  <li><strong>BGP</strong> — Neighbor count and session states</li>
+  <li><strong>BGP</strong> — Neighbor count and session states (established/total)</li>
+  <li><strong>SR</strong> — SR-MPLS label count (cyan) — shows allocated labels on supported vendors</li>
+  <li><strong>VNI</strong> — Active VXLAN Network Identifier count (purple) — shows EVPN-VXLAN instances</li>
   <li><strong>Alarms</strong> — Threshold-based alerts</li>
-  <li><strong>Drift</strong> — Config drift detection</li>
+  <li><strong>Drift</strong> — Config drift detection (disabled for containers — format mismatch)</li>
 </ul>
+<p class="help-desc"><strong>Vendor support for SR/VNI polling:</strong> SONiC, Arista cEOS, Nokia SR Linux, Juniper cRPD/vQFX, Cisco XRd. MikroTik, Extreme, Huawei skip gracefully.</p>
 <h4 class="help-h4">Multi-Server Monitoring</h4>
 <p class="help-desc">Monitor containers on any server. The backend server SSHes into remote Docker hosts to poll containers. Configure servers via <strong>Simulate &rarr; Server Manager</strong>.</p>`
         },
@@ -786,9 +849,11 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd></span><span>Copy / Paste</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>Ctrl</kbd>+<kbd>A</kbd></span><span>Select all</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>Ctrl</kbd>+<kbd>F</kbd></span><span>Search</span></div>
+  <div class="help-sc-row"><span class="help-sc-keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></span><span>Set Protocol (BGP/OSPF/ISIS/SR)</span></div>
+  <div class="help-sc-row"><span class="help-sc-keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></span><span>Toggle Admin Panel</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>Delete</kbd></span><span>Remove selected</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>L</kbd></span><span>Toggle Link Mode</span></div>
-  <div class="help-sc-row"><span class="help-sc-keys"><kbd>Escape</kbd></span><span>Cancel / Deselect</span></div>
+  <div class="help-sc-row"><span class="help-sc-keys"><kbd>Escape</kbd></span><span>Cancel / Deselect / Close dialog</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>?</kbd></span><span>Shortcuts panel</span></div>
   <div class="help-sc-row"><span class="help-sc-keys"><kbd>F1</kbd></span><span>Help panel</span></div>
 </div>`
@@ -831,14 +896,14 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     ]
 
     readonly welcomeFeatures = [
-        { icon: '▤', title: '157 Templates', desc: '13 vendors, container & design types' },
-        { icon: '⚙', title: 'Set Protocol', desc: 'Bulk-assign BGP, OSPF, or IS-IS' },
-        { icon: '⬡', title: 'Service Profiles', desc: 'EVPN-VXLAN, MPLS, Campus LAN' },
+        { icon: '▤', title: '170+ Templates', desc: '13 vendors, container & design types' },
+        { icon: '⚙', title: 'Set Protocol', desc: 'BGP, OSPF, IS-IS + SR-MPLS/SRv6' },
+        { icon: '🔶', title: 'CRB / ERB', desc: 'Centrally or Edge-Routed Bridging' },
+        { icon: '⬡', title: 'Service Profiles', desc: 'EVPN, CRB, ERB, MPLS, Campus' },
         { icon: '▶', title: 'Deploy Lab', desc: 'One-click containerlab deployment' },
         { icon: '📡', title: 'Digital Twin', desc: 'Live CPU, BGP, alarms dashboard' },
         { icon: '🔗', title: 'Device Mapping', desc: 'Map virtual to physical devices' },
         { icon: '⤓', title: 'Export Anywhere', desc: 'Ansible, Terraform, clab YAML' },
-        { icon: '⌨', title: 'Shortcuts', desc: 'Press ? for keyboard shortcuts' },
     ]
 
     // canvas context menu
@@ -3828,6 +3893,23 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return
         }
 
+        // Ctrl+Shift+P → open Set Protocol dialog
+        if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && ev.key.toLowerCase() === 'p') {
+            if (this._isTextInputTarget(ev.target)) { return }
+            if (this.topology.nodes.length === 0) { return }
+            ev.preventDefault()
+            this.openProtocolDialog()
+            return
+        }
+
+        // Escape closes Set Protocol dialog
+        if (this.showProtocolDialog && ev.key === 'Escape') {
+            ev.preventDefault()
+            this.showProtocolDialog = false
+            this.cdr.markForCheck()
+            return
+        }
+
         if (ev.key === '?' || (ev.shiftKey && ev.key === '/')) {
             if (this._isTextInputTarget(ev.target)) { return }
             this.showShortcutsOverlay = !this.showShortcutsOverlay
@@ -5430,6 +5512,32 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         return '—'
     }
 
+    /** Return SR-MPLS label count for a node (0 if not polled or unsupported) */
+    getTwinSrLabels (nodeId: string): number {
+        const node = this.topology?.nodes?.find(n => n.id === nodeId)
+        if (!node) { return 0 }
+        const safeName = node.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
+        for (const [ctnName, sr] of this.liveSrState) {
+            if (ctnName.endsWith('-' + safeName)) {
+                return sr.labelsCount
+            }
+        }
+        return 0
+    }
+
+    /** Return active VNI count for a node (0 if not polled or unsupported) */
+    getTwinVniCount (nodeId: string): number {
+        const node = this.topology?.nodes?.find(n => n.id === nodeId)
+        if (!node) { return 0 }
+        const safeName = node.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
+        for (const [ctnName, count] of this.liveVniState) {
+            if (ctnName.endsWith('-' + safeName)) {
+                return count
+            }
+        }
+        return 0
+    }
+
     // ── Traffic Flow Visualization ─────────────────────────────────────
 
     private readonly _flowColors = [
@@ -5784,6 +5892,75 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     // ── Set Protocol dialog ────────────────────────────────────────────────
 
+    /** Validation warnings shown in the Set Protocol dialog */
+    get protocolWarnings (): string[] {
+        const warnings: string[] = []
+        if (this.protocolChoice === 'none') { return warnings }
+
+        const nodes = this.protocolScope === 'selected' && this.selectedNodeIds.size
+            ? this.topology.nodes.filter(n => this.selectedNodeIds.has(n.id))
+            : this.topology.nodes
+
+        const routingNodes = nodes.filter(n => !['server', 'pc', 'host'].includes(n.type))
+        if (!routingNodes.length) {
+            warnings.push('No routing devices in scope (servers/PCs are excluded)')
+            return warnings
+        }
+
+        // Check vendor coverage for config generation
+        const noVendor = routingNodes.filter(n => !n.vendor).length
+        if (noVendor) {
+            warnings.push(`${noVendor} node(s) missing vendor — config won't generate for those`)
+        }
+
+        // Validate ASN range for eBGP — private ASN is 64512-65534; 4-byte private is 4200000000-4294967294
+        if (this.protocolChoice === 'ebgp') {
+            const spineEnd = this.protocolSpineAsn + routingNodes.filter(n => {
+                const lbl = n.label.toLowerCase()
+                return lbl.includes('spine') || lbl.includes('super-spine') || n.role === 'spine' || n.role === 'super-spine'
+            }).length
+            const leafEnd = this.protocolLeafAsn + routingNodes.filter(n => {
+                const lbl = n.label.toLowerCase()
+                return lbl.includes('leaf') || lbl.includes('tor') || n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor'
+            }).length
+            const exceeds2ByteLimit = (spineEnd > 65534 || leafEnd > 65534) && (this.protocolSpineAsn < 4200000000 && this.protocolLeafAsn < 4200000000)
+            if (exceeds2ByteLimit) {
+                warnings.push('ASN range exceeds private 2-byte limit (65534). Use 4-byte private ASNs (4200000000+) for large fabrics.')
+            }
+            const isPublicRange = (this.protocolSpineAsn >= 1 && this.protocolSpineAsn < 64512) || (this.protocolLeafAsn >= 1 && this.protocolLeafAsn < 64512)
+            if (isPublicRange) {
+                warnings.push('ASN in public range (1-64511). Recommended: use private ASN 64512-65534 or 4200000000+ for lab/fabric.')
+            }
+        }
+
+        // Check loopback IPs — needed for iBGP, EVPN, SR, OSPF router-id
+        const needsLoopbacks = ['ibgp-rr', 'ospf', 'ospfv3', 'isis'].includes(this.protocolChoice)
+            || this.protocolSrMpls || this.protocolSrv6
+        if (needsLoopbacks && !this.protocolAutoAssignLoopbacks) {
+            const noLoop = routingNodes.filter(n => !n.loopbackIp?.trim()).length
+            if (noLoop) {
+                warnings.push(`${noLoop} node(s) missing loopback IP — OVERLAY/SR will be incomplete. Enable auto-assign below.`)
+            }
+        }
+
+        // Check link IPs for eBGP
+        if (['ebgp', 'ospf', 'ospfv3', 'isis'].includes(this.protocolChoice) && this.topology.links.length && !this.protocolAutoAssignLinks) {
+            const noLinkIps = this.topology.links.filter(l => {
+                const sp = this._getPort(l.sourceNodeId, l.sourcePortId)
+                const tp = this._getPort(l.targetNodeId, l.targetPortId)
+                // Skip L2 ports (access/trunk)
+                if (sp?.vlanMode === 'access' || sp?.vlanMode === 'trunk') { return false }
+                if (tp?.vlanMode === 'access' || tp?.vlanMode === 'trunk') { return false }
+                return !sp?.ipAddress?.trim() || !tp?.ipAddress?.trim()
+            }).length
+            if (noLinkIps) {
+                warnings.push(`${noLinkIps} L3 link(s) missing IPs — BGP/OSPF/ISIS adjacency will fail. Enable auto-assign below.`)
+            }
+        }
+
+        return warnings
+    }
+
     openProtocolDialog (): void {
         const current = this.topology.underlayProtocol
         this.protocolChoice = current ?? 'none'
@@ -5791,6 +5968,11 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.protocolLeafAsn = 65100
         this.protocolOspfArea = 0
         this.protocolIsisLevel = 2
+        this.protocolSrMpls = false
+        this.protocolSrv6 = false
+        this.protocolSrgbStart = 16000
+        this.protocolSrgbEnd = 23999
+        this.protocolSrv6LocatorBase = 'fc00:0'
         this.protocolScope = this.selectedNodeIds.size > 0 ? 'selected' : 'all'
         this.showProtocolDialog = true
         this.cdr.markForCheck()
@@ -5800,16 +5982,48 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const nodeIds = this.protocolScope === 'selected' && this.selectedNodeIds.size
             ? this.selectedNodeIds
             : undefined
-        const count = this.svc.applyProtocol(this.protocolChoice, {
-            spineAsnStart: this.protocolSpineAsn,
-            leafAsnStart: this.protocolLeafAsn,
-            ospfArea: this.protocolOspfArea,
-            isisLevel: this.protocolIsisLevel,
-        }, nodeIds)
+        let count: number
+        try {
+            count = this.svc.applyProtocol(this.protocolChoice, {
+                spineAsnStart: this.protocolSpineAsn,
+                leafAsnStart: this.protocolLeafAsn,
+                ospfArea: this.protocolOspfArea,
+                isisLevel: this.protocolIsisLevel,
+                srMpls: this.protocolSrMpls,
+                srv6: this.protocolSrv6,
+                srgbStart: this.protocolSrgbStart,
+                srgbEnd: this.protocolSrgbEnd,
+                srv6LocatorBase: this.protocolSrv6LocatorBase,
+            }, nodeIds)
+        } catch (err) {
+            this.statusMsg = `Protocol apply failed: ${(err as Error).message}`
+            this.cdr.markForCheck()
+            return
+        }
+
+        const extras: string[] = []
+
+        // Auto-assign loopbacks (needed for router-ID, iBGP/EVPN peering, SR prefix-SID)
+        if (this.protocolAutoAssignLoopbacks && this.protocolChoice !== 'none') {
+            try {
+                const lbRes = this.svc.autoAssignLoopbacks(false, this.autoLoopbackBaseCidr)
+                if (lbRes.assigned) { extras.push(`${lbRes.assigned} loopback(s)`) }
+            } catch { /* skip silently */ }
+        }
+
+        // Auto-assign link IPs (needed for BGP adjacency, IGP interfaces)
+        if (this.protocolAutoAssignLinks && this.protocolChoice !== 'none' && this.topology.links.length) {
+            try {
+                const ipRes = this.svc.autoAddressLinks(false, this.autoIpBaseCidr, this.autoIpLinkPrefix)
+                if (ipRes.addressedLinks) { extras.push(`${ipRes.addressedLinks} link(s)`) }
+            } catch { /* skip silently */ }
+        }
+
         this.showProtocolDialog = false
+        const extraMsg = extras.length ? ` + ${extras.join(', ')}` : ''
         this.statusMsg = this.protocolChoice === 'none'
             ? `Cleared protocol from ${count} node(s)`
-            : `Applied ${this.protocolChoice.toUpperCase()} to ${count} node(s)`
+            : `Applied ${this.protocolChoice.toUpperCase()} to ${count} node(s)${extraMsg}`
         this.cdr.markForCheck()
     }
 
@@ -8034,6 +8248,27 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    /** Compute how many /prefix subnets fit in the current base CIDR (for dialog hint) */
+    get autoIpCapacity (): { available: number; needed: number; sufficient: boolean } {
+        try {
+            const [ipRaw, prefixRaw] = this.autoIpInput.trim().split('/')
+            const basePrefix = Number(prefixRaw)
+            if (!ipRaw || isNaN(basePrefix) || basePrefix < 0 || basePrefix > 31) { return { available: 0, needed: 0, sufficient: false } }
+            const subnetSize = Math.pow(2, 32 - this.autoIpLinkPrefix)
+            const totalIps = Math.pow(2, 32 - basePrefix)
+            const available = Math.floor(totalIps / subnetSize)
+            const overwrite = this.autoIpHasExisting && this.autoIpOverwriteExisting
+            const needed = overwrite
+                ? this.topology.links.length
+                : this.topology.links.filter(l => {
+                    const sp = this._getPort(l.sourceNodeId, l.sourcePortId)
+                    const tp = this._getPort(l.targetNodeId, l.targetPortId)
+                    return !(sp?.ipAddress?.trim() || tp?.ipAddress?.trim())
+                }).length
+            return { available, needed, sufficient: available >= needed }
+        } catch { return { available: 0, needed: 0, sufficient: false } }
+    }
+
     applyAutoIpDialog (): void {
         const subnet = this.autoIpInput.trim()
         if (!subnet) {
@@ -8049,6 +8284,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             result = this.svc.autoAddressLinks(
                 this.autoIpHasExisting && this.autoIpOverwriteExisting,
                 this.autoIpBaseCidr,
+                this.autoIpLinkPrefix,
             )
         } catch (err) {
             this.autoIpDialogError = (err as Error).message
@@ -8056,16 +8292,23 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return
         }
 
+        // If capacity ran out, show error IN the dialog so user can adjust and retry
+        if (result.skippedCapacity) {
+            this.autoIpDialogError = `Subnet too small: ${result.addressedLinks} of ${result.totalLinks} links addressed, ${result.skippedCapacity} link(s) could not fit. Use a larger base CIDR or smaller link prefix.`
+            this.cdr.markForCheck()
+            // Don't close — let user adjust
+            if (result.addressedLinks) {
+                this.statusMsg = `Partial: ${result.addressedLinks}/${result.totalLinks} links addressed (${result.skippedCapacity} out-of-range)`
+            }
+            return
+        }
+
         this.showAutoIpDialog = false
 
         if (!result.addressedLinks) {
-            if (result.skippedCapacity) {
-                this.statusMsg = 'No addresses applied (subnet exhausted for /30 link allocation)'
-            } else {
-                this.statusMsg = result.skippedMissing
-                    ? 'No addresses applied (missing ports on some links)'
-                    : 'No addresses applied (all links already had IPs)'
-            }
+            this.statusMsg = result.skippedMissing
+                ? 'No addresses applied (missing ports on some links)'
+                : 'No addresses applied (all links already had IPs)'
             this.cdr.markForCheck()
             return
         }
@@ -8073,8 +8316,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const skipped: string[] = []
         if (result.skippedExisting) { skipped.push(`${result.skippedExisting} kept`) }
         if (result.skippedMissing) { skipped.push(`${result.skippedMissing} missing`) }
-        if (result.skippedCapacity) { skipped.push(`${result.skippedCapacity} out-of-range`) }
-        this.statusMsg = `Auto-addressed ${result.addressedLinks}/${result.totalLinks} links from ${this.autoIpBaseCidr}${skipped.length ? ` (${skipped.join(', ')})` : ''}`
+        this.statusMsg = `Auto-addressed ${result.addressedLinks}/${result.totalLinks} links with /${this.autoIpLinkPrefix} subnets from ${this.autoIpBaseCidr}${skipped.length ? ` (${skipped.join(', ')})` : ''}`
         this.cdr.markForCheck()
     }
 
@@ -10141,6 +10383,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.livePollingActive = false
         this.showLivePanel = false
         this.liveBgpState.clear()
+        this.liveSrState.clear()
+        this.liveVniState.clear()
         this.liveSummary = { nodesUp: 0, nodesTotal: 0, bgpUp: 0, bgpTotal: 0 }
         this.cdr.markForCheck()
     }
@@ -10211,6 +10455,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 for (const n of (cStatus.bgpNeighbors ?? [])) {
                     bgpTotal++
                     if (n.state === 'established') { bgpUp++ }
+                }
+
+                // Store SR and VNI state (new in Twin polling)
+                if (cStatus.srEnabled != null) {
+                    this.liveSrState.set(cStatus.containerName, {
+                        srEnabled: !!cStatus.srEnabled,
+                        labelsCount: cStatus.srLabelsCount ?? 0,
+                    })
+                }
+                if (cStatus.vniActive != null) {
+                    this.liveVniState.set(cStatus.containerName, cStatus.vniActive)
                 }
             }
 

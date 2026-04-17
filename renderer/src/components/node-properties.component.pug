@@ -273,7 +273,8 @@
         option([ngValue]='2') Level 2
         option([ngValue]='12') L1/L2
 
-    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+    //- ── Segment Routing fields — shown only when IGP (ISIS/OSPF) is configured ──
+    .form-row(*ngIf='!isHostNode && !isBridgeNode && hasIgpRouting')
       label.form-label Node SID
       input.form-input(
         type='number', min='0',
@@ -283,7 +284,27 @@
         (keydown)='onInfoKeydown($event, "nodeSid")'
       )
 
-    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+    .form-row(*ngIf='!isHostNode && !isBridgeNode && hasIgpRouting')
+      label.form-label SRGB Start
+      input.form-input(
+        type='number', min='16',
+        [(ngModel)]='draft.srgbStart',
+        placeholder='16000 (default)',
+        (blur)='applySrgbStart()',
+        (keydown)='onInfoKeydown($event, "srgbStart")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode && hasIgpRouting')
+      label.form-label SRGB End
+      input.form-input(
+        type='number', min='16',
+        [(ngModel)]='draft.srgbEnd',
+        placeholder='23999 (default)',
+        (blur)='applySrgbEnd()',
+        (keydown)='onInfoKeydown($event, "srgbEnd")'
+      )
+
+    .form-row(*ngIf='!isHostNode && !isBridgeNode && hasIgpRouting')
       label.form-label SRv6 Locator
       input.form-input(
         type='text',

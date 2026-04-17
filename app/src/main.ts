@@ -4944,9 +4944,115 @@ function _bgpSummaryCommand (kind: string): string[] | null {
         case 'juniper_vjunosrouter':
         case 'juniper_vjunosevolved':
             return ['cli', '-c', 'show bgp summary']
+        case 'huawei_ne':
+        case 'huawei':
+            return ['display', 'bgp', 'peer']
+        case 'xrd':
+        case 'xrv9k':
+        case 'cisco_xrv':
+            return ['show', 'bgp', 'summary']
         default:
             return null
     }
+}
+
+/** SR-MPLS label binding / SRv6 locator status command per vendor */
+function _srStatusCommand (kind: string): string[] | null {
+    switch (kind) {
+        case 'sonic-vs':
+        case 'sonic':
+            return ['vtysh', '-c', 'show mpls table']
+        case 'ceos':
+            return ['Cli', '-p', '15', '-c', 'show mpls label range']
+        case 'srl':
+            return ['sr_cli', '-d', 'show network-instance default segment-routing mpls']
+        case 'crpd':
+        case 'juniper_vqfx':
+        case 'juniper_vjunosrouter':
+            return ['cli', '-c', 'show route table mpls.0']
+        case 'xrd':
+        case 'xrv9k':
+            return ['show', 'mpls', 'forwarding']
+        default:
+            return null
+    }
+}
+
+/** VNI / VTEP status command for EVPN-VXLAN */
+function _vniStatusCommand (kind: string): string[] | null {
+    switch (kind) {
+        case 'sonic-vs':
+        case 'sonic':
+            return ['vtysh', '-c', 'show evpn vni json']
+        case 'ceos':
+            return ['Cli', '-p', '15', '-c', 'show vxlan vni | json']
+        case 'srl':
+            return ['sr_cli', '-d', 'show tunnel-interface vxlan1 vxlan-interface 0']
+        case 'crpd':
+        case 'juniper_vqfx':
+        case 'juniper_vjunosswitch':
+            return ['cli', '-c', 'show ethernet-switching vxlan-tunnel-end-point remote']
+        default:
+            return null
+    }
+}
+
+interface SrVniStatus {
+    srEnabled: boolean
+    srLabelsCount: number
+    vniActive: number
+}
+
+function _parseSrStatus (kind: string, stdout: string): { srEnabled: boolean; labelsCount: number } {
+    if (!stdout || !stdout.trim()) { return { srEnabled: false, labelsCount: 0 } }
+    try {
+        if (kind === 'sonic-vs' || kind === 'sonic') {
+            // vtysh "show mpls table" — count label entries (each label is a line with numeric prefix)
+            const labels = stdout.split('\n').filter(l => /^\s*\d+\s/.test(l))
+            return { srEnabled: labels.length > 0, labelsCount: labels.length }
+        }
+        // Generic: any numeric-looking label entries
+        const labels = stdout.split('\n').filter(l => /\b(1[6-9]\d{3}|2\d{4})\b/.test(l))
+        return { srEnabled: labels.length > 0, labelsCount: labels.length }
+    } catch { return { srEnabled: false, labelsCount: 0 } }
+}
+
+/** Simple promise-throttling helper — limits N concurrent promises. */
+async function _runWithConcurrency<T> (tasks: Array<() => Promise<T>>, limit: number): Promise<PromiseSettledResult<T>[]> {
+    const results: PromiseSettledResult<T>[] = new Array(tasks.length)
+    if (tasks.length === 0) { return results }
+    // Clamp limit to [1, tasks.length] — ensures at least 1 worker and never more than needed
+    const workerCount = Math.max(1, Math.min(limit, tasks.length))
+    let idx = 0
+    const workers: Promise<void>[] = []
+    const runWorker = async (): Promise<void> => {
+        while (idx < tasks.length) {
+            const current = idx++
+            try {
+                const value = await tasks[current]()
+                results[current] = { status: 'fulfilled', value }
+            } catch (reason) {
+                results[current] = { status: 'rejected', reason }
+            }
+        }
+    }
+    for (let i = 0; i < workerCount; i++) { workers.push(runWorker()) }
+    await Promise.all(workers)
+    return results
+}
+
+function _parseVniStatus (kind: string, stdout: string): number {
+    if (!stdout || !stdout.trim()) { return 0 }
+    try {
+        if (kind === 'sonic-vs' || kind === 'sonic') {
+            // Parse FRR EVPN VNI JSON output
+            const parsed = JSON.parse(stdout.trim())
+            return typeof parsed === 'object' ? Object.keys(parsed).length : 0
+        }
+        // Generic: count lines mentioning VNI
+        const vniLines = stdout.split('\n').filter(l => /\bvni\b/i.test(l) && /\d{4,}/.test(l))
+        return vniLines.length
+    } catch { return 0 }
 }
 
 interface ParsedBgpNeighbor {
@@ -5076,9 +5182,12 @@ ipcMain.handle('clab-poll-live-status', async (_event, rawPayload: unknown) => {
         }
     }
 
-    // Step 2: For running network containers, get BGP summary via async docker exec (in parallel)
-    const results: Array<{ containerName: string; state: string; bgpNeighbors: ParsedBgpNeighbor[] }> = []
-    const bgpPromises: Array<{ idx: number; promise: Promise<{ stdout: string }> }> = []
+    // Step 2: For running network containers, get BGP + SR + VNI with concurrency limiting
+    // (prevents overloading Docker daemon with 60+ simultaneous exec calls on large labs)
+    const results: Array<{ containerName: string; state: string; bgpNeighbors: ParsedBgpNeighbor[]; srEnabled?: boolean; srLabelsCount?: number; vniActive?: number }> = []
+    type TaskMeta = { idx: number; type: 'bgp' | 'sr' | 'vni'; kind: string }
+    const tasks: Array<() => Promise<{ stdout: string }>> = []
+    const taskMeta: TaskMeta[] = []
 
     for (let i = 0; i < containers.length; i++) {
         const c = containers[i]
@@ -5088,21 +5197,37 @@ ipcMain.handle('clab-poll-live-status', async (_event, rawPayload: unknown) => {
         if (state === 'running') {
             const bgpCmd = _bgpSummaryCommand(c.kind)
             if (bgpCmd) {
-                bgpPromises.push({
-                    idx: i,
-                    promise: _spawnAsync('docker', ['exec', c.name, ...bgpCmd], { timeout: 15_000, env: dockerEnv }),
-                })
+                tasks.push(() => _spawnAsync('docker', ['exec', c.name, ...bgpCmd], { timeout: 15_000, env: dockerEnv }))
+                taskMeta.push({ idx: i, type: 'bgp', kind: c.kind })
+            }
+            const srCmd = _srStatusCommand(c.kind)
+            if (srCmd) {
+                tasks.push(() => _spawnAsync('docker', ['exec', c.name, ...srCmd], { timeout: 10_000, env: dockerEnv }))
+                taskMeta.push({ idx: i, type: 'sr', kind: c.kind })
+            }
+            const vniCmd = _vniStatusCommand(c.kind)
+            if (vniCmd) {
+                tasks.push(() => _spawnAsync('docker', ['exec', c.name, ...vniCmd], { timeout: 10_000, env: dockerEnv }))
+                taskMeta.push({ idx: i, type: 'vni', kind: c.kind })
             }
         }
     }
 
-    // Await all BGP queries in parallel instead of sequentially
-    const bgpResults = await Promise.allSettled(bgpPromises.map(p => p.promise))
-    for (let j = 0; j < bgpPromises.length; j++) {
-        const settled = bgpResults[j]
-        if (settled.status === 'fulfilled' && settled.value.stdout) {
-            const c = containers[bgpPromises[j].idx]
-            results[bgpPromises[j].idx].bgpNeighbors = _parseBgpSummary(c.kind, settled.value.stdout)
+    // Throttle to max 15 concurrent docker execs to prevent daemon overload
+    const settled = await _runWithConcurrency(tasks, 15)
+
+    for (let j = 0; j < settled.length; j++) {
+        const res = settled[j]
+        const meta = taskMeta[j]
+        if (res.status !== 'fulfilled' || !res.value.stdout) { continue }
+        if (meta.type === 'bgp') {
+            results[meta.idx].bgpNeighbors = _parseBgpSummary(meta.kind, res.value.stdout)
+        } else if (meta.type === 'sr') {
+            const sr = _parseSrStatus(meta.kind, res.value.stdout)
+            results[meta.idx].srEnabled = sr.srEnabled
+            results[meta.idx].srLabelsCount = sr.labelsCount
+        } else if (meta.type === 'vni') {
+            results[meta.idx].vniActive = _parseVniStatus(meta.kind, res.value.stdout)
         }
     }
 

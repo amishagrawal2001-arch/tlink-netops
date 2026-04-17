@@ -205,11 +205,16 @@ export class TopologyService {
         }
     }
 
-    autoAddressLinks (overwrite = false, baseCidr = '10.0.0.0/8'): AutoAddressSummary {
+    autoAddressLinks (overwrite = false, baseCidr = '10.0.0.0/8', linkPrefix = 30): AutoAddressSummary {
         const totalLinks = this.topology.links.length
         if (!totalLinks) {
             return { totalLinks: 0, addressedLinks: 0, skippedExisting: 0, skippedMissing: 0, skippedCapacity: 0 }
         }
+
+        // Clamp prefix to valid range for link subnets (24-31)
+        const prefix = Math.max(24, Math.min(31, linkPrefix))
+        const subnetSize = Math.pow(2, 32 - prefix)  // IPs per subnet (e.g., /30=4, /31=2, /24=256)
+        const isP2P = prefix === 31  // RFC 3021: /31 uses .0 and .1 directly
 
         const { networkStart, networkEnd } = parseBaseCidr(baseCidr)
 
@@ -235,19 +240,33 @@ export class TopologyService {
                 continue
             }
 
+            // Skip L2 ports (access/trunk from service profile) — they shouldn't get L3 IPs
+            if (sourcePort.vlanMode === 'access' || sourcePort.vlanMode === 'trunk'
+                || targetPort.vlanMode === 'access' || targetPort.vlanMode === 'trunk') {
+                skippedExisting += 1
+                continue
+            }
+
             if (!overwrite && (sourcePort.ipAddress?.trim() || targetPort.ipAddress?.trim())) {
                 skippedExisting += 1
                 continue
             }
 
-            const subnetNetwork = networkStart + addressedLinks * 4
-            if (subnetNetwork + 3 > networkEnd) {
+            const subnetNetwork = networkStart + addressedLinks * subnetSize
+            if (subnetNetwork + subnetSize - 1 > networkEnd) {
                 skippedCapacity += 1
                 continue
             }
 
-            sourcePort.ipAddress = `${intToIp(subnetNetwork + 1)}/30`
-            targetPort.ipAddress = `${intToIp(subnetNetwork + 2)}/30`
+            if (isP2P) {
+                // /31 (RFC 3021): both addresses are usable, no network/broadcast
+                sourcePort.ipAddress = `${intToIp(subnetNetwork)}/31`
+                targetPort.ipAddress = `${intToIp(subnetNetwork + 1)}/31`
+            } else {
+                // /30, /29, /28, etc.: skip network address (.0), assign .1 and .2
+                sourcePort.ipAddress = `${intToIp(subnetNetwork + 1)}/${prefix}`
+                targetPort.ipAddress = `${intToIp(subnetNetwork + 2)}/${prefix}`
+            }
             addressedLinks += 1
         }
 
@@ -1224,18 +1243,41 @@ export class TopologyService {
      */
     applyProtocol (
         proto: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis',
-        config: { spineAsnStart?: number; leafAsnStart?: number; ospfArea?: number; isisLevel?: 1 | 2 | 12 },
+        config: {
+            spineAsnStart?: number; leafAsnStart?: number; ospfArea?: number; isisLevel?: 1 | 2 | 12;
+            srMpls?: boolean; srv6?: boolean; srgbStart?: number; srgbEnd?: number; srv6LocatorBase?: string;
+        },
         nodeIds?: Set<string>,
     ): number {
         const nodes = nodeIds?.size
             ? this.topology.nodes.filter(n => nodeIds.has(n.id))
             : this.topology.nodes
 
-        // Clear old protocol fields
+        // Infer role from label when no explicit role is set
+        const role = (n: { role?: string; label: string; type: string }): string => {
+            if (n.role && n.role !== 'custom') { return n.role }
+            const lbl = n.label.toLowerCase()
+            if (lbl.includes('super-spine')) { return 'super-spine' }
+            if (lbl.includes('spine'))       { return 'spine' }
+            if (lbl.includes('border-leaf') || lbl.includes('borderleaf')) { return 'border-leaf' }
+            if (lbl.includes('leaf'))        { return 'leaf' }
+            if (lbl.includes('tor'))         { return 'tor' }
+            if (lbl.includes('core'))        { return 'core' }
+            return 'custom'
+        }
+
+        // Only assign protocol fields to network devices, not servers/PCs/hosts
+        const nonRoutingTypes = ['server', 'pc', 'host']
+
+        // Clear old protocol fields on ALL nodes (including servers that may have stale ASNs)
         for (const n of nodes) {
             n.asn = undefined
             n.ospfArea = undefined
             n.isisLevel = undefined
+            n.nodeSid = undefined
+            n.srgbStart = undefined
+            n.srgbEnd = undefined
+            n.srv6Locator = undefined
         }
 
         if (proto === 'ebgp') {
@@ -1243,26 +1285,62 @@ export class TopologyService {
             const leafAsnStart  = config.leafAsnStart ?? 65100
             let spineIdx = 0, leafIdx = 0, otherIdx = 0
             for (const n of nodes) {
-                if (n.role === 'spine' || n.role === 'super-spine') { n.asn = spineAsnStart + spineIdx++ }
-                else if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') { n.asn = leafAsnStart + leafIdx++ }
+                if (nonRoutingTypes.includes(n.type)) { continue }
+                const r = role(n)
+                if (r === 'spine' || r === 'super-spine') { n.asn = spineAsnStart + spineIdx++ }
+                else if (r === 'leaf' || r === 'border-leaf' || r === 'tor') { n.asn = leafAsnStart + leafIdx++ }
                 else { n.asn = (leafAsnStart) + 200 + otherIdx++ }
             }
         } else if (proto === 'ibgp-rr') {
             const sharedAsn = config.spineAsnStart ?? 65000
-            for (const n of nodes) { n.asn = sharedAsn; n.ospfArea = 0 }
+            for (const n of nodes) {
+                if (nonRoutingTypes.includes(n.type)) { continue }
+                n.asn = sharedAsn; n.ospfArea = 0
+            }
         } else if (proto === 'ospf' || proto === 'ospfv3') {
-            for (const n of nodes) { n.ospfArea = config.ospfArea ?? 0 }
+            let sidIdx = 1
+            for (const n of nodes) {
+                if (nonRoutingTypes.includes(n.type)) { continue }
+                n.ospfArea = config.ospfArea ?? 0
+                // SR-MPLS with OSPF
+                if (config.srMpls) {
+                    n.nodeSid = sidIdx
+                    n.srgbStart = config.srgbStart ?? 16000
+                    n.srgbEnd = config.srgbEnd ?? 23999
+                }
+                // SRv6 with OSPF
+                if (config.srv6) {
+                    const base = config.srv6LocatorBase ?? 'fc00:0'
+                    n.srv6Locator = `${base}:${sidIdx}::/48`
+                }
+                if (config.srMpls || config.srv6) { sidIdx++ }
+            }
         } else if (proto === 'isis') {
             let sidIdx = 1
             for (const n of nodes) {
-                if (n.role === 'spine' || n.role === 'super-spine') { n.isisLevel = config.isisLevel ?? 2 }
-                else if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') { n.isisLevel = 12 }
+                if (nonRoutingTypes.includes(n.type)) { continue }
+                const r = role(n)
+                if (r === 'spine' || r === 'super-spine') { n.isisLevel = config.isisLevel ?? 2 }
+                else if (r === 'leaf' || r === 'border-leaf' || r === 'tor') { n.isisLevel = 12 }
                 else { n.isisLevel = config.isisLevel ?? 2 }
-                n.nodeSid = sidIdx++
+                // SR-MPLS (enabled when toggled on in dialog)
+                if (config.srMpls) {
+                    n.nodeSid = sidIdx
+                    n.srgbStart = config.srgbStart ?? 16000
+                    n.srgbEnd = config.srgbEnd ?? 23999
+                }
+                // SRv6
+                if (config.srv6) {
+                    const base = config.srv6LocatorBase ?? 'fc00:0'
+                    n.srv6Locator = `${base}:${sidIdx}::/48`
+                }
+                sidIdx++
             }
         }
 
-        this.topology.underlayProtocol = proto === 'none' ? undefined : proto as any
+        const newUnderlay = proto === 'none' ? undefined : proto as any
+        this._patch({ nodes, underlayProtocol: newUnderlay })
+        this._regenerateConfigs(true)
         return nodes.length
     }
 
@@ -1282,10 +1360,39 @@ export class TopologyService {
         const topo = this.topology
         const links = topo.links
 
+        // Propagate overlay flag from service profile to topology
+        // Propagate overlay and IRB flags from service profile to topology
+        if (profile.overlayEnabled != null) {
+            topo.overlayEnabled = profile.overlayEnabled
+        }
+        if (profile.irbEnabled != null) {
+            topo.irbEnabled = profile.irbEnabled
+        }
+        if (profile.irbMode) {
+            topo.irbMode = profile.irbMode
+        }
+
         // Role tier map for determining uplink/downlink direction
         const roleTier: Record<string, number> = {
             'super-spine': 0, spine: 1, leaf: 2, 'border-leaf': 2,
             tor: 3, access: 3, aggregation: 1, core: 0, gateway: 0, custom: 3,
+        }
+
+        // Infer role from label when no explicit role is set
+        const inferRole = (node: { role?: string; label: string; type: string }): string => {
+            if (node.role && node.role !== 'custom') { return node.role }
+            const lbl = node.label.toLowerCase()
+            if (lbl.includes('spine'))       { return 'spine' }
+            if (lbl.includes('super-spine')) { return 'super-spine' }
+            if (lbl.includes('border-leaf') || lbl.includes('borderleaf')) { return 'border-leaf' }
+            if (lbl.includes('leaf'))        { return 'leaf' }
+            if (lbl.includes('tor'))         { return 'tor' }
+            if (lbl.includes('core'))        { return 'core' }
+            if (lbl.includes('aggregation') || lbl.includes('agg')) { return 'aggregation' }
+            if (lbl.includes('access'))      { return 'access' }
+            if (lbl.includes('gateway') || lbl.includes('gw')) { return 'gateway' }
+            if (node.type === 'server')      { return 'access' }
+            return 'custom'
         }
 
         // Build port→linked-node-role index
@@ -1301,14 +1408,14 @@ export class TopologyService {
             const srcKey = `${srcNode.id}:${link.sourcePortId}`
             const tgtKey = `${tgtNode.id}:${link.targetPortId}`
 
-            portPeer.set(srcKey, tgtNode.role ?? 'custom')
-            portPeer.set(tgtKey, srcNode.role ?? 'custom')
+            portPeer.set(srcKey, inferRole(tgtNode) as NodeRole)
+            portPeer.set(tgtKey, inferRole(srcNode) as NodeRole)
             connectedPorts.add(srcKey)
             connectedPorts.add(tgtKey)
         }
 
         const nodes = topo.nodes.map(node => {
-            const nodeRole = node.role ?? 'custom'
+            const nodeRole = inferRole(node)
             const nodeTier = roleTier[nodeRole] ?? 3
 
             // Apply VLANs to node
@@ -1329,7 +1436,7 @@ export class TopologyService {
                 // Find first matching rule for this port
                 let ruleMatched = false
                 for (const rule of profile.portRules) {
-                    if (!rule.roles.includes(nodeRole)) { continue }
+                    if (!rule.roles.includes(nodeRole as any)) { continue }
 
                     let scopeMatch = false
                     switch (rule.scope) {
@@ -1354,12 +1461,16 @@ export class TopologyService {
                 }
 
                 // Fallback: if no rule matched (e.g. node role not in any rule),
-                // default connected ports to trunk and free ports to access
+                // default connected ports to trunk; free ports to access only on edge roles
                 if (!ruleMatched && (overwrite || !port.vlanMode)) {
                     if (isConnected) {
                         return { ...port, vlanMode: 'trunk' as const, trunkNativeVlan: 999, trunkAllowedVlans: 'all' }
                     } else if (isFree && vlans.length) {
-                        return { ...port, vlanMode: 'access' as const, vlan: vlans[0].id }
+                        // Only assign access mode on edge/leaf roles — spines and core should leave free ports unconfigured
+                        const edgeRoles = ['leaf', 'border-leaf', 'tor', 'access', 'custom']
+                        if (edgeRoles.includes(nodeRole)) {
+                            return { ...port, vlanMode: 'access' as const, vlan: vlans[0].id }
+                        }
                     }
                 }
 
@@ -1371,9 +1482,8 @@ export class TopologyService {
 
         this._patch({ nodes })
 
-        if (regenConfigs) {
-            this._regenerateConfigs()
-        }
+        // Always regenerate configs after applying a service profile — VLANs and port modes changed
+        this._regenerateConfigs(true)
     }
 
     /** Regenerate vendor startup configs for all nodes that have a vendor set.
@@ -1384,6 +1494,20 @@ export class TopologyService {
     private _regenerateConfigs (force = false): void {
         const topo = this.topology
         const nodeMap = new Map(topo.nodes.map(n => [n.id, n]))
+
+        // Infer role from label when no explicit role is set
+        const inferRole = (node: { role?: string; label: string; type: string }): string => {
+            if (node.role && node.role !== 'custom') { return node.role }
+            const lbl = node.label.toLowerCase()
+            if (lbl.includes('super-spine')) { return 'super-spine' }
+            if (lbl.includes('spine'))       { return 'spine' }
+            if (lbl.includes('border-leaf') || lbl.includes('borderleaf')) { return 'border-leaf' }
+            if (lbl.includes('leaf'))        { return 'leaf' }
+            if (lbl.includes('tor'))         { return 'tor' }
+            if (lbl.includes('core'))        { return 'core' }
+            if (lbl.includes('access'))      { return 'access' }
+            return 'custom'
+        }
 
         // ── Pre-compute per-node BGP neighbor list from links ──
         const bgpNeighborMap = new Map<string, BgpNeighbor[]>()
@@ -1404,10 +1528,11 @@ export class TopologyService {
 
             if (srcNode.asn != null && tgtNode.asn != null) {
                 // For iBGP (same ASN in ibgp-rr mode): use loopback IPs for peering
+                // Never fall back to mgmtIp — it may be a hostname or OOB address
                 const sameAsn = srcNode.asn === tgtNode.asn
                 const useLoopback = isIbgpRr && sameAsn
-                const srcLoopback = (srcNode.loopbackIp ?? srcNode.mgmtIp)?.split('/')[0]
-                const tgtLoopback = (tgtNode.loopbackIp ?? tgtNode.mgmtIp)?.split('/')[0]
+                const srcLoopback = srcNode.loopbackIp?.split('/')[0]
+                const tgtLoopback = tgtNode.loopbackIp?.split('/')[0]
 
                 const neighborIpForSrc = useLoopback && tgtLoopback ? tgtLoopback : tgtIp
                 const neighborIpForTgt = useLoopback && srcLoopback ? srcLoopback : srcIp
@@ -1437,11 +1562,12 @@ export class TopologyService {
         const spineLoopbacks: string[] = []
         const leafLoopbacks: string[] = []
         for (const node of topo.nodes) {
-            const loopIp = (node.loopbackIp ?? node.mgmtIp)?.split('/')[0]
+            const loopIp = node.loopbackIp?.split('/')[0]
             if (!loopIp || node.asn == null) { continue }
-            if (node.role === 'spine' || node.role === 'super-spine') {
+            const r = inferRole(node)
+            if (r === 'spine' || r === 'super-spine') {
                 spineLoopbacks.push(loopIp)
-            } else if (node.role === 'leaf' || node.role === 'border-leaf' || node.role === 'tor') {
+            } else if (r === 'leaf' || r === 'border-leaf' || r === 'tor') {
                 leafLoopbacks.push(loopIp)
             }
         }
@@ -1501,7 +1627,7 @@ export class TopologyService {
         const nodes = topo.nodes.map(n => {
             if (!n.vendor) { return n }
 
-            const loopIp = (n.loopbackIp ?? n.mgmtIp)?.split('/')[0] ?? ''
+            const loopIp = n.loopbackIp?.split('/')[0] ?? ''
             const hasAsn = n.asn != null
             const hasVlans = (n.vlans?.length ?? 0) > 0
 
@@ -1510,10 +1636,18 @@ export class TopologyService {
 
             // Determine overlay: require explicit topology-level flag + ASN
             // Spines are EVPN RRs even without VLANs; leaves need VLANs for VNI mappings
-            const isSpineRole = n.role === 'spine' || n.role === 'super-spine'
+            const nodeRole = inferRole(n)
+            const isSpineRole = nodeRole === 'spine' || nodeRole === 'super-spine'
+            const isLeafRole = nodeRole === 'leaf' || nodeRole === 'border-leaf' || nodeRole === 'tor'
             const overlay = topoOverlay && hasAsn
                 ? (isSpineRole || hasVlans)
                 : false
+
+            // ERB (symmetric): spines are L3-only RRs — no VLANs, no VNI
+            // CRB (asymmetric): spines are centralized gateways — need VLANs for IRB
+            const isCrb = topo.irbMode === 'asymmetric'
+            const stripSpineVlans = isSpineRole && topoOverlay && !isCrb
+            const nodeVlans = stripSpineVlans ? [] : (n.vlans ?? [])
 
             const ctx: VendorConfigContext = {
                 nodeType: n.type,
@@ -1524,28 +1658,27 @@ export class TopologyService {
                 sshUsername: '',
                 model: n.model ?? '',
                 switchFamily: (n.switchFamily ?? '') as SwitchFamily | '',
-                vlans: n.vlans ?? [],
+                vlans: nodeVlans,
 
                 // BGP underlay context
                 asn: n.asn,
                 routerId: loopIp || undefined,
                 bgpNeighbors: bgpNeighborMap.get(n.id) ?? [],
                 underlayProtocol: underlay,
-                isRouteReflector: isIbgpRr && (n.role === 'spine' || n.role === 'super-spine'),
+                isRouteReflector: isIbgpRr && isSpineRole,
 
                 // EVPN-VXLAN overlay context
                 overlayEnabled: overlay,
-                overlayNeighbors: (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor')
-                    ? spineLoopbacks
-                    : leafLoopbacks,
+                overlayNeighbors: isLeafRole ? spineLoopbacks : leafLoopbacks,
                 // Spines are EVPN RRs — no VTEP/VNI; only leafs get VNI mappings
-                vniMappings: (n.role === 'spine' || n.role === 'super-spine')
+                // ERB: spines are pure RRs (no VNI, no VTEP); CRB: spines are centralized gateways (need VNI + VTEP)
+                vniMappings: (isSpineRole && !isCrb)
                     ? []
-                    : (n.vlans ?? [])
+                    : (nodeVlans)
                         .filter(v => v.id >= 100 && v.id < 4000)
                         .map(v => ({ vlanId: v.id, vni: vniBase + v.id, vlanName: v.name })),
-                vtepSourceIp: (n.role === 'spine' || n.role === 'super-spine') ? undefined : (loopIp || undefined),
-                nodeRole: n.role,
+                vtepSourceIp: (isSpineRole && !isCrb) ? undefined : (loopIp || undefined),
+                nodeRole: nodeRole as any,
                 irbEnabled: topo.irbEnabled === true,
                 irbGatewayBase: topo.irbGatewayBase,
                 irbMode: topo.irbMode,
@@ -1564,7 +1697,8 @@ export class TopologyService {
                 srgbEnd: n.srgbEnd,
                 srv6Locator: n.srv6Locator,
                 mplsLdp: n.mplsLdp,
-                mplsInterfaces: (isisInterfaceMap.get(n.id) ?? []).map(i => i.portLabel),
+                // MPLS interfaces: from IS-IS or OSPF interface maps (for SR-MPLS)
+                mplsInterfaces: (isisInterfaceMap.get(n.id) ?? ospfInterfaceMap.get(n.id) ?? []).map((i: any) => i.portLabel),
 
                 // IS-IS underlay context
                 isisInterfaces: isisInterfaceMap.get(n.id) ?? [],

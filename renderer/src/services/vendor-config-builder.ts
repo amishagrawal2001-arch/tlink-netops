@@ -703,16 +703,19 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 for (const m of mappings) {
                     lines.push(`set vlans vlan${m.vlanId} vxlan vni ${m.vni}`)
                 }
-                // IRB interfaces — ERB: on leaves (distributed gateway); CRB: on spines (centralized gateway)
-                const hasVlans = ctx.vlans && ctx.vlans.length > 0
-                if (ctx.irbEnabled && (isLeaf || hasVlans)) {
+                // IRB interfaces — ERB (symmetric): on leaves (distributed gateway); CRB (asymmetric): on spines only (centralized gateway)
+                // Only tenant VLANs get IRB — skip infrastructure (MGMT, native, underlay: id < 100 or >= 900)
+                const irbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+                const isAsymmetric = ctx.irbMode === 'asymmetric'
+                // CRB: IRB only on spines (centralized); ERB: IRB on leaves (distributed)
+                const irbOnThisNode = isAsymmetric ? isSpine : isLeaf
+                if (ctx.irbEnabled && irbMappings.length && irbOnThisNode) {
                     const gwBase = ctx.irbGatewayBase ?? '192.168'
-                    const isAsymmetric = ctx.irbMode === 'asymmetric'
                     lines.push('')
                     const gwType = isLeaf ? 'distributed anycast' : 'centralized'
                     const routingModel = isAsymmetric ? 'asymmetric' : 'symmetric'
                     lines.push(`# IRB interfaces — ${gwType} gateway (${routingModel} IRB)`)
-                    for (const m of mappings) {
+                    for (const m of irbMappings) {
                         const gwIp = `${gwBase}.${m.vlanId}.1/24`
                         lines.push(`set interfaces irb unit ${m.vlanId} family inet address ${gwIp}`)
                         lines.push(`set interfaces irb unit ${m.vlanId} mac 00:00:5e:00:01:01`)
@@ -725,7 +728,7 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                         lines.push('set routing-instances EVPN-VRF instance-type vrf')
                         lines.push(`set routing-instances EVPN-VRF route-distinguisher ${rid}:1`)
                         lines.push(`set routing-instances EVPN-VRF vrf-target target:${asn}:1`)
-                        for (const m of mappings) {
+                        for (const m of irbMappings) {
                             lines.push(`set routing-instances EVPN-VRF interface irb.${m.vlanId}`)
                         }
                         lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes advertise direct-nexthop')
@@ -767,18 +770,49 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             break
         }
 
-        case 'sonic':
+        case 'sonic': {
+            const isSonicLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
+            const isSonicSpine = ctx.nodeRole === 'spine' || ctx.nodeRole === 'super-spine'
             lines.push('')
             lines.push('# EVPN-VXLAN overlay')
-            lines.push(`config vxlan add vtep vtep1 ${vtep}`)
-            lines.push('config vxlan evpn_nvo add nvo1 vtep1')
-            for (const m of mappings) {
-                lines.push(`config vxlan map add vtep1 vlan ${m.vlanId} vni ${m.vni}`)
-            }
-            for (const peer of overlayPeers) {
-                lines.push(`config bgp neighbor activate ${peer} l2vpn_evpn`)
+            if (isSonicSpine) {
+                // Spine: EVPN RR only — activate overlay peers, no VTEP/VNI
+                for (const peer of overlayPeers) {
+                    lines.push(`config bgp neighbor activate ${peer} l2vpn_evpn`)
+                    lines.push(`config bgp neighbor route-reflector ${peer} l2vpn_evpn`)
+                }
+            } else {
+                // Leaf: full VTEP + VNI + overlay
+                lines.push(`config vxlan add vtep vtep1 ${vtep}`)
+                lines.push('config vxlan evpn_nvo add nvo1 vtep1')
+                for (const m of mappings) {
+                    lines.push(`config vxlan map add vtep1 vlan ${m.vlanId} vni ${m.vni}`)
+                }
+                for (const peer of overlayPeers) {
+                    lines.push(`config bgp neighbor activate ${peer} l2vpn_evpn`)
+                }
+                // IRB — ERB: on leaves; CRB: on spines
+                const sonicIrbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+                const sonicIsAsymmetric = ctx.irbMode === 'asymmetric'
+                const sonicIrbOnThisNode = sonicIsAsymmetric ? isSonicSpine : isSonicLeaf
+                if (ctx.irbEnabled && sonicIrbMappings.length && sonicIrbOnThisNode) {
+                    lines.push('')
+                    const gwType = isSonicLeaf ? 'distributed' : 'centralized'
+                    lines.push(`# IRB interfaces — ${gwType} gateway`)
+                    const gwBase = ctx.irbGatewayBase || '192.168'
+                    for (const m of sonicIrbMappings) {
+                        lines.push(`config interface vlan add Vlan${m.vlanId}`)
+                        lines.push(`config interface ip add Vlan${m.vlanId} ${gwBase}.${m.vlanId}.1/24`)
+                    }
+                    if (ctx.irbMode === 'symmetric' && sonicIrbMappings.length) {
+                        const l3Vni = sonicIrbMappings[0].vni + 9000
+                        lines.push(`config vrf add VrfTenant`)
+                        lines.push(`config vxlan map add vtep1 vrf VrfTenant vni ${l3Vni}`)
+                    }
+                }
             }
             break
+        }
 
         case 'arista': {
             const isAristaLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
@@ -859,11 +893,15 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             }
             lines.push('!')
 
-            // IRB interfaces for distributed gateway (leaf nodes only)
-            if (ctx.irbEnabled && isAristaLeaf) {
+            // IRB interfaces — ERB (symmetric): on leaves; CRB (asymmetric): on spines
+            const aristaIrbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+            const aristaIsAsymmetric = ctx.irbMode === 'asymmetric'
+            const aristaIrbOnThisNode = aristaIsAsymmetric ? isAristaSpine : isAristaLeaf
+            if (ctx.irbEnabled && aristaIrbMappings.length && aristaIrbOnThisNode) {
                 const gwBase = ctx.irbGatewayBase ?? '192.168'
-                lines.push('! IRB interfaces — distributed anycast gateway')
-                for (const m of mappings) {
+                const gwType = isAristaLeaf ? 'distributed anycast' : 'centralized'
+                lines.push(`! IRB interfaces — ${gwType} gateway`)
+                for (const m of aristaIrbMappings) {
                     const gwIp = `${gwBase}.${m.vlanId}.1/24`
                     lines.push(`interface Vlan${m.vlanId}`)
                     if (isAristaSymmetric) { lines.push('   vrf TENANT-1') }
@@ -890,7 +928,13 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             lines.push('set / tunnel-interface vxlan1 vxlan-interface 0 type bridged')
             lines.push('set / tunnel-interface vxlan1 vxlan-interface 0 ingress vni 0')
 
-            if (isNokiaLeaf) {
+            const nokiaIsAsymmetric = ctx.irbMode === 'asymmetric'
+            const nokiaIrbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+            // CRB: VNI + IRB on spines; ERB: VNI + IRB on leaves
+            const nokiaHasVni = nokiaIsAsymmetric ? (isNokiaLeaf || isNokiaSpine) : isNokiaLeaf
+            const nokiaIrbOnThisNode = nokiaIsAsymmetric ? isNokiaSpine : isNokiaLeaf
+
+            if (nokiaHasVni) {
                 for (const m of mappings) {
                     lines.push(`set / network-instance vlan${m.vlanId} type mac-vrf`)
                     lines.push(`set / network-instance vlan${m.vlanId} vxlan-interface vxlan1.0`)
@@ -900,16 +944,17 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                     lines.push(`set / network-instance vlan${m.vlanId} protocols bgp-evpn bgp-instance 1 ecmp 2`)
                     lines.push(`set / network-instance vlan${m.vlanId} protocols bgp-evpn bgp-instance 1 vxlan-interface vxlan1.0 ingress-vni ${m.vni}`)
                 }
-                // IRB interfaces for distributed gateway
-                if (ctx.irbEnabled) {
+                // IRB interfaces — ERB: on leaves; CRB: on spines
+                if (ctx.irbEnabled && nokiaIrbMappings.length && nokiaIrbOnThisNode) {
                     const gwBase = ctx.irbGatewayBase ?? '192.168'
+                    const gwType = isNokiaLeaf ? 'distributed anycast' : 'centralized'
                     lines.push('')
-                    lines.push('# IRB interfaces — distributed anycast gateway')
+                    lines.push(`# IRB interfaces — ${gwType} gateway`)
                     lines.push('set / network-instance ip-vrf-1 type ip-vrf')
                     lines.push(`set / network-instance ip-vrf-1 protocols bgp-evpn bgp-instance 1 admin-state enable`)
                     lines.push(`set / network-instance ip-vrf-1 protocols bgp-evpn bgp-instance 1 vxlan-interface vxlan1.0`)
                     lines.push(`set / network-instance ip-vrf-1 protocols bgp-evpn bgp-instance 1 evi 1000`)
-                    for (const m of mappings) {
+                    for (const m of nokiaIrbMappings) {
                         const gwIp = `${gwBase}.${m.vlanId}.1/24`
                         lines.push(`set / interface irb0 subinterface ${m.vlanId} ipv4 admin-state enable`)
                         lines.push(`set / interface irb0 subinterface ${m.vlanId} ipv4 address ${gwIp}`)
@@ -936,71 +981,140 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             break
         }
 
-        case 'huawei':
+        case 'huawei': {
+            const isHuaweiLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
+            const isHuaweiSpine = ctx.nodeRole === 'spine' || ctx.nodeRole === 'super-spine'
             lines.push('#')
             lines.push('# EVPN-VXLAN overlay')
-            lines.push('ip vpn-instance EVPN')
-            for (const m of mappings) {
-                lines.push(`bridge-domain ${m.vlanId}`)
-                lines.push(` vxlan vni ${m.vni}`)
-                lines.push(` evpn`)
-                lines.push(`  route-distinguisher auto`)
-                lines.push(`  vpn-target ${asn}:${m.vni} export-extcommunity`)
-                lines.push(`  vpn-target ${asn}:${m.vni} import-extcommunity`)
+            if (isHuaweiSpine) {
+                // Spine: EVPN RR only — no bridge-domains, no NVE, no VNI
+                lines.push(`bgp ${asn}`)
+                for (const peer of overlayPeers) {
+                    lines.push(` peer ${peer} as-number ${asn}`)
+                    lines.push(` peer ${peer} connect-interface LoopBack0`)
+                    lines.push(` peer ${peer} reflect-client`)
+                }
+                lines.push(' #')
+                lines.push(' l2vpn-family evpn')
+                for (const peer of overlayPeers) {
+                    lines.push(`  peer ${peer} enable`)
+                    lines.push(`  peer ${peer} reflect-client`)
+                }
+                lines.push('#')
+            } else {
+                // Leaf: full bridge-domain + NVE + VNI
+                lines.push('ip vpn-instance EVPN')
+                for (const m of mappings) {
+                    lines.push(`bridge-domain ${m.vlanId}`)
+                    lines.push(` vxlan vni ${m.vni}`)
+                    lines.push(` evpn`)
+                    lines.push(`  route-distinguisher auto`)
+                    lines.push(`  vpn-target ${asn}:${m.vni} export-extcommunity`)
+                    lines.push(`  vpn-target ${asn}:${m.vni} import-extcommunity`)
+                }
+                lines.push('#')
+                lines.push('interface Nve1')
+                lines.push(` source ${vtep}`)
+                for (const m of mappings) {
+                    lines.push(` vni ${m.vni} head-end peer-list protocol bgp`)
+                }
+                lines.push('#')
+                lines.push(`bgp ${asn}`)
+                for (const peer of overlayPeers) {
+                    lines.push(` peer ${peer} as-number ${asn}`)
+                    lines.push(` peer ${peer} connect-interface LoopBack0`)
+                }
+                lines.push(' #')
+                lines.push(' l2vpn-family evpn')
+                for (const peer of overlayPeers) {
+                    lines.push(`  peer ${peer} enable`)
+                }
+                // IRB — ERB: on leaves; CRB: on spines
+                const hwIrbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+                const hwIsAsymmetric = ctx.irbMode === 'asymmetric'
+                const hwIrbOnThisNode = hwIsAsymmetric ? isHuaweiSpine : isHuaweiLeaf
+                if (ctx.irbEnabled && hwIrbMappings.length && hwIrbOnThisNode) {
+                    const gwType = isHuaweiLeaf ? 'distributed' : 'centralized'
+                    lines.push('#')
+                    lines.push(`# IRB interfaces — ${gwType} gateway`)
+                    const gwBase = ctx.irbGatewayBase || '192.168'
+                    for (const m of hwIrbMappings) {
+                        lines.push(`interface Vlanif${m.vlanId}`)
+                        lines.push(` ip address ${gwBase}.${m.vlanId}.1 255.255.255.0`)
+                        lines.push(` vxlan anycast-gateway enable`)
+                        lines.push(` arp collect host enable`)
+                    }
+                    if (ctx.irbMode === 'symmetric' && hwIrbMappings.length) {
+                        const l3Vni = hwIrbMappings[0].vni + 9000
+                        lines.push('#')
+                        lines.push('ip vpn-instance TENANT')
+                        lines.push(` vxlan vni ${l3Vni}`)
+                    }
+                }
+                lines.push('#')
             }
-            lines.push('#')
-            lines.push('interface Nve1')
-            lines.push(` source ${vtep}`)
-            for (const m of mappings) {
-                lines.push(` vni ${m.vni} head-end peer-list protocol bgp`)
-            }
-            lines.push('#')
-            lines.push(`bgp ${asn}`)
-            for (const peer of overlayPeers) {
-                lines.push(` peer ${peer} as-number ${asn}`)
-                lines.push(` peer ${peer} connect-interface LoopBack0`)
-            }
-            lines.push(' #')
-            lines.push(' l2vpn-family evpn')
-            for (const peer of overlayPeers) {
-                lines.push(`  peer ${peer} enable`)
-            }
-            lines.push('#')
             break
+        }
 
-        case 'mikrotik':
+        case 'mikrotik': {
+            const isMtLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
+            const isMtSpine = ctx.nodeRole === 'spine' || ctx.nodeRole === 'super-spine'
             lines.push('')
             lines.push('# EVPN-VXLAN overlay')
-            lines.push(`/interface vxlan add name=vxlan1 vni=0 vteps-ip-version=ipv4`)
-            for (const m of mappings) {
-                lines.push(`/interface vxlan vni add vxlan=vxlan1 vni=${m.vni}`)
-            }
-            lines.push('/interface bridge add name=bridge-evpn vlan-filtering=yes')
-            for (const m of mappings) {
-                lines.push(`/interface bridge vlan add bridge=bridge-evpn vlan-ids=${m.vlanId} tagged=vxlan1`)
-            }
-            lines.push(`/routing bgp template add name=evpn as=${asn} address-families=l2vpn-evpn`)
-            for (const peer of overlayPeers) {
-                lines.push(`/routing bgp connection add name=overlay_${peer.replace(/\./g, '_')} remote.address=${peer}/32 template=evpn local.role=ibgp`)
+            if (isMtSpine) {
+                // Spine: BGP EVPN RR only
+                lines.push(`/routing bgp template add name=evpn as=${asn} address-families=l2vpn-evpn router-id=${vtep}`)
+                for (const peer of overlayPeers) {
+                    lines.push(`/routing bgp connection add name=overlay-${peer.split('.').pop()} template=evpn remote.address=${peer} local.role=ibgp-rr`)
+                }
+            } else {
+                // Leaf: full VXLAN bridge
+                lines.push(`/interface vxlan add name=vxlan1 vni=0 vteps-ip-version=ipv4`)
+                for (const m of mappings) {
+                    lines.push(`/interface vxlan vni add vxlan=vxlan1 vni=${m.vni}`)
+                }
+                lines.push('/interface bridge add name=bridge-evpn vlan-filtering=yes')
+                for (const m of mappings) {
+                    lines.push(`/interface bridge vlan add bridge=bridge-evpn vlan-ids=${m.vlanId} tagged=vxlan1`)
+                }
+                lines.push(`/routing bgp template add name=evpn as=${asn} address-families=l2vpn-evpn`)
+                for (const peer of overlayPeers) {
+                    lines.push(`/routing bgp connection add name=overlay_${peer.replace(/\./g, '_')} remote.address=${peer}/32 template=evpn local.role=ibgp`)
+                }
             }
             break
+        }
 
-        case 'extreme':
+        case 'extreme': {
+            const isExtLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
+            const isExtSpine = ctx.nodeRole === 'spine' || ctx.nodeRole === 'super-spine'
             lines.push('')
             lines.push('# EVPN-VXLAN overlay')
-            lines.push(`create virtual-router vr-evpn`)
-            for (const m of mappings) {
-                lines.push(`create virtual-network vn${m.vni} flood-mode standard`)
-                lines.push(`configure virtual-network vn${m.vni} vxlan vni ${m.vni}`)
-                lines.push(`configure virtual-network vn${m.vni} add vlan vlan${m.vlanId}`)
-            }
-            if (vtep) { lines.push(`configure virtual-network global vtep source-address ${vtep}`) }
-            for (const peer of overlayPeers) {
-                lines.push(`create bgp neighbor ${peer} remote-AS-number ${asn}`)
-                lines.push(`configure bgp neighbor ${peer} capability l2vpn-EVPN`)
-                lines.push(`enable bgp neighbor ${peer}`)
+            if (isExtSpine) {
+                // Spine: EVPN RR only
+                lines.push(`configure bgp router-id ${vtep}`)
+                for (const peer of overlayPeers) {
+                    lines.push(`create bgp neighbor ${peer} remote-AS ${asn}`)
+                    lines.push(`configure bgp neighbor ${peer} route-reflector-client`)
+                    lines.push(`enable bgp neighbor ${peer} capability l2vpn-EVPN`)
+                }
+            } else {
+                // Leaf: full VXLAN virtual-network
+                lines.push(`create virtual-router vr-evpn`)
+                for (const m of mappings) {
+                    lines.push(`create virtual-network vn${m.vni} flood-mode standard`)
+                    lines.push(`configure virtual-network vn${m.vni} vxlan vni ${m.vni}`)
+                    lines.push(`configure virtual-network vn${m.vni} add vlan vlan${m.vlanId}`)
+                }
+                if (vtep) { lines.push(`configure virtual-network global vtep source-address ${vtep}`) }
+                for (const peer of overlayPeers) {
+                    lines.push(`create bgp neighbor ${peer} remote-AS-number ${asn}`)
+                    lines.push(`configure bgp neighbor ${peer} capability l2vpn-EVPN`)
+                    lines.push(`enable bgp neighbor ${peer}`)
+                }
             }
             break
+        }
 
         default: { // cisco / dell / hpe (IOS/NX-OS style)
             const isNxLeaf = ctx.nodeRole === 'leaf' || ctx.nodeRole === 'border-leaf' || ctx.nodeRole === 'tor'
@@ -1039,10 +1153,14 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             }
             lines.push('!')
 
-            // Anycast gateway on leaf nodes (MAC is set globally in main NX-OS section)
-            if (ctx.irbEnabled && isNxLeaf) {
-                lines.push('! Distributed anycast gateway')
-                for (const m of mappings) {
+            // IRB — ERB (symmetric): on leaves; CRB (asymmetric): on spines
+            const nxIrbMappings = mappings.filter(m => m.vlanId >= 100 && m.vlanId < 900)
+            const nxIsAsymmetric = ctx.irbMode === 'asymmetric'
+            const nxIrbOnThisNode = nxIsAsymmetric ? isNxSpine : isNxLeaf
+            if (ctx.irbEnabled && nxIrbMappings.length && nxIrbOnThisNode) {
+                const gwType = isNxLeaf ? 'Distributed' : 'Centralized'
+                lines.push(`! ${gwType} anycast gateway`)
+                for (const m of nxIrbMappings) {
                     const gwIp = `${gwBase}.${m.vlanId}.1/24`
                     lines.push(`interface Vlan${m.vlanId}`)
                     lines.push('  no shutdown')
@@ -1066,7 +1184,7 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                     lines.push('  ip forward')
                     lines.push('  no ip redirects')
                     lines.push('!')
-                    for (const m of mappings) {
+                    for (const m of nxIrbMappings) {
                         lines.push(`interface Vlan${m.vlanId}`)
                         lines.push('  vrf member TENANT-1')
                         lines.push('!')
@@ -1484,44 +1602,48 @@ function emitIsisUnderlay (vendorKey: string, ctx: VendorConfigContext): string[
 // ── SR-MPLS config (SRGB, Node SID, source-packet-routing under IS-IS) ────
 
 function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
-    if (ctx.nodeSid == null || !ctx.isisInterfaces?.length) { return [] }
+    // SR-MPLS requires nodeSid and at least one IGP interface (IS-IS or OSPF)
+    const igpIfaces = ctx.isisInterfaces?.length ? ctx.isisInterfaces : (ctx.ospfInterfaces?.length ? ctx.ospfInterfaces.map(o => ({ portLabel: o.portLabel })) : [])
+    if (ctx.nodeSid == null || !igpIfaces.length) { return [] }
     const sid = ctx.nodeSid
     const srgbStart = ctx.srgbStart ?? 16000
     const srgbEnd = ctx.srgbEnd ?? 23999
     const rid = ctx.routerId ?? ''
-    const ifaces = ctx.isisInterfaces
+    const ifaces = igpIfaces
+    const isOspfBased = !ctx.isisInterfaces?.length && !!ctx.ospfInterfaces?.length
     const lines: string[] = []
 
     switch (vendorKey) {
-        case 'juniper':
+        case 'juniper': {
+            const igp = isOspfBased ? 'ospf' : 'isis'
             lines.push('')
             lines.push('# SR-MPLS (SPRING)')
             lines.push(`set protocols source-packet-routing srgb start-label ${srgbStart} index-range ${srgbEnd - srgbStart + 1}`)
             lines.push(`set protocols source-packet-routing node-segment ipv4-index ${sid}`)
             lines.push(`set protocols source-packet-routing node-segment ipv6-index ${sid + 200}`)
-            // Enable MPLS on IS-IS interfaces
+            // Enable MPLS on IGP interfaces
             for (const p of ifaces) {
                 const ifName = p.portLabel.replace(/\//g, '/') + '.0'
                 lines.push(`set protocols mpls interface ${ifName}`)
             }
             lines.push('set protocols mpls interface lo0.0')
-            // Enable IS-IS traffic engineering (required for SR-TE)
-            lines.push('set protocols isis traffic-engineering')
-            // Enable SR under IS-IS
-            lines.push('set protocols isis source-packet-routing')
-            lines.push(`set protocols isis source-packet-routing srgb start-label ${srgbStart} index-range ${srgbEnd - srgbStart + 1}`)
-            lines.push(`set protocols isis source-packet-routing node-segment ipv4-index ${sid}`)
-            lines.push(`set protocols isis source-packet-routing node-segment ipv6-index ${sid + 200}`)
+            // Enable traffic engineering + SR under IGP
+            lines.push(`set protocols ${igp} traffic-engineering`)
+            lines.push(`set protocols ${igp} source-packet-routing`)
+            lines.push(`set protocols ${igp} source-packet-routing srgb start-label ${srgbStart} index-range ${srgbEnd - srgbStart + 1}`)
+            lines.push(`set protocols ${igp} source-packet-routing node-segment ipv4-index ${sid}`)
+            lines.push(`set protocols ${igp} source-packet-routing node-segment ipv6-index ${sid + 200}`)
             // TI-LFA (Topology-Independent Loop-Free Alternate)
             lines.push('# TI-LFA fast reroute with node protection')
-            lines.push('set protocols isis backup-spf-options use-post-convergence-lfa maximum-labels 5')
-            lines.push('set protocols isis backup-spf-options use-source-packet-routing')
-            lines.push('set protocols isis backup-spf-options node-link-degradation')
+            lines.push(`set protocols ${igp} backup-spf-options use-post-convergence-lfa maximum-labels 5`)
+            lines.push(`set protocols ${igp} backup-spf-options use-source-packet-routing`)
+            lines.push(`set protocols ${igp} backup-spf-options node-link-degradation`)
             for (const p of ifaces) {
                 const ifName = p.portLabel.replace(/\//g, '/') + '.0'
-                lines.push(`set protocols isis interface ${ifName} level 2 post-convergence-lfa node-protection`)
+                lines.push(`set protocols ${igp} interface ${ifName} level 2 post-convergence-lfa node-protection`)
             }
             break
+        }
 
         case 'arista':
             lines.push('!')
@@ -1535,9 +1657,15 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push(`   prefix-segment`)
             if (rid) { lines.push(`      interface Loopback0 index ${sid}`) }
             lines.push('!')
-            lines.push('router isis UNDERLAY')
-            lines.push('   segment-routing mpls')
-            lines.push('   segment-routing prefix-segment')
+            if (isOspfBased) {
+                lines.push('router ospf 1')
+                lines.push('   segment-routing mpls')
+                lines.push('   segment-routing prefix-segment')
+            } else {
+                lines.push('router isis UNDERLAY')
+                lines.push('   segment-routing mpls')
+                lines.push('   segment-routing prefix-segment')
+            }
             break
 
         case 'nokia':
@@ -1547,16 +1675,21 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
             if (rid) {
                 lines.push(`set / network-instance default segment-routing mpls prefix-segment prefix ${rid}/32 index ${sid} node-sid`)
             }
-            lines.push('set / network-instance default protocols isis instance ISIS1 segment-routing mpls dynamic-adjacency-sids all-interfaces')
+            if (isOspfBased) {
+                lines.push('set / network-instance default protocols ospf instance OSPF1 segment-routing mpls dynamic-adjacency-sids all-interfaces')
+            } else {
+                lines.push('set / network-instance default protocols isis instance ISIS1 segment-routing mpls dynamic-adjacency-sids all-interfaces')
+            }
             break
 
-        case 'huawei':
+        case 'huawei': {
+            const hwIgp = isOspfBased ? 'ospf 1' : 'isis 1'
             lines.push('#')
             lines.push('# SR-MPLS')
             lines.push('segment-routing')
             lines.push(` global-block ${srgbStart} ${srgbEnd}`)
             lines.push('#')
-            lines.push('isis 1')
+            lines.push(hwIgp)
             lines.push(' segment-routing mpls')
             if (rid) { lines.push(` prefix-sid index ${sid} node-flag`) }
             lines.push('#')
@@ -1567,6 +1700,7 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
                 lines.push('#')
             }
             break
+        }
 
         case 'mikrotik':
         case 'sonic':
@@ -1575,7 +1709,8 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push(`# SR-MPLS is not supported on ${vendorKey} in this config generator`)
             break
 
-        default: // cisco / dell / hpe
+        default: { // cisco / dell / hpe
+            const cIgp = isOspfBased ? 'router ospf 1' : 'router isis UNDERLAY'
             lines.push('!')
             lines.push('! SR-MPLS')
             lines.push('segment-routing mpls')
@@ -1584,11 +1719,12 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push(' connected-prefix-sid-map')
             if (rid) { lines.push(`  address-family ipv4`) ; lines.push(`   ${rid}/32 index ${sid} range 1`) }
             lines.push('!')
-            lines.push('router isis UNDERLAY')
+            lines.push(cIgp)
             lines.push(' address-family ipv4 unicast')
             lines.push('  segment-routing mpls')
             lines.push('!')
             break
+        }
     }
 
     return lines
@@ -1599,22 +1735,25 @@ function emitSrMpls (vendorKey: string, ctx: VendorConfigContext): string[] {
 function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
     if (!ctx.srv6Locator) { return [] }
     const locator = ctx.srv6Locator
-    const ifaces = ctx.isisInterfaces ?? []
+    const igpIfaces = ctx.isisInterfaces?.length ? ctx.isisInterfaces : (ctx.ospfInterfaces ?? []).map(o => ({ portLabel: o.portLabel }))
+    const isOspfBased = !ctx.isisInterfaces?.length && !!ctx.ospfInterfaces?.length
     const lines: string[] = []
 
     switch (vendorKey) {
-        case 'juniper':
+        case 'juniper': {
+            const igp = isOspfBased ? 'ospf' : 'isis'
             lines.push('')
             lines.push('# SRv6')
             lines.push(`set routing-options source-packet-routing srv6 locator MAIN ${locator}`)
             lines.push('set routing-options source-packet-routing srv6 locator MAIN end-sid')
-            lines.push('set protocols isis source-packet-routing srv6 locator MAIN end-sid')
-            // Enable inet6 on IS-IS interfaces for SRv6 data plane
-            for (const p of ifaces) {
+            lines.push(`set protocols ${igp} source-packet-routing srv6 locator MAIN end-sid`)
+            // Enable inet6 on IGP interfaces for SRv6 data plane
+            for (const p of igpIfaces) {
                 lines.push(`set interfaces ${p.portLabel} unit 0 family inet6`)
             }
             lines.push('set interfaces lo0 unit 0 family inet6')
             break
+        }
 
         case 'arista':
             lines.push('!')
@@ -1622,9 +1761,15 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push('segment-routing srv6')
             lines.push(`   locator MAIN ${locator}`)
             lines.push('!')
-            lines.push('router isis UNDERLAY')
-            lines.push('   segment-routing srv6')
-            lines.push('   address-family ipv6 unicast')
+            if (isOspfBased) {
+                lines.push('router ospf 1')
+                lines.push('   segment-routing srv6')
+                lines.push('   address-family ipv6 unicast')
+            } else {
+                lines.push('router isis UNDERLAY')
+                lines.push('   segment-routing srv6')
+                lines.push('   address-family ipv6 unicast')
+            }
             break
 
         case 'nokia':
@@ -1632,10 +1777,15 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push('# SRv6')
             lines.push(`set / network-instance default segment-routing srv6 locator MAIN prefix ${locator}`)
             lines.push('set / network-instance default segment-routing srv6 locator MAIN function 1 end')
-            lines.push('set / network-instance default protocols isis instance ISIS1 segment-routing srv6 locator [ MAIN ]')
+            if (isOspfBased) {
+                lines.push('set / network-instance default protocols ospf instance OSPF1 segment-routing srv6 locator [ MAIN ]')
+            } else {
+                lines.push('set / network-instance default protocols isis instance ISIS1 segment-routing srv6 locator [ MAIN ]')
+            }
             break
 
-        case 'huawei':
+        case 'huawei': {
+            const hwIgp = isOspfBased ? 'ospf 1' : 'isis 1'
             lines.push('#')
             lines.push('# SRv6')
             lines.push('segment-routing ipv6')
@@ -1644,15 +1794,16 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push('  opcode ::1 end-dt4')
             lines.push('  opcode ::2 end-dt6')
             lines.push('#')
-            lines.push('isis 1')
+            lines.push(hwIgp)
             lines.push(' segment-routing ipv6 locator MAIN')
             lines.push(' ipv6 enable topology ipv6')
-            for (const p of ifaces) {
+            for (const p of igpIfaces) {
                 lines.push(` interface ${p.portLabel}`)
                 lines.push('  ipv6 enable')
             }
             lines.push('#')
             break
+        }
 
         case 'mikrotik':
         case 'sonic':
@@ -1661,7 +1812,8 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push(`# SRv6 is not supported on ${vendorKey} in this config generator`)
             break
 
-        default: // cisco
+        default: { // cisco
+            const cIgp = isOspfBased ? 'router ospf 1' : 'router isis UNDERLAY'
             lines.push('!')
             lines.push('! SRv6')
             lines.push('segment-routing srv6')
@@ -1669,12 +1821,13 @@ function emitSrv6 (vendorKey: string, ctx: VendorConfigContext): string[] {
             lines.push('  locator MAIN')
             lines.push(`   prefix ${locator}`)
             lines.push('!')
-            lines.push('router isis UNDERLAY')
+            lines.push(cIgp)
             lines.push(' address-family ipv6 unicast')
             lines.push('  segment-routing srv6')
             lines.push('  locator MAIN')
             lines.push('!')
             break
+        }
     }
 
     return lines
