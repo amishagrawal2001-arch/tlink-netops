@@ -1339,7 +1339,12 @@ export class TopologyService {
         }
 
         const newUnderlay = proto === 'none' ? undefined : proto as any
-        this._patch({ nodes, underlayProtocol: newUnderlay })
+        // IMPORTANT: `nodes` above may be a subset when nodeIds is provided
+        // (scope = "selected"). We mutated those entries in place, but we must
+        // still patch the FULL topology.nodes array back — otherwise _patch
+        // replaces topology.nodes with the subset and drops every unselected
+        // node. Use a fresh array reference so change detection fires.
+        this._patch({ nodes: [...this.topology.nodes], underlayProtocol: newUnderlay })
         this._regenerateConfigs(true)
         return nodes.length
     }

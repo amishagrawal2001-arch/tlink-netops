@@ -161,11 +161,111 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for changelog generation
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
       - name: List artifacts
         run: find . -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" -o -name "*.msi" -o -name "*.tar.gz" \)
+
+      - name: Generate categorized changelog
+        id: changelog
+        run: |
+          set -e
+          # Find the previous tag (skip the current tag being released)
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+            echo "No previous tag — listing all commits up to HEAD"
+          else
+            RANGE="${PREV_TAG}..${CURRENT_TAG}"
+            echo "Generating changelog for ${RANGE}"
+          fi
+
+          {
+            echo "## 🚀 What's New in ${CURRENT_TAG}"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Since [${PREV_TAG}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${PREV_TAG})**"
+              echo ""
+            fi
+
+            # Features
+            FEATS=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^feat' || true)
+            if [ -n "$FEATS" ]; then
+              echo "### ✨ Features"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            # Fixes
+            FIXES=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^fix' || true)
+            if [ -n "$FIXES" ]; then
+              echo "### 🐛 Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Performance
+            PERF=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^perf' || true)
+            if [ -n "$PERF" ]; then
+              echo "### ⚡ Performance"
+              echo "$PERF"
+              echo ""
+            fi
+
+            # Refactor
+            REFACTOR=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^refactor' || true)
+            if [ -n "$REFACTOR" ]; then
+              echo "### ♻️  Refactors"
+              echo "$REFACTOR"
+              echo ""
+            fi
+
+            # Docs
+            DOCS=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^docs' || true)
+            if [ -n "$DOCS" ]; then
+              echo "### 📝 Documentation"
+              echo "$DOCS"
+              echo ""
+            fi
+
+            # Chores / CI
+            CHORES=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^chore\|^ci\|^build' || true)
+            if [ -n "$CHORES" ]; then
+              echo "### 🔧 Chores & CI"
+              echo "$CHORES"
+              echo ""
+            fi
+
+            # Tests
+            TESTS=$(git log ${RANGE} --pretty=format:'- %s (%h)' --grep='^test' || true)
+            if [ -n "$TESTS" ]; then
+              echo "### ✅ Tests"
+              echo "$TESTS"
+              echo ""
+            fi
+
+            echo "---"
+            echo ""
+            echo "### 📦 Artifacts"
+            echo "- **macOS**: \`NetOps-*.dmg\` (Intel + Apple Silicon)"
+            echo "- **Windows**: \`NetOps Setup *.exe\`"
+            echo "- **Linux**: \`NetOps-*.AppImage\`, \`.deb\`, \`.rpm\`"
+            echo "- **NetOps Server** (optional backend): \`netops-server-*-linux.tar.gz\`"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${CURRENT_TAG}"
+            fi
+          } > CHANGELOG_RELEASE.md
+
+          echo "Generated changelog:"
+          cat CHANGELOG_RELEASE.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -175,5 +275,5 @@ jobs:
             netops-windows/*
             netops-linux/*
             netops-server/*
-          generate_release_notes: true
+          body_path: CHANGELOG_RELEASE.md
           draft: false

@@ -268,15 +268,42 @@ function _spawnAsync (cmd: string, args: string[], opts?: { timeout?: number; en
 
 function _openSshTerminal (payload: SshTerminalPayload): SshTerminalResult & { sessionId?: string } {
     const target = `${payload.username}@${payload.host}`
-    const sshCommand = `ssh -p ${payload.port} ${target}`
+    // When password provided, use SSH_ASKPASS helper + SetsID to make ssh use the helper instead of tty prompt
+    // Options: -o PreferredAuthentications=password for simpler auth flow, -o StrictHostKeyChecking=no for labs
+    const sshOptions = '-o PreferredAuthentications=password,keyboard-interactive,publickey -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
+    const sshCommand = `ssh ${sshOptions} -p ${payload.port} ${target}`
     const sessionId = `ssh-${payload.host}-${Date.now()}`
-    const shell = process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/bash')
-    const shellArgs = process.platform === 'win32' ? ['/c', sshCommand] : ['-lc', sshCommand]
+
+    // Build env with SSH_ASKPASS if password provided
+    const env: Record<string, string> = { ...(process.env as Record<string, string>) }
+    if (payload.password) {
+        _ensureAskpass(payload.password)
+        env['TLINK_SSH_PASSWORD'] = payload.password
+        env['SSH_ASKPASS'] = _ASKPASS_SCRIPT
+        env['SSH_ASKPASS_REQUIRE'] = 'force'  // OpenSSH 8.4+
+        env['DISPLAY'] = env['DISPLAY'] || ':0'
+    }
+
+    let shell: string
+    let shellArgs: string[]
+    if (process.platform === 'win32') {
+        shell = process.env.COMSPEC || 'cmd.exe'
+        shellArgs = ['/c', sshCommand]
+    } else {
+        // setsid detaches from controlling tty so SSH uses SSH_ASKPASS instead of prompting the tty
+        // (without this, ssh detects the pty and asks directly, ignoring SSH_ASKPASS)
+        shell = '/bin/sh'
+        shellArgs = payload.password
+            ? ['-c', `setsid -w ${sshCommand} < /dev/null || ${sshCommand}`]
+            : ['-lc', sshCommand]
+    }
+
     return _openTerminalWindow({
         sessionId,
         label: `SSH: ${target}`,
         command: shell,
         args: shellArgs,
+        env,
     })
 }
 
@@ -750,6 +777,87 @@ function _runSshShellSession (
             resolve(result)
         }
 
+        // Inspect accumulated output for vendor-agnostic device error patterns.
+        //
+        // Success/failure precedence:
+        //   1. Explicit commit-failure markers ALWAYS override any success signal.
+        //   2. Explicit commit-success markers (Juniper `commit complete`, Nokia
+        //      `commit successful`, Cisco `copy complete`) signal success even if
+        //      earlier benign errors appeared in output (e.g. a `cli` no-op on
+        //      physical QFX where SSH drops directly into the Junos CLI).
+        //   3. Otherwise, generic error patterns fail the push.
+        const checkOutputForErrors = (): SshResult => {
+            const trimmed = output.trim()
+
+            // ── Hard failures override any success signal ─────────────────────
+            const failurePatterns = [
+                /commit\s+failed/i,
+                /commit\s+check\s+failed/i,
+                /configuration\s+check-out\s+failed/i,
+                /failed to commit/i,
+                /authorization\s+failed/i,
+                /permission\s+denied/i,
+            ]
+            for (const p of failurePatterns) {
+                if (p.test(trimmed)) {
+                    const lines = trimmed.split('\n')
+                    const errLine = lines.find(l => p.test(l)) ?? ''
+                    const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                    return {
+                        ok: false,
+                        message: `Device error on ${payload.host}: ${errLine.trim()} · output: ${tail}`,
+                        output: trimmed || '(no output)',
+                    }
+                }
+            }
+
+            // ── Explicit success markers — trust these even if earlier output
+            //    had benign errors (e.g. unknown-command from prefix commands) ──
+            const successPatterns = [
+                /commit\s+complete/i,          // Juniper
+                /commit\s+successful/i,        // Nokia SR Linux / SR-OS
+                /save complete/i,              // Generic save
+                /configuration\s+saved/i,      // Generic save
+                /copy\s+complete/i,            // Cisco `copy run start`
+                /\[ok\]\s*$/im,                // SR Linux "[ok]"
+            ]
+            if (successPatterns.some(p => p.test(trimmed))) {
+                return {
+                    ok: true,
+                    message: `Shell session completed on ${payload.host}`,
+                    output: trimmed || '(no output)',
+                }
+            }
+
+            // ── Otherwise, generic error patterns fail the push ───────────────
+            const errorPatterns = [
+                /error:\s+configuration/i,
+                /syntax error/i,
+                /invalid (?:input|command)/i,
+                /ambiguous command/i,
+                /unrecognized command/i,
+                /% incomplete command/i,
+                /% unknown /i,
+                /% invalid /i,
+            ]
+            const match = errorPatterns.find(p => p.test(trimmed))
+            if (match) {
+                const lines = trimmed.split('\n')
+                const errLine = lines.find(l => match.test(l)) ?? ''
+                const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                return {
+                    ok: false,
+                    message: `Device error on ${payload.host}: ${errLine.trim()} · output: ${tail}`,
+                    output: trimmed || '(no output)',
+                }
+            }
+            return {
+                ok: true,
+                message: `Shell session completed on ${payload.host}`,
+                output: trimmed || '(no output)',
+            }
+        }
+
         conn.on('ready', () => {
             conn.shell((err, stream) => {
                 if (err) {
@@ -769,15 +877,16 @@ function _runSshShellSession (
                 })
 
                 stream.on('close', () => {
-                    done({
-                        ok: true,
-                        message: `Shell session completed on ${payload.host}`,
-                        output: output.trim() || '(no output)',
-                    })
+                    done(checkOutputForErrors())
                 })
 
                 stream.on('error', (streamErr: Error) => {
-                    done({ ok: false, message: `SSH shell stream error: ${streamErr.message}`, output })
+                    const tail = output.trim().slice(-400)
+                    done({
+                        ok: false,
+                        message: `SSH shell stream error on ${payload.host}: ${streamErr.message}${tail ? ' · output: …' + tail : ''}`,
+                        output,
+                    })
                 })
 
                 // Send commands sequentially with delays
@@ -790,16 +899,10 @@ function _runSshShellSession (
                         setTimeout(() => {
                             try { stream.end('exit\n') } catch { /* no-op */ }
                             // Grace timer: if stream doesn't close within 10s,
-                            // resolve as success with collected output.
+                            // resolve (as success or device-error) with collected output.
                             // Network device shells often don't close cleanly.
                             setTimeout(() => {
-                                if (!settled) {
-                                    done({
-                                        ok: true,
-                                        message: `Shell session completed on ${payload.host}`,
-                                        output: output.trim() || '(no output)',
-                                    })
-                                }
+                                if (!settled) { done(checkOutputForErrors()) }
                             }, 10000)
                         }, delayMs * 2)
                         return

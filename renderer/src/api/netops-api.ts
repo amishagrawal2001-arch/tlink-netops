@@ -31,6 +31,7 @@ export interface NetopsSshTerminalRequest {
     host: string
     port?: number
     username: string
+    password?: string
 }
 
 export interface NetopsSshTerminalResult {

@@ -18,6 +18,7 @@ interface SshTerminalRequest {
     host: string
     port?: number
     username: string
+    password?: string
 }
 
 interface SshTerminalResult {

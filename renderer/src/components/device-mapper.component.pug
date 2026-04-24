@@ -68,8 +68,8 @@
         label.mapper-form-label Hostname
         input.mapper-form-input(type='text', [(ngModel)]='newDevice.hostname', placeholder='e.g. Spine-1')
       .mapper-form-row
-        label.mapper-form-label Mgmt IP
-        input.mapper-form-input(type='text', [(ngModel)]='newDevice.mgmtIp', placeholder='e.g. 172.16.0.1')
+        label.mapper-form-label Mgmt IP / Host
+        input.mapper-form-input(type='text', [(ngModel)]='newDevice.mgmtIp', placeholder='IPv4, IPv6, or hostname (e.g. 172.16.0.1, fd00::1, router-1.lab.local)')
       .mapper-form-row
         label.mapper-form-label Vendor
         input.mapper-form-input(type='text', [(ngModel)]='newDevice.vendor', placeholder='e.g. Juniper, Cisco')
@@ -211,6 +211,14 @@
         button.mapper-btn.mapper-btn-apply(
           *ngIf='activeTab === "mapping"',
           type='button',
+          title='Save mappings to topology (SSH creds + mgmt IP + vendor). Does not push configs.',
           [disabled]='!mappings.size',
           (click)='applyMapping()'
-        ) Apply Mapping & Push Configs
+        ) Apply Mapping
+        button.mapper-btn.mapper-btn-push(
+          *ngIf='activeTab === "mapping"',
+          type='button',
+          title='Apply mapping, then push startup configs to mapped devices via SSH.',
+          [disabled]='!mappings.size',
+          (click)='applyAndPush()'
+        ) Apply &amp; Push Configs

@@ -5,12 +5,15 @@ import {
 import { TopologyNode, Topology } from '../api/interfaces'
 import { NetworkDiscoveryService, DiscoveredDevice } from '../services/network-discovery.service'
 import { InventoryService } from '../services/inventory.service'
+import { isValidMgmtAddress } from '../services/address-validators'
 
 interface MappingEntry {
     hostname: string
     mgmtIp: string
     vendor: string
     model: string
+    sshUsername?: string
+    sshPassword?: string
 }
 
 interface ExtendedDevice extends DiscoveredDevice {
@@ -28,7 +31,7 @@ export class DeviceMapperComponent implements OnInit {
 
     @Input() topology!: Topology
     @Output() closed = new EventEmitter<void>()
-    @Output() mappingApplied = new EventEmitter<Map<string, MappingEntry>>()
+    @Output() mappingApplied = new EventEmitter<{ mappings: Map<string, MappingEntry>; push: boolean }>()
 
     discoveredDevices: ExtendedDevice[] = []
     topologyNodes: TopologyNode[] = []
@@ -62,7 +65,35 @@ export class DeviceMapperComponent implements OnInit {
         this.topologyNodes = (this.topology?.nodes ?? []).filter(n =>
             n.type === 'router' || n.type === 'switch' || n.type === 'firewall'
         )
-        this._loadInventory()
+        this._loadInventory().then(() => this._rehydrateExistingMappings())
+    }
+
+    /**
+     * Rebuild the mappings Map from nodes that are already mapped in the topology.
+     * Runs after inventory loads so we can enrich with vendor/model/creds if the node
+     * has an inventory match. Falls back to node fields otherwise.
+     */
+    private _rehydrateExistingMappings (): void {
+        this.mappings.clear()
+        for (const node of this.topologyNodes) {
+            if (!(node as any).mapped) { continue }
+            const hostname = node.label
+            const mgmtIp = (node.mgmtIp ?? '').split('/')[0]
+            // Try to find the inventory device that matches — prefer mgmtIp then hostname
+            const dev = this.discoveredDevices.find(d =>
+                (d.mgmtIp && d.mgmtIp === mgmtIp) ||
+                d.hostname.toLowerCase() === hostname.toLowerCase(),
+            ) as ExtendedDevice | undefined
+            this.mappings.set(node.id, {
+                hostname: dev?.hostname ?? hostname,
+                mgmtIp: dev?.mgmtIp ?? mgmtIp,
+                vendor: dev?.vendor ?? (node.vendor ?? ''),
+                model: dev?.model ?? (node.model ?? ''),
+                sshUsername: dev?.sshUsername ?? node.sshUsername,
+                sshPassword: dev?.sshPassword ?? node.sshPassword,
+            })
+        }
+        this.cdr.markForCheck()
     }
 
     private async _loadInventory (): Promise<void> {
@@ -296,7 +327,7 @@ export class DeviceMapperComponent implements OnInit {
         const hostname = this.newDevice.hostname.trim()
         const mgmtIp = this.newDevice.mgmtIp.trim()
         if (!hostname && !mgmtIp) {
-            this.addError = 'Hostname or IP is required'
+            this.addError = 'Hostname or management address is required'
             this.cdr.markForCheck()
             return
         }
@@ -305,8 +336,9 @@ export class DeviceMapperComponent implements OnInit {
             this.cdr.markForCheck()
             return
         }
-        if (mgmtIp && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(mgmtIp)) {
-            this.addError = 'Invalid IP address format'
+        // Accept IPv4, IPv6 (bracketed or bare), or DNS hostname (RFC 1123).
+        if (mgmtIp && !isValidMgmtAddress(mgmtIp)) {
+            this.addError = 'Management address must be IPv4, IPv6, or a valid hostname'
             this.cdr.markForCheck()
             return
         }
@@ -389,11 +421,14 @@ export class DeviceMapperComponent implements OnInit {
 
             // Only accept matches with reasonable confidence
             if (bestMatch && bestScore >= 30) {
+                const ext = bestMatch as ExtendedDevice
                 this.mappings.set(node.id, {
                     hostname: bestMatch.hostname,
                     mgmtIp: bestMatch.mgmtIp,
                     vendor: bestMatch.vendor,
                     model: bestMatch.model,
+                    sshUsername: ext.sshUsername,
+                    sshPassword: ext.sshPassword,
                 })
             }
         }
@@ -413,14 +448,23 @@ export class DeviceMapperComponent implements OnInit {
                     mgmtIp: dev.mgmtIp,
                     vendor: dev.vendor,
                     model: dev.model,
+                    sshUsername: (dev as ExtendedDevice).sshUsername,
+                    sshPassword: (dev as ExtendedDevice).sshPassword,
                 })
             }
         }
         this.cdr.markForCheck()
     }
 
+    /** Save mappings to the topology without pushing configs */
     applyMapping (): void {
-        this.mappingApplied.emit(new Map(this.mappings))
+        this.mappingApplied.emit({ mappings: new Map(this.mappings), push: false })
+        this.closed.emit()
+    }
+
+    /** Save mappings AND push startup configs to mapped devices */
+    applyAndPush (): void {
+        this.mappingApplied.emit({ mappings: new Map(this.mappings), push: true })
         this.closed.emit()
     }
 }

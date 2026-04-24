@@ -23,6 +23,7 @@ import { TopologyGraphService } from '../services/topology-graph.service'
 import { getVendorCommands } from '../services/vendor-command-map'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
 import { LayoutAlgorithm, forceDirectedLayout, hierarchicalLayout, radialLayout, gridLayout } from '../services/layout-helpers'
+import { Netops3dCanvasComponent } from './netops-3d-canvas.component'
 import { LicenseService } from '../services/license.service'
 import { TopologyExportService } from '../services/topology-export.service'
 
@@ -41,6 +42,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 
     @ViewChild('svgCanvas', { static: true }) svgRef!: ElementRef<SVGSVGElement>
     @ViewChild('terminalPanel') terminalPanelRef: any
+    @ViewChild(Netops3dCanvasComponent) canvas3dRef?: Netops3dCanvasComponent
     // Terminal opens in a separate window — no embedded panel needed
 
     /** Unique instance ID for SVG pattern/filter IDs to avoid cross-tab conflicts */
@@ -237,6 +239,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     liveSrState = new Map<string, { srEnabled: boolean; labelsCount: number }>()
     liveVniState = new Map<string, number>()
     liveSummary = { nodesUp: 0, nodesTotal: 0, bgpUp: 0, bgpTotal: 0 }
+    /** Revision counter bumped when live data changes — used to invalidate 3D overlay cache */
+    private _liveSummaryRev = 0
     showLivePanel = false
     // prereq state
     clabPrereqChecked = false
@@ -580,14 +584,21 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         {
             id: 'whats-new', title: "What's New", icon: '✦', content: `
 <div class="help-whats-new-cards">
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Enhanced 3D View</strong> — 5 layouts (hierarchical, force-directed, circular, sphere), live CPU/BGP/alarm overlays, VR support, keyboard fly-through, path highlighting</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Intent-Based Configuration</strong> — 10 declarative intents (Add parallel link, Enable EVPN overlay, Disable unused ports, Dual-spine uplinks)</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Network Diff Tool</strong> — Compare two topologies, detect added/removed/modified nodes, links, and ports</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Historical Replay</strong> — Ring buffer of poll snapshots, time-machine to past BGP/alarm state</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>AI Config Assistant</strong> — LLM prompt builder for explain / audit / troubleshoot / optimize / translate tasks</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Performance Profiling</strong> — ping, traceroute, iperf3 between nodes with vendor-aware commands</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>SSH Terminal Auto-Auth</strong> — Right-click &rarr; Open SSH Terminal now uses stored password (no interactive prompt)</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Twin SR / VNI Polling</strong> — SR-MPLS label count + active VNI count shown in Twin dashboard</div>
   <div class="help-new-card"><span class="help-new-badge">New</span> <strong>CRB &amp; ERB Templates</strong> — Pre-built EVPN-VXLAN fabrics for Juniper, Arista, Cisco, Nokia, SONiC</div>
   <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Segment Routing</strong> — SR-MPLS and SRv6 via Set Protocol + templates for 5 vendors</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Set Protocol Dialog</strong> — Bulk-assign BGP, OSPF, or IS-IS with optional SR, auto-loopbacks, validation warnings</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Variable Subnet Sizes</strong> — Auto-Assign IPs now supports /24 through /31 with capacity hints</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Template Type Badges</strong> — Templates show Container or Design badges with vendor labels</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Set Protocol Dialog</strong> — Bulk-assign BGP, OSPF, or IS-IS with SR toggle, auto-loopbacks, validation warnings; shortcut <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Variable Subnet Sizes</strong> — Auto-Assign IPs supports /24 through /31 (RFC 3021) with capacity hints</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Service Profiles</strong> — 9 profiles: EVPN-VXLAN, CRB, ERB, 3-Tier DC, Campus LAN, MPLS SP, SR-MPLS L3VPN, K8s, Branch</div>
   <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Multi-Server Container Polling</strong> — Monitor containers on any remote server via SSH</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Digital Twin Dashboard</strong> — Live CPU, memory, BGP, alarms, and config drift monitoring</div>
-  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Service Profiles</strong> — Apply EVPN-VXLAN, MPLS SP, Campus LAN profiles via Devices &rarr; Apply Service Profile</div>
+  <div class="help-new-card"><span class="help-new-badge">New</span> <strong>Digital Twin Dashboard</strong> — Live CPU, memory, BGP, alarms, SR labels, VNI count, config drift</div>
 </div>`
         },
         {
@@ -823,6 +834,142 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 <p class="help-desc"><strong>Vendor support for SR/VNI polling:</strong> SONiC, Arista cEOS, Nokia SR Linux, Juniper cRPD/vQFX, Cisco XRd. MikroTik, Extreme, Huawei skip gracefully.</p>
 <h4 class="help-h4">Multi-Server Monitoring</h4>
 <p class="help-desc">Monitor containers on any server. The backend server SSHes into remote Docker hosts to poll containers. Configure servers via <strong>Simulate &rarr; Server Manager</strong>.</p>`
+        },
+        {
+            id: '3d-view', title: '3D View', icon: '🧊', content: `
+<p class="help-desc">Switch to 3D mode from the top toolbar to view your topology in immersive 3D.</p>
+<h4 class="help-h4">Layouts (top toolbar)</h4>
+<ul class="help-list">
+  <li><strong>From 2D</strong> — preserves your 2D positions</li>
+  <li><strong>Hierarchical</strong> — tiered by role: super-spine → spine → leaf → access → endpoints</li>
+  <li><strong>Force-Directed</strong> — physics-based auto-layout</li>
+  <li><strong>Circular Ring</strong> — for ring/mesh topologies</li>
+  <li><strong>Sphere</strong> — Fibonacci sphere for full-mesh</li>
+</ul>
+<h4 class="help-h4">Preset Views</h4>
+<ul class="help-list">
+  <li><kbd>1</kbd> Top · <kbd>2</kbd> Front · <kbd>3</kbd> Side · <kbd>4</kbd> Iso · <kbd>0</kbd> Reset</li>
+</ul>
+<h4 class="help-h4">Keyboard Fly-Through</h4>
+<ul class="help-list">
+  <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> — move forward/left/back/right</li>
+  <li><kbd>Q</kbd><kbd>E</kbd> — move up/down</li>
+  <li>Mouse orbit, scroll = zoom, right-click = context menu</li>
+</ul>
+<h4 class="help-h4">Live Data Overlays</h4>
+<ul class="help-list">
+  <li>Status indicator (green/amber/red) per node</li>
+  <li>CPU/memory bars next to each node</li>
+  <li>Alarm pulse ring (red) — pulses with per-node phase offset</li>
+  <li>Drift badge (amber) — config drift indicator</li>
+  <li>Link colors — green (all BGP up), amber (partial), red (down)</li>
+</ul>
+<h4 class="help-h4">Toolbar Actions</h4>
+<ul class="help-list">
+  <li><strong>📷 Screenshot</strong> — export current 3D view as PNG</li>
+  <li><strong>🥽 Enter VR</strong> — WebXR immersive mode (supported headsets only)</li>
+  <li><strong>↺ Reset</strong> — appears after manual drag; discards drags, reapplies layout</li>
+  <li><strong>✕ Clear Path</strong> — appears when a path is highlighted</li>
+</ul>
+<h4 class="help-h4">Interactions</h4>
+<ul class="help-list">
+  <li>Drag a node to reposition (preserved across layout switches)</li>
+  <li><kbd>Shift</kbd>+drag from a node to create a link</li>
+  <li>Right-click a node for the standard context menu</li>
+  <li>Hover a node for CPU/mem/BGP tooltip</li>
+</ul>`
+        },
+        {
+            id: 'intents', title: 'Intent-Based Config', icon: '⚙', content: `
+<p class="help-desc">Declare <em>what</em> you want; the tool figures out how to apply it. 10 built-in intents across 5 categories.</p>
+<h4 class="help-h4">Redundancy</h4>
+<ul class="help-list">
+  <li><strong>Add Parallel Link</strong> — duplicates selected link for active-active failover</li>
+  <li><strong>Ensure Dual Spine Uplinks</strong> — adds missing uplinks so every leaf has at least 2 spines</li>
+</ul>
+<h4 class="help-h4">Connectivity &amp; Overlay</h4>
+<ul class="help-list">
+  <li><strong>Connect to Management Network</strong> — attach node to OOB mgmt switch</li>
+  <li><strong>Add Out-of-Band Path</strong> — dedicated OOB link between two nodes</li>
+  <li><strong>Add Tenant VLAN</strong> — adds new tenant VLAN + VNI mapping to all leaves</li>
+  <li><strong>Enable EVPN-VXLAN Overlay</strong> — turns on overlay fabric-wide, regenerates configs</li>
+</ul>
+<h4 class="help-h4">Security</h4>
+<ul class="help-list">
+  <li><strong>Apply Storm Control</strong> — broadcast/multicast storm control on access ports</li>
+  <li><strong>Disable Unused Ports</strong> — shut down ports not part of any link (reduces attack surface)</li>
+</ul>
+<h4 class="help-h4">Observability</h4>
+<ul class="help-list">
+  <li><strong>Enable gRPC Telemetry</strong> — streaming telemetry on all routing devices</li>
+  <li><strong>Bulk Set Management IPs</strong> — assign sequential mgmt IPs from a prefix</li>
+</ul>
+<p class="help-desc">Each intent <strong>previews</strong> its changes before applying — you see exactly what will change.</p>`
+        },
+        {
+            id: 'diff', title: 'Network Diff', icon: '⇄', content: `
+<p class="help-desc">Compare two topology JSONs and see exactly what changed — useful for audits, change reviews, and planning.</p>
+<h4 class="help-h4">What it detects</h4>
+<ul class="help-list">
+  <li><strong>Topology-level</strong> — name, underlay protocol, overlay enabled, IRB mode, VNI base</li>
+  <li><strong>Nodes</strong> — added, removed, modified (field-level: vendor, ASN, role, IPs, SR fields)</li>
+  <li><strong>Links</strong> — added, removed, modified (endpoints, color, style)</li>
+  <li><strong>Ports</strong> — VLAN mode changes, IP changes, enabled/disabled</li>
+</ul>
+<h4 class="help-h4">Output formats</h4>
+<ul class="help-list">
+  <li>Structured JSON (for programmatic use)</li>
+  <li>Plain text (for audit trails, email, PR descriptions)</li>
+</ul>`
+        },
+        {
+            id: 'replay', title: 'Historical Replay', icon: '⏮', content: `
+<p class="help-desc">Every poll cycle is recorded into an in-memory ring buffer (last 200 snapshots). Scrub through past Twin state to debug intermittent issues.</p>
+<h4 class="help-h4">Captured per snapshot</h4>
+<ul class="help-list">
+  <li>Container running/stopped state</li>
+  <li>BGP up/total counts per node</li>
+  <li>SR-MPLS label count</li>
+  <li>Active VNI count</li>
+  <li>CPU/memory %</li>
+  <li>Active alarm count</li>
+  <li>Config drift flag</li>
+</ul>
+<h4 class="help-h4">Diff Queries</h4>
+<p class="help-desc">Compare any two snapshots to see: newly-down nodes, newly-up nodes, BGP neighbors lost, new drift, resolved drift.</p>
+<h4 class="help-h4">Persistence</h4>
+<p class="help-desc">Last 50 snapshots persist to localStorage and survive app restart.</p>`
+        },
+        {
+            id: 'perf-profiling', title: 'Performance Profiling', icon: '📊', content: `
+<p class="help-desc">Generate vendor-aware probes (ping, traceroute, iperf3) between nodes and parse results into structured metrics.</p>
+<h4 class="help-h4">Supported probes</h4>
+<ul class="help-list">
+  <li><strong>Ping</strong> — packets sent/received, loss %, min/avg/max RTT</li>
+  <li><strong>Traceroute</strong> — hop list with per-hop RTT</li>
+  <li><strong>iperf3</strong> — bandwidth in Mbps (parses Kbits/Mbits/Gbits output)</li>
+</ul>
+<h4 class="help-h4">Vendor command matrix</h4>
+<ul class="help-list">
+  <li><strong>Juniper</strong>: <code>cli -c "ping X count 5 rapid"</code></li>
+  <li><strong>Cisco</strong>: <code>ping X count 5</code></li>
+  <li><strong>Arista</strong>: <code>Cli -p 15 -c "ping X repeat 5"</code></li>
+  <li><strong>SONiC / Nokia SRL / FRR / Huawei</strong>: standard Linux <code>ping -c 5 X</code></li>
+</ul>`
+        },
+        {
+            id: 'ai-assistant', title: 'AI Config Assistant', icon: '🤖', content: `
+<p class="help-desc">Build well-formed prompts for your LLM of choice (Claude, ChatGPT, Gemini) — copy into the chat and get expert analysis.</p>
+<h4 class="help-h4">5 task types</h4>
+<ul class="help-list">
+  <li><strong>Explain</strong> — line-by-line breakdown of what the config does</li>
+  <li><strong>Audit</strong> — security &amp; compliance review (PCI, HIPAA, NIST 800-53)</li>
+  <li><strong>Troubleshoot</strong> — symptom-driven root cause analysis with debug commands</li>
+  <li><strong>Optimize</strong> — convergence / scalability / observability improvements with diffs</li>
+  <li><strong>Translate</strong> — convert config to another vendor's syntax (e.g., Juniper → Cisco IOS-XR)</li>
+</ul>
+<p class="help-desc">The generated prompt includes the node's vendor, ASN, role, loopback, and startup config — so the LLM has everything it needs to give a grounded response.</p>
+<div class="help-tryit">Direct LLM API calls are out of scope (would need user-provided API keys). The tool generates the prompt; you run it in your LLM.</div>`
         },
         {
             id: 'import-export', title: 'Import & Export', icon: '⤓', content: `
@@ -2598,6 +2745,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         const hostRaw = (node.mgmtIp ?? '').trim()
         const host = hostRaw.split('/')[0].trim()
         const username = (node.sshUsername ?? '').trim()
+        const password = node.sshPassword ?? ''
         const portRaw = node.sshPort ?? 22
         const portCandidate = Number.isFinite(portRaw) ? Math.trunc(portRaw) : 22
         const port = portCandidate >= 1 && portCandidate <= 65535 ? portCandidate : 22
@@ -2616,7 +2764,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         }
 
         try {
-            const result = await api.openSshTerminal({ host, port, username })
+            // Pass password through so SSH_ASKPASS can authenticate without prompting
+            const result = await api.openSshTerminal({ host, port, username, password: password || undefined })
             this.statusMsg = result.message
         } catch (err) {
             this.statusMsg = `Failed to open SSH terminal: ${(err as Error).message}`
@@ -2670,31 +2819,58 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         }, 500)
     }
 
-    /** Open a side-by-side config compare window — lets user pick another node to compare with */
+    // ── Peer Compare (Diff with Another Node) ─────────────────────────────
+    //
+    // Opens an inline picker that lets the user choose another topology node
+    // to diff against. Replaces a previous implementation that called
+    // window.prompt(), which is blocked in Electron with contextIsolation:true.
+
+    /** Dialog state for the peer-compare picker. */
+    showPeerCompareDialog = false
+    peerCompareSourceId: string | null = null
+    peerCompareTargetId: string = ''
+
+    /** Trigger — opens the inline node picker. */
     ctxCompareConfig (nodeId: string): void {
         this.closeCtxMenu()
         const node = this.topology.nodes.find(n => n.id === nodeId)
-        if (!node?.startupConfig) { return }
-
-        // Find all other nodes with configs
-        const otherNodes = this.topology.nodes.filter(n => n.id !== nodeId && n.startupConfig)
-        if (!otherNodes.length) {
-            this.statusMsg = 'No other nodes with configs to compare'
+        if (!node?.startupConfig) {
+            this.statusMsg = `${node?.label ?? 'Node'}: no config to compare`
             this.cdr.markForCheck()
             return
         }
+        const otherNodes = this.topology.nodes.filter(n => n.id !== nodeId && n.startupConfig)
+        if (!otherNodes.length) {
+            this.statusMsg = 'No other nodes with configs to compare against'
+            this.cdr.markForCheck()
+            return
+        }
+        this.peerCompareSourceId = nodeId
+        this.peerCompareTargetId = otherNodes[0].id
+        this.showPeerCompareDialog = true
+        this.cdr.markForCheck()
+    }
 
-        // Let user pick which node to compare with
-        const options = otherNodes.map(n => `${n.label} (${n.vendor ?? ''} ${n.role ?? ''})`).join('\n')
-        const choice = prompt(`Compare ${node.label} config with:\n\n${otherNodes.map((n, i) => `${i + 1}. ${n.label} (${n.vendor ?? ''} ${n.role ?? ''})`).join('\n')}\n\nEnter number:`)
-        if (!choice) { return }
-        const idx = parseInt(choice, 10) - 1
-        if (idx < 0 || idx >= otherNodes.length) { return }
-        const otherNode = otherNodes[idx]
+    /** Nodes available as the target in the peer-compare picker. */
+    get peerCompareCandidates (): Array<{ id: string; label: string; vendor?: string; role?: string }> {
+        if (!this.peerCompareSourceId) { return [] }
+        return this.topology.nodes
+            .filter(n => n.id !== this.peerCompareSourceId && n.startupConfig?.trim())
+            .map(n => ({ id: n.id, label: n.label, vendor: n.vendor, role: n.role as any }))
+    }
 
-        // Open compare window
-        const leftCfg = node.startupConfig!.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        const rightCfg = otherNode.startupConfig!.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    /** Apply — open the side-by-side compare window with the chosen target. */
+    runPeerCompare (): void {
+        const src = this.topology.nodes.find(n => n.id === this.peerCompareSourceId)
+        const tgt = this.topology.nodes.find(n => n.id === this.peerCompareTargetId)
+        this.showPeerCompareDialog = false
+        this.peerCompareSourceId = null
+        this.cdr.markForCheck()
+        if (!src || !tgt || !src.startupConfig || !tgt.startupConfig) { return }
+
+        const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const leftCfg = escHtml(src.startupConfig)
+        const rightCfg = escHtml(tgt.startupConfig)
         const win = window.open('', '_blank', 'width=1400,height=700,menubar=no,toolbar=no')
         if (!win) { return }
         win.document.write(`<!DOCTYPE html><html><head><style>
@@ -2710,17 +2886,23 @@ body { background:#0d1117; color:#c9d1d9; font-family:monospace; display:flex; f
 pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-all; }
 </style></head><body>
 <div class="header">
-  <h3>${node.label}</h3>
+  <h3>${src.label}</h3>
   <span class="vs">⟷ COMPARE ⟷</span>
-  <h3>${otherNode.label}</h3>
+  <h3>${tgt.label}</h3>
 </div>
 <div class="panels">
-  <div class="panel"><div class="panel-title">${node.label} (${node.vendor ?? ''} ${node.model ?? ''})</div><pre>${leftCfg}</pre></div>
-  <div class="panel"><div class="panel-title">${otherNode.label} (${otherNode.vendor ?? ''} ${otherNode.model ?? ''})</div><pre>${rightCfg}</pre></div>
+  <div class="panel"><div class="panel-title">${src.label} (${src.vendor ?? ''} ${src.model ?? ''})</div><pre>${leftCfg}</pre></div>
+  <div class="panel"><div class="panel-title">${tgt.label} (${tgt.vendor ?? ''} ${tgt.model ?? ''})</div><pre>${rightCfg}</pre></div>
 </div>
 </body></html>`)
         win.document.close()
-        win.document.title = `Compare: ${node.label} ⟷ ${otherNode.label}`
+        win.document.title = `Compare: ${src.label} ⟷ ${tgt.label}`
+    }
+
+    cancelPeerCompare (): void {
+        this.showPeerCompareDialog = false
+        this.peerCompareSourceId = null
+        this.cdr.markForCheck()
     }
 
     ctxShowTroubleshoot (nodeId: string): void {
@@ -2850,6 +3032,316 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 </body></html>`)
         win.document.close()
         win.document.title = `Config Diff: ${nodeLabel}`
+    }
+
+    // ── Push-with-Edit dialog state ────────────────────────────────────────
+    //
+    // Opens an editable preview of the startup config before pushing. User can:
+    //   • Remove lines they don't want pushed (delete text in the textarea)
+    //   • Add new lines (type into the textarea)
+    //   • Clear All — wipe the textarea entirely
+    //   • Reset — restore the node's current startupConfig
+    //   • Push — save edits back to node.startupConfig and run the push
+
+    showPushEditDialog = false
+    pushEditNodeId: string | null = null
+    pushEditNodeLabel = ''
+    pushEditNodeTarget = ''
+    pushEditNodeVendor = ''
+    /** Lines to DELETE on the device (run BEFORE the set lines) — optional. */
+    pushEditDeleteText = ''
+    /** Lines to SET / add — the body of the push. */
+    pushEditText = ''
+    pushEditOriginal = ''
+    pushEditSaveToNode = true   // if true, persist the edit onto node.startupConfig
+    /**
+     * Remembers the last delete-text per node across dialog sessions. The set
+     * body is persisted onto `node.startupConfig` (via "Save set body to node"),
+     * but the delete section is one-shot by design — this cache just restores
+     * whatever the user had typed or suggested last time they opened the dialog
+     * for the same node, so they don't have to re-click "Suggest Deletes" if
+     * they reopen. Cleared on app reload.
+     */
+    private _pushEditDeletesByNode = new Map<string, string>()
+
+    /**
+     * Push startup config to a single node (context-menu entry point).
+     * Opens the Push-with-Edit dialog so the user can review/edit before push.
+     */
+    ctxPushConfig (nodeId: string): void {
+        this.closeCtxMenu()
+        const node = this.topology.nodes.find(n => n.id === nodeId)
+        if (!node) { return }
+
+        if (!node.startupConfig?.trim()) {
+            this.statusMsg = `${node.label}: no config to push (generate or paste one first)`
+            this.cdr.markForCheck()
+            return
+        }
+        if (!node.vendor) {
+            this.statusMsg = `${node.label}: vendor not set — cannot build push commands`
+            this.cdr.markForCheck()
+            return
+        }
+
+        this.pushEditNodeId = nodeId
+        this.pushEditNodeLabel = node.label
+        this.pushEditNodeTarget = (node.mgmtIp ?? '').split('/')[0] || '(container)'
+        this.pushEditNodeVendor = node.vendor
+        this.pushEditOriginal = node.startupConfig ?? ''
+        this.pushEditText = this.pushEditOriginal
+        // Restore the last delete text the user had for this node (if any).
+        this.pushEditDeleteText = this._pushEditDeletesByNode.get(nodeId) ?? ''
+        this.pushEditSaveToNode = true
+        this.showPushEditDialog = true
+        this.cdr.markForCheck()
+    }
+
+    /** Clear the set textarea (user wants to push nothing / build fresh). */
+    clearPushEdit (): void {
+        this.pushEditText = ''
+        this.cdr.markForCheck()
+    }
+
+    /** Clear the delete textarea and its per-node cache. */
+    clearPushEditDeletes (): void {
+        this.pushEditDeleteText = ''
+        if (this.pushEditNodeId) {
+            this._pushEditDeletesByNode.delete(this.pushEditNodeId)
+        }
+        this.cdr.markForCheck()
+    }
+
+    /** Restore the set textarea to the node's current startupConfig. */
+    resetPushEdit (): void {
+        this.pushEditText = this.pushEditOriginal
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Top-of-hierarchy tokens for Juniper-style configs.
+     *
+     * Each key is a first-level container in the Juniper config tree.
+     * The value is how many tokens to keep from the set line:
+     *   1 = the container itself (`delete interfaces`)
+     *   2 = the container + its next sub-feature (`delete protocols lldp`,
+     *       `delete system ntp`)
+     *
+     * Everything not in this map defaults to 1 token (coarsest delete).
+     */
+    private static readonly _JUNIPER_TOP_DEPTH: Record<string, number> = {
+        // One-token containers — delete wipes the whole subtree
+        'interfaces': 1,
+        'routing-options': 1,
+        'policy-options': 1,
+        'firewall': 1,
+        'forwarding-options': 1,
+        'chassis': 1,
+        'snmp': 1,
+        'event-options': 1,
+        'access': 1,
+        'accounting-options': 1,
+        'class-of-service': 1,
+        'applications': 1,
+
+        // Two-token containers — delete wipes one sub-feature at a time
+        // (e.g. `delete protocols bgp` keeps `protocols ospf` intact)
+        'protocols': 2,
+        'system': 2,
+        'routing-instances': 2,
+        'security': 2,
+        'services': 2,
+        'vlans': 2,
+        'bridge-domains': 2,
+        'logical-systems': 2,
+        'groups': 2,
+        'apply-groups': 2,
+    }
+
+    /**
+     * Auto-suggest delete statements at the top of the config hierarchy.
+     *
+     * Heuristic (Juniper-style): for each `set <container> <rest…> <value>`,
+     * generate `delete <container>` (or `delete <container> <subfeature>` for
+     * two-token containers like `protocols`, `system`). Aggressive by design:
+     * wiping `interfaces` alone removes ALL interface config on the device —
+     * appropriate for greenfield pushes, risky otherwise. The user should
+     * review and edit before pushing.
+     *
+     * Cisco / Arista fall back to `no <first-token-after-set>` since their
+     * hierarchy is flatter and `no ip route` wipes all static routes, etc.
+     *
+     * Result is deduped: 10 `set interfaces …` lines produce ONE
+     * `delete interfaces`.
+     *
+     * Examples (Juniper):
+     *   set interfaces et-0/0/9 unit 0 family inet address 10.0.0.41/30
+     *   set interfaces et-0/0/10 unit 0 family inet address 10.0.0.45/30
+     *   → delete interfaces            (single line, deduped)
+     *
+     *   set protocols lldp interface all
+     *   → delete protocols lldp
+     *
+     *   set system ntp server 10.0.0.254
+     *   set system syslog file messages
+     *   → delete system ntp
+     *     delete system syslog
+     */
+    /**
+     * Pure helper: derive top-of-hierarchy delete statements from a config body.
+     * Used by both the interactive dialog and the bulk "Suggest & Push All" flow.
+     *
+     * Juniper-style: `delete <container>` or `delete <container> <subfeature>`
+     *   based on the hierarchy depth map.
+     * Cisco-style:   `no <first-token-after-set>`.
+     *
+     * Returns deduped, ordered list (first occurrence wins).
+     */
+    private _deriveDeletesFromConfig (config: string, vendor: string): string[] {
+        const isCiscoStyle = ['cisco', 'arista', 'ios', 'eos', 'nxos'].some(v => vendor.toLowerCase().includes(v))
+        const keyword = isCiscoStyle ? 'no' : 'delete'
+        const depthMap = NetopsCanvasComponent._JUNIPER_TOP_DEPTH
+
+        const seen = new Set<string>()
+        const deletes: string[] = []
+
+        for (const raw of config.split('\n')) {
+            const line = raw.trim()
+            if (!line || line.startsWith('#') || line.startsWith('//')) { continue }
+            const match = /^set\s+(.+)$/i.exec(line)
+            if (!match) { continue }
+            const tokens = match[1].split(/\s+/).filter(Boolean)
+            if (!tokens.length) { continue }
+
+            let deletePath: string
+            if (isCiscoStyle) {
+                deletePath = tokens[0]
+            } else {
+                const first = tokens[0].toLowerCase()
+                const depth = depthMap[first] ?? 1
+                deletePath = tokens.slice(0, Math.min(depth, tokens.length)).join(' ')
+            }
+
+            const deleteLine = `${keyword} ${deletePath}`
+            if (seen.has(deleteLine)) { continue }
+            seen.add(deleteLine)
+            deletes.push(deleteLine)
+        }
+
+        return deletes
+    }
+
+    suggestPushEditDeletes (): void {
+        const deletes = this._deriveDeletesFromConfig(this.pushEditText, this.pushEditNodeVendor ?? '')
+        if (!deletes.length) {
+            this.statusMsg = 'No set statements found to derive deletes from'
+            this.cdr.markForCheck()
+            return
+        }
+        // Append to existing deletes, deduped.
+        const existing = this.pushEditDeleteText.split('\n').map(l => l.trim()).filter(Boolean)
+        const existingSet = new Set(existing)
+        const merged = [...existing, ...deletes.filter(d => !existingSet.has(d))]
+        this.pushEditDeleteText = merged.join('\n')
+        this.cdr.markForCheck()
+    }
+
+    /** Close the dialog without pushing. Remembers the delete text for next open. */
+    cancelPushEdit (): void {
+        if (this.pushEditNodeId) {
+            // Preserve whatever the user typed/suggested so reopen is lossless.
+            this._pushEditDeletesByNode.set(this.pushEditNodeId, this.pushEditDeleteText)
+        }
+        this.showPushEditDialog = false
+        this.pushEditNodeId = null
+        this.pushEditText = ''
+        this.pushEditDeleteText = ''
+        this.pushEditOriginal = ''
+        this.cdr.markForCheck()
+    }
+
+    /** Apply edits and push. */
+    async confirmPushEdit (): Promise<void> {
+        const nodeId = this.pushEditNodeId
+        if (!nodeId) { return }
+        const setLines = this.pushEditText
+        const delLines = this.pushEditDeleteText
+        if (!setLines.trim() && !delLines.trim()) {
+            this.statusMsg = 'Both sections empty — nothing to push'
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Remember the delete text for next open of this node's dialog.
+        this._pushEditDeletesByNode.set(nodeId, delLines)
+
+        // Compose: deletes first (wipe existing state), then sets (apply new).
+        // Each section is joined with a blank line for readability in the wire
+        // log, but only non-blank lines end up in the pushed command list
+        // (pushAllConfigs filters out empties).
+        const combined = [
+            delLines.trim(),
+            setLines.trim(),
+        ].filter(s => s.length).join('\n')
+
+        // Persist the *set* body onto the node — the delete lines are transient
+        // (one-shot: you're saying "wipe these keys before I set"; you don't
+        // want the deletes re-issued on every future push).
+        if (this.pushEditSaveToNode && setLines !== this.pushEditOriginal) {
+            this.svc.updateNodeConfig(nodeId, { startupConfig: setLines, configSource: 'manual' as any })
+        }
+
+        this.showPushEditDialog = false
+        this.cdr.markForCheck()
+
+        // Temporarily swap node.startupConfig to the combined (deletes+sets)
+        // payload for the push, then restore whatever we decided to persist.
+        const node = this.topology.nodes.find(n => n.id === nodeId)
+        const savedConfig = node?.startupConfig
+        if (node) { (node as any).startupConfig = combined }
+        try {
+            await this.pushAllConfigs({ skipConfirm: true, nodeIds: [nodeId] })
+        } finally {
+            if (node) {
+                (node as any).startupConfig = this.pushEditSaveToNode
+                    ? setLines                 // persist the set body
+                    : savedConfig              // restore original
+            }
+        }
+
+        this.pushEditNodeId = null
+    }
+
+    /** Count of non-blank lines in the set body (for display). */
+    get pushEditLineCount (): number {
+        if (!this.pushEditText) { return 0 }
+        return this.pushEditText.split('\n').filter(l => l.trim().length > 0).length
+    }
+
+    /** Count of non-blank lines in the delete body (for display). */
+    get pushEditDeleteLineCount (): number {
+        if (!this.pushEditDeleteText) { return 0 }
+        return this.pushEditDeleteText.split('\n').filter(l => l.trim().length > 0).length
+    }
+
+    /** Whether the user has made any edits to the set body. */
+    get pushEditModified (): boolean {
+        return this.pushEditText !== this.pushEditOriginal
+    }
+
+    /** Whether the right-click node can be pushed to (has config + vendor + reachable). */
+    get ctxNodeCanPush (): boolean {
+        if (!this.ctxNodeId) { return false }
+        const node = this.topology.nodes.find(n => n.id === this.ctxNodeId)
+        if (!node?.startupConfig?.trim() || !node.vendor) { return false }
+        // Container-based?
+        const safeName = node.label.replace(/\s+/g, '-').toLowerCase()
+        if (this.clabContainers?.some(c => c.name.endsWith('-' + safeName) && c.state === 'running')) { return true }
+        // SSH-based?
+        const host = (node.mgmtIp ?? '').split('/')[0]
+        if (host && node.sshUsername && node.sshPassword) { return true }
+        if (node.mapped && host) { return true }
+        return false
     }
 
     private _buildTroubleshootSections (node: any): typeof this.tsSections {
@@ -5197,6 +5689,97 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.svc.selectNode(nodeId ?? null as any)
     }
 
+    /** Right-click in 3D view → open same context menu as 2D */
+    onNodeContextMenu3D (event: { nodeId: string; x: number; y: number }): void {
+        const node = this.topology.nodes.find(n => n.id === event.nodeId)
+        if (!node) { return }
+        // Synthesize a right-click MouseEvent for the existing menu pipeline
+        const fakeEvent = {
+            clientX: event.x, clientY: event.y,
+            preventDefault: () => {}, stopPropagation: () => {},
+        } as MouseEvent
+        this.onNodeRightClick(fakeEvent, node)
+    }
+
+    // Memoization cache for live3DData — invalidated when underlying maps change
+    private _live3DCache: any = null
+    private _live3DCacheKey = ''
+
+    /** Live data bundle passed to the 3D view for overlays (CPU, memory, BGP, alarms, drift, SR/VNI).
+     *  Memoized — only rebuilds when data actually changed. */
+    get live3DData (): {
+        cpuByNode: Map<string, number>
+        memByNode: Map<string, number>
+        bgpUpByNode: Map<string, { up: number; total: number }>
+        alarmsByNode: Map<string, number>
+        driftByNode: Set<string>
+        srLabelsByNode: Map<string, number>
+        vniByNode: Map<string, number>
+    } {
+        // Skip expensive rebuild when 3D view not active
+        if (this.viewMode !== '3d') {
+            return this._live3DCache ?? {
+                cpuByNode: new Map(), memByNode: new Map(), bgpUpByNode: new Map(),
+                alarmsByNode: new Map(), driftByNode: new Set(),
+                srLabelsByNode: new Map(), vniByNode: new Map(),
+            }
+        }
+        // Cheap invalidation key — changes when any map size or node count changes
+        const key = `${this.topology.nodes.length}|${this.twinNodeHealth.size}|${this.liveBgpState.size}|${this.liveSrState.size}|${this.liveVniState.size}|${this.twinConfigDrift.size}|${this.invSvc.allAlarms?.length ?? 0}|${this._liveSummaryRev}`
+        if (this._live3DCacheKey === key && this._live3DCache) { return this._live3DCache }
+
+        const cpuByNode = new Map<string, number>()
+        const memByNode = new Map<string, number>()
+        const bgpUpByNode = new Map<string, { up: number; total: number }>()
+        const alarmsByNode = new Map<string, number>()
+        const driftByNode = new Set<string>()
+        const srLabelsByNode = new Map<string, number>()
+        const vniByNode = new Map<string, number>()
+
+        // CPU/memory from twin polling
+        for (const node of this.topology.nodes) {
+            const cpu = this.getTwinCpu(node.id)
+            const mem = this.getTwinMem(node.id)
+            if (cpu >= 0) { cpuByNode.set(node.id, cpu) }
+            if (mem >= 0) { memByNode.set(node.id, mem) }
+        }
+
+        // Alarms from inventory service
+        for (const alarm of this.invSvc.allAlarms ?? []) {
+            if (alarm.clearedAt) { continue }  // Skip cleared alarms
+            const count = alarmsByNode.get(alarm.nodeId) ?? 0
+            alarmsByNode.set(alarm.nodeId, count + 1)
+        }
+
+        // BGP + SR + VNI from live twin state — keyed by container name, need to map to node.id
+        for (const node of this.topology.nodes) {
+            const safeName = node.label.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase()
+            for (const [ctnName, neighbors] of this.liveBgpState) {
+                if (ctnName.endsWith('-' + safeName)) {
+                    const up = neighbors.filter(n => n.state === 'established').length
+                    bgpUpByNode.set(node.id, { up, total: neighbors.length })
+                    break
+                }
+            }
+            for (const [ctnName, sr] of this.liveSrState) {
+                if (ctnName.endsWith('-' + safeName)) { srLabelsByNode.set(node.id, sr.labelsCount); break }
+            }
+            for (const [ctnName, vni] of this.liveVniState) {
+                if (ctnName.endsWith('-' + safeName)) { vniByNode.set(node.id, vni); break }
+            }
+        }
+
+        // Drift from twin state
+        for (const nodeId of (this.twinConfigDrift?.keys() ?? [])) {
+            driftByNode.add(nodeId)
+        }
+
+        const result = { cpuByNode, memByNode, bgpUpByNode, alarmsByNode, driftByNode, srLabelsByNode, vniByNode }
+        this._live3DCache = result
+        this._live3DCacheKey = key
+        return result
+    }
+
     /** Build topology from LLDP discovery result — creates nodes + links automatically */
     buildTopologyFromDiscovery (devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }>,
                                 links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>): void {
@@ -5250,30 +5833,56 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
-    onMappingApplied (mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string }>): void {
-        // Apply mapping to topology nodes
+    onMappingApplied (evt: { mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string; sshUsername?: string; sshPassword?: string }>; push: boolean }): void {
+        const mappings = evt.mappings
+        // Apply mapping to topology nodes — propagate SSH credentials so push can run unattended
+        let credsMissing = 0
         for (const [nodeId, entry] of mappings) {
             const node = this.topology.nodes.find(n => n.id === nodeId)
             if (!node) { continue }
-            this.svc.updateNodeConfig(nodeId, {
+            const changes: any = {
                 mapped: true,
                 mappedBy: 'hostname',
                 mgmtIp: entry.mgmtIp,
                 vendor: entry.vendor || node.vendor,
                 model: entry.model || node.model,
-            } as any)
+            }
+            // Carry SSH credentials from DiscoveredDevice → node (prefer entry, keep existing if entry blank)
+            if (entry.sshUsername) { changes.sshUsername = entry.sshUsername }
+            if (entry.sshPassword) { changes.sshPassword = entry.sshPassword }
+            this.svc.updateNodeConfig(nodeId, changes)
+            // Track which nodes are still missing creds after the merge
+            const finalUser = entry.sshUsername || node.sshUsername
+            const finalPass = entry.sshPassword || node.sshPassword
+            if (!finalUser || !finalPass) { credsMissing++ }
         }
-
-        this.statusMsg = `Mapped ${mappings.size} nodes to physical devices`
-        this.cdr.markForCheck()
 
         // Auto-save topology so mapping persists across restarts
         this.saveTopology()
 
-        // Prompt to push configs
+        if (!evt.push) {
+            // Apply Mapping only — no push
+            const credsNote = credsMissing
+                ? ` (${credsMissing} missing SSH credentials — set them before pushing)`
+                : ''
+            this.statusMsg = `Mapped ${mappings.size} nodes to physical devices${credsNote}`
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Apply & Push — warn if any are missing creds, then push
+        this.statusMsg = `Mapped ${mappings.size} nodes to physical devices`
+        this.cdr.markForCheck()
+
         if (mappings.size > 0) {
-            const push = confirm(`${mappings.size} nodes mapped and saved. Push configs to physical devices now?`)
-            if (push) { this.pushAllConfigs({ skipConfirm: true }) }
+            if (credsMissing) {
+                const proceed = confirm(
+                    `${credsMissing} of ${mappings.size} node(s) have no SSH credentials and will be skipped.\n\n` +
+                    `Push configs to the remaining ${mappings.size - credsMissing} node(s)?`,
+                )
+                if (!proceed) { return }
+            }
+            this.pushAllConfigs({ skipConfirm: true })
         }
     }
 
@@ -5459,6 +6068,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             }
         }
 
+        // Invalidate 3D overlay memoization after twin state updates
+        this._liveSummaryRev++
         this.cdr.markForCheck()
     }
 
@@ -10470,6 +11081,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             }
 
             this.liveSummary = { nodesUp, nodesTotal: result.containers.length, bgpUp, bgpTotal }
+            this._liveSummaryRev++  // Invalidate 3D overlay memoization cache
         } catch (err) { console.warn('Live poll failed:', (err as Error).message) }
 
         this._livePollRunning = false
@@ -12888,15 +13500,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return cmds.showRunningConfig
         }
 
-        // Resolve SSH credentials up-front (prompt is blocking, must be sequential)
+        // Resolve SSH credentials up-front. window.prompt() is blocked in Electron
+        // with contextIsolation: true, so nodes without creds are skipped with a
+        // clear error instead. Users should set creds via Device Mapper inline
+        // form, Bulk Credentials dialog, or node properties.
         const resolvedEntries: typeof reachableNodes = []
         for (const entry of reachableNodes) {
-            if (entry.method === 'ssh' && !entry.username) {
-                const username = prompt(`SSH username for ${entry.node.label} (${entry.host}):`) ?? ''
-                if (!username) { failed++; errors.push(`${entry.node.label}: no credentials`); continue }
-                const password = prompt(`SSH password for ${entry.node.label}:`) ?? ''
-                entry.username = username
-                entry.password = password
+            if (entry.method === 'ssh' && (!entry.username || !entry.password)) {
+                failed++
+                errors.push(`${entry.node.label}: no SSH credentials — set via Device Mapper or Bulk Credentials`)
+                continue
             }
             resolvedEntries.push(entry)
         }
@@ -13089,10 +13702,238 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     configPushAllRunning = false
 
-    async pushAllConfigs (opts?: { skipConfirm?: boolean }): Promise<void> {
-        const nodes = this.topology.nodes.filter(n => n.startupConfig?.trim() && n.vendor)
+    // ── Bulk Replace — preview dialog ───────────────────────────────────────
+    //
+    // Opens a review step before the ⇅ Replace All push: every pushable node
+    // gets a row with pre-populated top-of-hierarchy delete suggestions + its
+    // startup config set body. User can expand any row, edit the deletes or
+    // sets, toggle "skip", then click Push All to run the whole batch.
+
+    showBulkReplaceDialog = false
+    /** When true, the dialog stretches to ~full viewport. */
+    bulkReplaceMaximized = false
+    bulkReplaceEntries: Array<{
+        nodeId: string
+        nodeLabel: string
+        vendor: string
+        target: string
+        deleteText: string
+        setText: string
+        originalSetText: string
+        expanded: boolean
+        skip: boolean
+    }> = []
+
+    // Filter state
+    bulkReplaceFilter = ''
+    bulkReplaceVendorFilter = ''
+    bulkReplaceHideSkipped = false
+
+    toggleBulkReplaceMaximized (): void {
+        this.bulkReplaceMaximized = !this.bulkReplaceMaximized
+        this.cdr.markForCheck()
+    }
+
+    /** Entries visible after applying filters — used by *ngFor in the dialog. */
+    get filteredBulkReplaceEntries (): typeof this.bulkReplaceEntries {
+        const q = this.bulkReplaceFilter.trim().toLowerCase()
+        const vendorF = this.bulkReplaceVendorFilter.trim().toLowerCase()
+        const hideSkip = this.bulkReplaceHideSkipped
+        return this.bulkReplaceEntries.filter(e => {
+            if (hideSkip && e.skip) { return false }
+            if (vendorF && !e.vendor.toLowerCase().includes(vendorF)) { return false }
+            if (q) {
+                const hay = `${e.nodeLabel} ${e.vendor} ${e.target}`.toLowerCase()
+                if (!hay.includes(q)) { return false }
+            }
+            return true
+        })
+    }
+
+    /** Unique vendors across the batch — drives the vendor filter dropdown. */
+    get bulkReplaceVendorOptions (): string[] {
+        const set = new Set<string>()
+        for (const e of this.bulkReplaceEntries) {
+            if (e.vendor) { set.add(e.vendor) }
+        }
+        return [...set].sort()
+    }
+
+    clearBulkReplaceFilters (): void {
+        this.bulkReplaceFilter = ''
+        this.bulkReplaceVendorFilter = ''
+        this.bulkReplaceHideSkipped = false
+        this.cdr.markForCheck()
+    }
+
+    get hasBulkReplaceFilters (): boolean {
+        return !!(this.bulkReplaceFilter.trim() || this.bulkReplaceVendorFilter.trim() || this.bulkReplaceHideSkipped)
+    }
+
+    /** Stable identity for ngFor so expanded/skip state survives filter/sort changes. */
+    bulkReplaceTrackBy (_i: number, entry: { nodeId: string }): string {
+        return entry.nodeId
+    }
+
+    /**
+     * Open the bulk replace preview (⇅ Replace quick-action + Devices menu entry).
+     * Replaces the old "push immediately with auto-deletes" flow — now the
+     * user always gets a confirm-and-edit step before any commands go out.
+     */
+    pushAllConfigsWithDeletes (): void {
+        const pushableNodes = this.topology.nodes.filter(n => n.startupConfig?.trim() && n.vendor)
+        const eligible = pushableNodes.filter(n => {
+            const safeName = n.label.replace(/\s+/g, '-').toLowerCase()
+            if (this.clabContainers?.some(c => c.name.endsWith('-' + safeName) && c.state === 'running')) { return true }
+            const host = (n.mgmtIp ?? '').split('/')[0]
+            if (host && n.sshUsername && n.sshPassword) { return true }
+            if (n.mapped && host) { return true }
+            return false
+        })
+
+        if (!eligible.length) {
+            this.statusMsg = pushableNodes.length
+                ? `${pushableNodes.length} nodes have configs but none are reachable. Set mgmtIp + SSH credentials, or deploy containerlab.`
+                : 'No nodes have configs + vendor set'
+            this.cdr.markForCheck()
+            return
+        }
+
+        this.bulkReplaceEntries = eligible.map(n => {
+            const setText = n.startupConfig ?? ''
+            const deleteText = this._deriveDeletesFromConfig(setText, n.vendor ?? '').join('\n')
+            const host = (n.mgmtIp ?? '').split('/')[0]
+            return {
+                nodeId: n.id,
+                nodeLabel: n.label,
+                vendor: n.vendor ?? '',
+                target: host || '(container)',
+                deleteText,
+                setText,
+                originalSetText: setText,
+                expanded: eligible.length <= 2,  // auto-expand for small batches
+                skip: false,
+            }
+        })
+
+        this.showBulkReplaceDialog = true
+        this.cdr.markForCheck()
+    }
+
+    bulkReplaceToggleExpand (entry: { expanded: boolean }): void {
+        entry.expanded = !entry.expanded
+        this.cdr.markForCheck()
+    }
+
+    /** Re-run suggest-deletes for one row (using its current set text). */
+    bulkReplaceReSuggest (entry: { setText: string; vendor: string; deleteText: string }): void {
+        entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor).join('\n')
+        this.cdr.markForCheck()
+    }
+
+    bulkReplaceClearDeletes (entry: { deleteText: string }): void {
+        entry.deleteText = ''
+        this.cdr.markForCheck()
+    }
+
+    /** Re-run suggest for every row at once. */
+    bulkReplaceReSuggestAll (): void {
+        for (const entry of this.bulkReplaceEntries) {
+            entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor).join('\n')
+        }
+        this.cdr.markForCheck()
+    }
+
+    bulkReplaceClearAllDeletes (): void {
+        for (const entry of this.bulkReplaceEntries) { entry.deleteText = '' }
+        this.cdr.markForCheck()
+    }
+
+    bulkReplaceExpandAll (): void {
+        for (const entry of this.bulkReplaceEntries) { entry.expanded = true }
+        this.cdr.markForCheck()
+    }
+
+    bulkReplaceCollapseAll (): void {
+        for (const entry of this.bulkReplaceEntries) { entry.expanded = false }
+        this.cdr.markForCheck()
+    }
+
+    get activeBulkReplaceCount (): number {
+        return this.bulkReplaceEntries.filter(e => !e.skip).length
+    }
+
+    get skippedBulkReplaceCount (): number {
+        return this.bulkReplaceEntries.filter(e => e.skip).length
+    }
+
+    /** Count non-blank lines (used in UI to show `N del / N set` summary). */
+    countConfigLines (text: string): number {
+        if (!text) { return 0 }
+        return text.split('\n').filter(l => l.trim().length > 0).length
+    }
+
+    cancelBulkReplace (): void {
+        this.showBulkReplaceDialog = false
+        this.bulkReplaceEntries = []
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Apply edits and run the batch push.
+     *
+     * Strategy: temporarily swap each node's startupConfig to the combined
+     * deletes + sets body, run pushAllConfigs with withAutoDeletes=false (so
+     * the auto-delete pass doesn't re-run on top of our edits), then restore
+     * the originals. This mirrors the per-node confirmPushEdit flow but for
+     * the whole batch.
+     */
+    async confirmBulkReplace (): Promise<void> {
+        const active = this.bulkReplaceEntries.filter(e => !e.skip)
+        if (!active.length) {
+            this.statusMsg = 'All nodes skipped — nothing to push'
+            this.cdr.markForCheck()
+            return
+        }
+
+        const originals = new Map<string, string | undefined>()
+        for (const entry of active) {
+            const node = this.topology.nodes.find(n => n.id === entry.nodeId)
+            if (!node) { continue }
+            originals.set(entry.nodeId, node.startupConfig)
+            const combined = [entry.deleteText.trim(), entry.setText.trim()].filter(s => s.length).join('\n')
+            ;(node as any).startupConfig = combined
+        }
+
+        this.showBulkReplaceDialog = false
+        this.cdr.markForCheck()
+
+        try {
+            await this.pushAllConfigs({
+                skipConfirm: true,
+                nodeIds: active.map(e => e.nodeId),
+                withAutoDeletes: false, // user already edited the deletes in the preview
+            })
+        } finally {
+            for (const [nodeId, saved] of originals) {
+                const node = this.topology.nodes.find(n => n.id === nodeId)
+                if (node) { (node as any).startupConfig = saved }
+            }
+            this.bulkReplaceEntries = []
+        }
+    }
+
+    async pushAllConfigs (opts?: { skipConfirm?: boolean; nodeIds?: string[]; withAutoDeletes?: boolean }): Promise<void> {
+        const scopeSet = opts?.nodeIds?.length ? new Set(opts.nodeIds) : null
+        const autoDeletes = !!opts?.withAutoDeletes
+        const nodes = this.topology.nodes.filter(n => {
+            if (scopeSet && !scopeSet.has(n.id)) { return false }
+            return n.startupConfig?.trim() && n.vendor
+        })
         if (!nodes.length) {
-            this.statusMsg = 'No configs to push'
+            this.statusMsg = scopeSet
+                ? 'Selected node has no config, or its vendor isn\'t set'
+                : 'No configs to push'
             this.cdr.markForCheck()
             return
         }
@@ -13123,10 +13964,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         }
 
         if (!opts?.skipConfirm) {
+            const deleteBlurb = autoDeletes
+                ? `\n⚠  Auto-delete enabled: each node will first WIPE top-of-hierarchy\n` +
+                  `   config (delete interfaces, delete protocols …, delete system …)\n` +
+                  `   before applying set statements. Clean slate per node.\n`
+                : ''
             const confirmed = window.confirm(
                 `Push configs to ${pushableCount} node(s)?\n\n` +
                 `• ${containerNodes.length} via container (docker exec)\n` +
-                `• ${sshNodes.length} via SSH\n\n` +
+                `• ${sshNodes.length} via SSH${deleteBlurb}\n\n` +
                 `This will apply startup configs to running devices.`
             )
             if (!confirmed) { return }
@@ -13141,27 +13987,37 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         let failed = 0
         const errors: string[] = []
 
-        // Resolve SSH credentials up-front (prompt is blocking, must be sequential)
+        const inFlight = new Set<string>()
+        const updateProgress = (): void => {
+            const active = inFlight.size ? ` · pushing: ${[...inFlight].slice(0, 2).join(', ')}${inFlight.size > 2 ? ` +${inFlight.size - 2}` : ''}` : ''
+            this.operationProgress = `Pushing configs... ${success + failed}/${pushableCount} (${success} ✓, ${failed} ✗)${active}`
+            this.cdr.detectChanges()
+        }
+
+        // Hard timeout wrapper — prevents any single push from hanging forever
+        const withTimeout = (promise: Promise<any>, ms: number, label: string): Promise<any> => {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`${label}: timed out after ${ms / 1000}s`)), ms)),
+            ])
+        }
+
+        // Resolve SSH credentials — skip nodes missing creds (window.prompt is blocked in Electron).
+        // User should set creds via Device Mapper inline form, Bulk Credentials, or node properties.
         const sshReady: { node: typeof sshNodes[0]; host: string; username: string; password: string }[] = []
         for (const node of sshNodes) {
             const host = (node.mgmtIp ?? '').split('/')[0]
             if (!host || !api?.sshShellSession) { continue }
 
-            let username = node.sshUsername ?? ''
-            let password = node.sshPassword ?? ''
-            if (!username && node.mapped) {
-                username = prompt(`SSH username for ${node.label} (${host}):`) ?? ''
-                if (!username) { failed++; errors.push(`${node.label}: SSH username not provided`); continue }
-                password = prompt(`SSH password for ${node.label}:`) ?? ''
-                if (!password) { failed++; errors.push(`${node.label}: SSH password not provided`); continue }
+            const username = (node.sshUsername ?? '').trim()
+            const password = node.sshPassword ?? ''
+            if (!username || !password) {
+                failed++
+                errors.push(`${node.label}: no SSH credentials (set via Device Mapper or node properties)`)
+                updateProgress()
+                continue
             }
-            if (!username) { failed++; errors.push(`${node.label}: no SSH credentials`); continue }
             sshReady.push({ node, host, username, password })
-        }
-
-        const updateProgress = (): void => {
-            this.operationProgress = `Pushing configs... ${success + failed}/${pushableCount} (${success} ✓, ${failed} ✗)`
-            this.cdr.detectChanges()
         }
 
         // Push to container node
@@ -13170,25 +14026,37 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const ctn = this.clabContainers?.find(c => c.name.endsWith('-' + safeName) && c.state === 'running')
             if (!ctn || !api?.clabPushConfig) { return }
 
+            inFlight.add(node.label)
+            updateProgress()
             try {
                 const configLines = node.startupConfig!.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0)
-                const result = await api.clabPushConfig({
-                    containerName: ctn.name,
-                    kind: ctn.kind,
-                    configLines,
-                })
+                // Auto-deletes (vendor-aware) prefix — same rule as SSH path.
+                const deleteLines = autoDeletes
+                    ? this._deriveDeletesFromConfig(configLines.join('\n'), (node.vendor ?? '').trim())
+                    : []
+                const result = await withTimeout(
+                    api.clabPushConfig({
+                        containerName: ctn.name,
+                        kind: ctn.kind,
+                        configLines: [...deleteLines, ...configLines],
+                    }),
+                    90_000, node.label,
+                )
                 if (result.ok) { success++ }
                 else { failed++; errors.push(`${node.label}: ${result.message}`) }
             } catch (err) {
                 failed++
                 errors.push(`${node.label}: ${(err as Error).message}`)
             }
+            inFlight.delete(node.label)
             updateProgress()
         }
 
         // Push to SSH node
         const pushSsh = async (entry: typeof sshReady[0]): Promise<void> => {
             const { node, host, username, password } = entry
+            inFlight.add(node.label)
+            updateProgress()
             try {
                 const vendorKey = (node.vendor ?? '').trim().toLowerCase()
                 const cmds = getVendorCommands(vendorKey, node.model ?? '')
@@ -13202,27 +14070,63 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     .filter(l => !/^Current configuration\s*:/i.test(l))
                     .filter(l => !/^Last configuration change/i.test(l))
 
-                const commands = [...preamble, ...configLines, ...postamble]
+                // When auto-delete is enabled, derive top-of-hierarchy deletes
+                // from the set lines and insert them BEFORE the body. This gives
+                // the same "clean slate per feature" behaviour as the per-node
+                // dialog's "⇩ Suggest Deletes", applied across the whole batch.
+                const deleteLines = autoDeletes
+                    ? this._deriveDeletesFromConfig(configLines.join('\n'), vendorKey)
+                    : []
+
+                const commands = [...preamble, ...deleteLines, ...configLines, ...postamble]
+                // Scale timeout with command count. At 300 ms/cmd a 200-line config
+                // needs ~60 s just for sends + 10 s grace + vendor commit overhead.
+                // Floor at 120 s so tiny configs aren't penalized; add 500 ms/cmd + 60 s slack.
+                const PUSH_TIMEOUT_MS = Math.max(120_000, commands.length * 500 + 60_000)
+                console.log(
+                    `[push] ${node.label} → ${host}:${node.sshPort ?? 22} ` +
+                    `(vendor=${vendorKey || 'unknown'}, cmds=${commands.length}, ` +
+                    `backend=${this.invSvc.hasBackend}, budget=${PUSH_TIMEOUT_MS / 1000}s)`,
+                )
                 let result: any
                 if (this.invSvc.hasBackend) {
-                    result = await this.invSvc.backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
+                    result = await withTimeout(
+                        this.invSvc.backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300),
+                        PUSH_TIMEOUT_MS, node.label,
+                    )
                 } else {
-                    result = await api.sshShellSession({
-                        host,
-                        port: node.sshPort ?? 22,
-                        username,
-                        password,
-                        timeoutMs: 60000,
-                        commands,
-                        delayMs: 300,
-                    })
+                    result = await withTimeout(
+                        api.sshShellSession({
+                            host,
+                            port: node.sshPort ?? 22,
+                            username,
+                            password,
+                            timeoutMs: 60000,
+                            commands,
+                            delayMs: 300,
+                        }),
+                        PUSH_TIMEOUT_MS, node.label,
+                    )
                 }
-                if (result.ok) { success++ }
-                else { failed++; errors.push(`${node.label}: ${result.message}`) }
+                if (result.ok) {
+                    success++
+                    console.log(`[push] ${node.label} ✓ ${result.message ?? ''}`)
+                } else {
+                    failed++
+                    // Prefer the device-error message (it already carries tail context);
+                    // otherwise append the first 200 chars of output so the user can see why.
+                    const msg = result.message ?? 'unknown error'
+                    const tail = typeof result.output === 'string' && !msg.includes('output:')
+                        ? ` · device said: …${String(result.output).trim().slice(-200)}`
+                        : ''
+                    errors.push(`${node.label}: ${msg}${tail}`)
+                    console.warn(`[push] ${node.label} ✗ ${msg}`, result.output)
+                }
             } catch (err) {
                 failed++
                 errors.push(`${node.label}: ${(err as Error).message}`)
             }
+            inFlight.delete(node.label)
             updateProgress()
         }
 
@@ -13243,8 +14147,10 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
         if (failed > 0) {
             const summary = `Config push: ${success} succeeded, ${failed} failed\n\n` +
-                errors.map(e => `  ✗ ${e}`).join('\n')
-            this.statusMsg = summary.replace(/\n/g, ' | ')
+                errors.map(e => `  ✗ ${e}`).join('\n\n') +
+                `\n\n(Full output available in DevTools console — View → Toggle Developer Tools)`
+            // Status bar: show first error only (summaries can be long)
+            this.statusMsg = `Config push: ${success}✓ ${failed}✗ · ${errors[0] ?? ''}`
             this.cdr.detectChanges()
             window.alert(summary)
         } else {
@@ -13625,12 +14531,30 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     // ── Help Window (separate Electron BrowserWindow) ─────────────────────
 
     openHelpDialog (): void {
+        // Prefer separate Electron window when API is available (packaged app or dev)
+        const api = (window as any).netopsAPI
+        if (api?.openHelpWindow) {
+            api.openHelpWindow().catch(() => {
+                // Fallback to side panel if IPC fails
+                this.showHelpPanel = true
+                this.cdr.markForCheck()
+            })
+            // Close side panel if it was open
+            if (this.showHelpPanel) {
+                this.showHelpPanel = false
+                this.cdr.markForCheck()
+            }
+            return
+        }
+        // Browser / non-Electron fallback — use side panel
         this.showHelpPanel = !this.showHelpPanel
         this.cdr.markForCheck()
     }
 
     closeHelpDialog (): void {
         this.showHelpPanel = false
+        const api = (window as any).netopsAPI
+        if (api?.closeHelpWindow) { api.closeHelpWindow().catch(() => {}) }
         this.cdr.markForCheck()
     }
 

@@ -1249,3 +1249,195 @@ describe('config builder edge cases', () => {
         expect(cfg).toContain('ipv6 address fd00::1/127')
     })
 })
+
+// ── CRB (Centrally-Routed Bridging) — asymmetric IRB ──────────────────────
+
+describe('CRB — Juniper spine with centralized IRB', () => {
+    it('generates IRB interfaces on spine in CRB mode', () => {
+        const ctx = makeCtx({
+            hostname: 'Spine-1',
+            asn: 65001,
+            routerId: '10.0.0.1',
+            underlayProtocol: 'ebgp',
+            overlayEnabled: true,
+            irbEnabled: true,
+            irbMode: 'asymmetric',
+            nodeRole: 'spine' as any,
+            vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }, { id: 999, name: 'Native' }],
+            vniMappings: [
+                { vlanId: 100, vni: 10100, vlanName: 'Tenant-A' },
+                { vlanId: 200, vni: 10200, vlanName: 'Tenant-B' },
+                { vlanId: 999, vni: 10999, vlanName: 'Native' },
+            ],
+            vtepSourceIp: '10.0.0.1',
+            overlayNeighbors: ['10.0.0.11', '10.0.0.12'],
+        })
+        const cfg = buildVendorStartupConfig('Juniper', [], ctx)
+        // Spine in CRB has IRB interfaces for tenant VLANs (100, 200)
+        expect(cfg).toMatch(/set interfaces irb unit 100/)
+        expect(cfg).toMatch(/set interfaces irb unit 200/)
+        // Infrastructure VLAN 999 should NOT have IRB
+        expect(cfg).not.toMatch(/set interfaces irb unit 999/)
+    })
+
+    it('leaf in CRB mode does NOT have IRB (L2-only)', () => {
+        const ctx = makeCtx({
+            hostname: 'Leaf-1',
+            asn: 65011,
+            routerId: '10.0.0.11',
+            underlayProtocol: 'ebgp',
+            overlayEnabled: true,
+            irbEnabled: true,
+            irbMode: 'asymmetric',
+            nodeRole: 'leaf' as any,
+            vlans: [{ id: 100, name: 'Tenant-A' }],
+            vniMappings: [{ vlanId: 100, vni: 10100, vlanName: 'Tenant-A' }],
+            vtepSourceIp: '10.0.0.11',
+            overlayNeighbors: ['10.0.0.1'],
+        })
+        const cfg = buildVendorStartupConfig('Juniper', [], ctx)
+        // Leaf in CRB has VLAN/VNI but no IRB
+        expect(cfg).toMatch(/set vlans vlan100 vxlan vni 10100/)
+        expect(cfg).not.toMatch(/set interfaces irb unit/)
+    })
+})
+
+// ── ERB (Edge-Routed Bridging) — symmetric IRB ────────────────────────────
+
+describe('ERB — Juniper leaf with distributed IRB + L3 VNI', () => {
+    it('generates symmetric IRB with L3 VNI VRF on leaf', () => {
+        const ctx = makeCtx({
+            hostname: 'Leaf-1',
+            asn: 65011,
+            routerId: '10.0.0.11',
+            underlayProtocol: 'ebgp',
+            overlayEnabled: true,
+            irbEnabled: true,
+            irbMode: 'symmetric',
+            nodeRole: 'leaf' as any,
+            vlans: [{ id: 100, name: 'Tenant-A' }, { id: 200, name: 'Tenant-B' }],
+            vniMappings: [
+                { vlanId: 100, vni: 10100, vlanName: 'Tenant-A' },
+                { vlanId: 200, vni: 10200, vlanName: 'Tenant-B' },
+            ],
+            vtepSourceIp: '10.0.0.11',
+            overlayNeighbors: ['10.0.0.1', '10.0.0.2'],
+        })
+        const cfg = buildVendorStartupConfig('Juniper', [], ctx)
+        expect(cfg).toMatch(/set interfaces irb unit 100 family inet address/)
+        expect(cfg).toMatch(/set interfaces irb unit 200 family inet address/)
+        // Symmetric ERB adds EVPN-VRF with L3 VNI
+        expect(cfg).toMatch(/set routing-instances EVPN-VRF instance-type vrf/)
+        expect(cfg).toMatch(/set routing-instances EVPN-VRF protocols evpn ip-prefix-routes/)
+    })
+
+    it('Arista leaf in ERB has anycast virtual IP', () => {
+        const ctx = makeCtx({
+            hostname: 'leaf-1',
+            asn: 65011,
+            routerId: '10.0.0.11',
+            underlayProtocol: 'ebgp',
+            overlayEnabled: true,
+            irbEnabled: true,
+            irbMode: 'symmetric',
+            nodeRole: 'leaf' as any,
+            vlans: [{ id: 100, name: 'Tenant-A' }],
+            vniMappings: [{ vlanId: 100, vni: 10100, vlanName: 'Tenant-A' }],
+            vtepSourceIp: '10.0.0.11',
+            overlayNeighbors: ['10.0.0.1'],
+        })
+        const cfg = buildVendorStartupConfig('Arista', [], ctx)
+        expect(cfg).toContain('interface Vlan100')
+        expect(cfg).toMatch(/ip address virtual/)
+    })
+})
+
+// ── Role inference (server/PC/host exclusion) ─────────────────────────────
+
+describe('Role-based exclusions', () => {
+    it('IRB not applied to infrastructure VLANs (900, 999, <100)', () => {
+        const ctx = makeCtx({
+            hostname: 'leaf-1',
+            routerId: '10.0.0.11',
+            underlayProtocol: 'ebgp',
+            overlayEnabled: true,
+            irbEnabled: true,
+            irbMode: 'symmetric',
+            nodeRole: 'leaf' as any,
+            asn: 65011,
+            vlans: [
+                { id: 10, name: 'MGMT' },
+                { id: 100, name: 'Tenant-A' },
+                { id: 900, name: 'Underlay-P2P' },
+                { id: 999, name: 'Native' },
+            ],
+            vniMappings: [
+                { vlanId: 10, vni: 10010, vlanName: 'MGMT' },
+                { vlanId: 100, vni: 10100, vlanName: 'Tenant-A' },
+                { vlanId: 900, vni: 10900, vlanName: 'Underlay-P2P' },
+                { vlanId: 999, vni: 10999, vlanName: 'Native' },
+            ],
+            vtepSourceIp: '10.0.0.11',
+            overlayNeighbors: ['10.0.0.1'],
+        })
+        const cfg = buildVendorStartupConfig('Juniper', [], ctx)
+        // Only tenant VLAN 100 gets IRB — infrastructure VLANs excluded
+        expect(cfg).toMatch(/set interfaces irb unit 100 family inet address/)
+        expect(cfg).not.toMatch(/set interfaces irb unit 10 family inet address/)
+        expect(cfg).not.toMatch(/set interfaces irb unit 900 family inet address/)
+        expect(cfg).not.toMatch(/set interfaces irb unit 999 family inet address/)
+    })
+})
+
+// ── SR-MPLS with OSPF (not just IS-IS) ────────────────────────────────────
+
+describe('SR-MPLS with OSPF IGP', () => {
+    it('Juniper emits OSPF-based SR stanzas when OSPF is the IGP', () => {
+        const ctx = makeCtx({
+            hostname: 'P-1',
+            routerId: '10.0.0.1',
+            underlayProtocol: 'ospf',
+            nodeSid: 1,
+            srgbStart: 16000,
+            srgbEnd: 23999,
+            ospfArea: 0,
+            ospfInterfaces: [
+                { portLabel: 'xe-0/0/0', area: 0 },
+                { portLabel: 'xe-0/0/1', area: 0 },
+            ],
+        })
+        const cfg = buildVendorStartupConfig('Juniper', [], ctx)
+        expect(cfg).toMatch(/set protocols ospf traffic-engineering/)
+        expect(cfg).toMatch(/set protocols ospf source-packet-routing/)
+    })
+})
+
+// ── Vendor support matrix ─────────────────────────────────────────────────
+
+describe('Vendor support — SR-MPLS graceful degradation', () => {
+    it('MikroTik notes SR-MPLS is not supported', () => {
+        const ctx = makeCtx({
+            hostname: 'rtr-1',
+            underlayProtocol: 'isis',
+            nodeSid: 1,
+            srgbStart: 16000,
+            srgbEnd: 23999,
+            isisLevel: 2,
+            isisInterfaces: [{ portLabel: 'ether1', level: 2 }],
+        })
+        const cfg = buildVendorStartupConfig('MikroTik', [], ctx)
+        expect(cfg).toMatch(/SR-MPLS is not supported/)
+    })
+
+    it('Extreme notes SRv6 is not supported', () => {
+        const ctx = makeCtx({
+            hostname: 'sw-1',
+            underlayProtocol: 'isis',
+            srv6Locator: 'fc00:0:1::/48',
+            isisLevel: 2,
+            isisInterfaces: [{ portLabel: '1:1', level: 2 }],
+        })
+        const cfg = buildVendorStartupConfig('Extreme', [], ctx)
+        expect(cfg).toMatch(/SRv6 is not supported/)
+    })
+})

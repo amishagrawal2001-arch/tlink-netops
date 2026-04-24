@@ -42,6 +42,94 @@ export function from2DLayout (nodes: TopologyNode[]): LayoutPosition3D[] {
 }
 
 /**
+ * Hierarchical (layered) layout — spine on top, leaf middle, endpoints bottom.
+ * Clean, industry-standard fabric visualization.
+ */
+export function hierarchical3D (nodes: TopologyNode[]): LayoutPosition3D[] {
+    // Group nodes by tier
+    const tiers: { [key: number]: TopologyNode[] } = {}
+    const tierOf = (n: TopologyNode): number => {
+        if (n.role === 'super-spine' || n.role === 'core') { return 0 }
+        if (n.role === 'spine' || n.role === 'aggregation') { return 1 }
+        if (n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor') { return 2 }
+        if (n.role === 'access') { return 3 }
+        if (n.role === 'gateway') { return 0 }
+        if (n.type === 'server' || n.type === 'pc' || n.type === 'host') { return 4 }
+        if (n.type === 'firewall') { return 1 }
+        // Infer from label
+        const lbl = n.label.toLowerCase()
+        if (lbl.includes('spine') || lbl.includes('core')) { return 1 }
+        if (lbl.includes('leaf') || lbl.includes('tor')) { return 2 }
+        if (lbl.includes('srv') || lbl.includes('server')) { return 4 }
+        return 3
+    }
+    for (const n of nodes) {
+        const t = tierOf(n)
+        if (!tiers[t]) { tiers[t] = [] }
+        tiers[t].push(n)
+    }
+    // Tier heights — evenly spaced vertically
+    const tierHeights: { [key: number]: number } = { 0: 120, 1: 60, 2: 0, 3: -40, 4: -80 }
+    const result: LayoutPosition3D[] = []
+    for (const [tierStr, tierNodes] of Object.entries(tiers)) {
+        const tier = Number(tierStr)
+        const y = tierHeights[tier] ?? (80 - tier * 40)
+        const n = tierNodes.length
+        const spacing = 80
+        const total = (n - 1) * spacing
+        const startX = -total / 2
+        for (let i = 0; i < n; i++) {
+            result.push({
+                id: tierNodes[i].id,
+                x: startX + i * spacing,
+                y: 0,
+                z: y,  // use z for vertical tier since Y is up in Three.js mapping
+            })
+        }
+    }
+    return result
+}
+
+/**
+ * Circular layout — all nodes arranged in a ring. Good for mesh/ring topologies.
+ */
+export function circular3D (nodes: TopologyNode[]): LayoutPosition3D[] {
+    const n = nodes.length
+    if (n === 0) { return [] }
+    const radius = Math.max(100, n * 12)
+    return nodes.map((node, i) => {
+        const angle = (i / n) * Math.PI * 2
+        return {
+            id: node.id,
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius,
+            z: 0,
+        }
+    })
+}
+
+/**
+ * Sphere layout — nodes on Fibonacci sphere. Great for full-mesh visualization.
+ */
+export function sphere3D (nodes: TopologyNode[]): LayoutPosition3D[] {
+    const n = nodes.length
+    if (n === 0) { return [] }
+    const radius = Math.max(120, n * 10)
+    const phi = Math.PI * (3 - Math.sqrt(5))  // golden angle
+    return nodes.map((node, i) => {
+        const y = 1 - (i / (n - 1 || 1)) * 2  // y from 1 to -1
+        const r = Math.sqrt(1 - y * y)
+        const theta = phi * i
+        return {
+            id: node.id,
+            x: Math.cos(theta) * r * radius,
+            y: Math.sin(theta) * r * radius,
+            z: y * radius,
+        }
+    })
+}
+
+/**
  * Simple 3D force-directed layout (Fruchterman-Reingold).
  * Produces balanced 3D positions from topology structure.
  */

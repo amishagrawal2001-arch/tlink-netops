@@ -25,6 +25,7 @@ export interface SshTerminalPayload {
     host: string
     port: number
     username: string
+    password?: string    // Optional — when provided, SSH_ASKPASS is used for auth
 }
 
 export interface SshTerminalResult {
@@ -87,7 +88,11 @@ export function _parseSshTerminalPayload (raw: unknown): { ok: true; value: SshT
         return { ok: false, message: 'SSH username contains unsupported characters' }
     }
 
-    return { ok: true, value: { host, port, username } }
+    // Optional password (passed through to SSH_ASKPASS helper — not logged)
+    const passwordRaw = obj['password']
+    const password = typeof passwordRaw === 'string' && passwordRaw.length > 0 ? passwordRaw : undefined
+
+    return { ok: true, value: { host, port, username, password } }
 }
 
 // ── Containerlab server profiles ─────────────────────────────────────────────

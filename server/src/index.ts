@@ -123,46 +123,215 @@ interface ShellParams {
     username: string
     password: string
     commands: string[]
+    /** Fast delay between ordinary config body lines. Default 50 ms. */
     delayMs?: number
+    /** Slow delay for control commands (configure/commit/exit/save/etc.). Default 300 ms. */
+    slowDelayMs?: number
+    /** Hard upper bound for the whole session. Default: scaled with command count. */
+    timeoutMs?: number
+    /** Grace period (ms) after sending `exit` before resolving with collected output. Default 2000. */
+    exitGraceMs?: number
 }
 
+/**
+ * Classify a command as "control" (needs extra time — mode transitions, commits,
+ * save, exit) vs "body" (a config line that can be streamed fast).
+ *
+ * Control commands see the slow delay; body lines see the fast delay.
+ */
+function _isControlCommand (cmd: string): boolean {
+    const t = cmd.trim().toLowerCase()
+    if (!t) { return false }
+    // Control chars (e.g. Juniper \x04) are commits — always slow.
+    if (cmd.length === 1 && cmd.charCodeAt(0) < 32) { return true }
+    // Mode entry / exit / save / commit across vendors
+    const controlPatterns = [
+        /^cli$/,
+        /^configure(\s|$)/,            // configure, configure terminal, configure exclusive
+        /^conf(\s|$)/,
+        /^sr_cli$/,
+        /^enter\s+candidate$/,          // Nokia SRL
+        /^system-view$/,                // Huawei
+        /^fastcli(\s|$)/,               // Arista bash wrapper
+        /^load\s+(set|replace|merge|override)\s+terminal$/,  // Juniper
+        /^commit(\s|$)/,                // Juniper / Nokia
+        /^commit\s+now$/,               // Nokia SRL
+        /^end$/,                        // Cisco/Arista exit config mode
+        /^exit$/,
+        /^exit\s+all$/,                 // Nokia SR-OS
+        /^quit$/,                       // Nokia SRL
+        /^return$/,                     // Huawei exit
+        /^write\s+(memory|mem|erase)/,  // Cisco save
+        /^copy\s+running-config\s+startup-config/,  // Cisco save
+        /^save(\s|$)/,                  // Huawei / Nokia / generic
+        /^save\s+configuration/,        // Extreme
+        /^sudo\s+config\s+save/,        // SONiC
+    ]
+    return controlPatterns.some(p => p.test(t))
+}
+
+/**
+ * Open an interactive SSH shell, send commands with a delay, then gracefully exit.
+ *
+ * Robustness notes:
+ *   - Control characters (e.g. Juniper's Ctrl-D = \x04) MUST be sent raw without \n.
+ *   - Network device shells often do NOT close cleanly after `exit`, so we always
+ *     have a grace timer that resolves with the collected output.
+ *   - A hard session timeout ensures we never hang the request indefinitely.
+ *   - Output is scanned for common device error patterns so that a rejected
+ *     config push returns ok=false instead of masquerading as success.
+ */
 function sshShellSession (params: ShellParams): Promise<{ ok: boolean; output: string; error?: string }> {
     return new Promise((resolve) => {
         const client = new Client()
-        const delay = params.delayMs || 300
+        // Fast delay for config body lines; slow delay for control commands.
+        const fastDelay = params.delayMs ?? 50
+        const slowDelay = params.slowDelayMs ?? 300
+        const exitGrace = params.exitGraceMs ?? 2000
+        // Scale session budget with command count; floor at 60s now that per-line delay is lower.
+        const sessionBudget = params.timeoutMs ?? Math.max(60_000, params.commands.length * 150 + 30_000)
         let output = ''
         let settled = false
+
+        const hardTimer = setTimeout(() => {
+            done({
+                ok: false,
+                output,
+                error: `Session timed out after ${sessionBudget / 1000}s on ${params.host}`,
+            })
+        }, sessionBudget)
 
         function done (result: { ok: boolean; output: string; error?: string }): void {
             if (settled) { return }
             settled = true
+            clearTimeout(hardTimer)
             try { client.end() } catch { /* no-op */ }
             resolve(result)
         }
 
-        client.on('ready', () => {
-            client.shell((err, stream) => {
-                if (err) { done({ ok: false, output: '', error: err.message }); return }
+        // Inspect accumulated output for vendor-agnostic device error patterns.
+        //
+        // Success/failure precedence:
+        //   1. Explicit commit-failure markers ALWAYS override any success signals.
+        //   2. Explicit commit-success markers (Juniper `commit complete`, Nokia
+        //      `commit successful`, Arista `copy ... OK`) signal success even if
+        //      earlier benign errors appeared in output (e.g. a `cli` no-op on
+        //      physical QFX, or a `write memory` noise line).
+        //   3. Otherwise, generic error patterns fail the push.
+        function checkOutputForErrors (): { ok: boolean; output: string; error?: string } {
+            const trimmed = output.trim()
 
-                stream.on('data', (data: Buffer) => { output += data.toString() })
-                stream.on('close', () => { done({ ok: true, output }) })
-
-                // Send commands with delays
-                let i = 0
-                const sendNext = (): void => {
-                    if (i < params.commands.length) {
-                        stream.write(params.commands[i] + '\n')
-                        i++
-                        setTimeout(sendNext, delay)
-                    } else {
-                        setTimeout(() => stream.end(), delay * 2)
+            // ── Hard failures — these override any success signal ─────────────
+            const failurePatterns = [
+                /commit\s+failed/i,
+                /commit\s+check\s+failed/i,
+                /configuration\s+check-out\s+failed/i,
+                /failed to commit/i,
+                /authorization\s+failed/i,
+                /permission\s+denied/i,
+            ]
+            for (const p of failurePatterns) {
+                if (p.test(trimmed)) {
+                    const lines = trimmed.split('\n')
+                    const errLine = lines.find(l => p.test(l)) ?? ''
+                    const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                    return {
+                        ok: false,
+                        output: trimmed,
+                        error: `Device error on ${params.host}: ${errLine.trim()} · output: ${tail}`,
                     }
                 }
-                sendNext()
+            }
+
+            // ── Explicit success markers — trust these even if earlier output
+            //    had benign errors (e.g. unknown-command from prefix commands) ──
+            const successPatterns = [
+                /commit\s+complete/i,          // Juniper
+                /commit\s+successful/i,        // Nokia SR Linux / SR-OS
+                /\[ok\]/i,                     // SR Linux "[ok]"
+                /save complete/i,              // Generic save
+                /configuration\s+saved/i,      // Generic save
+                /copy\s+complete/i,            // Cisco `copy run start`
+                /\[ok\]\s*$/im,                // Generic ok line
+            ]
+            if (successPatterns.some(p => p.test(trimmed))) {
+                return { ok: true, output: trimmed }
+            }
+
+            // ── Otherwise, generic error patterns fail the push ───────────────
+            const errorPatterns = [
+                /error:\s+configuration/i,
+                /syntax error/i,
+                /invalid (?:input|command)/i,
+                /ambiguous command/i,
+                /unrecognized command/i,
+                /% incomplete command/i,
+                /% unknown /i,
+                /% invalid /i,
+            ]
+            const match = errorPatterns.find(p => p.test(trimmed))
+            if (match) {
+                const lines = trimmed.split('\n')
+                const errLine = lines.find(l => match.test(l)) ?? ''
+                const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                return {
+                    ok: false,
+                    output: trimmed,
+                    error: `Device error on ${params.host}: ${errLine.trim()} · output: ${tail}`,
+                }
+            }
+            return { ok: true, output: trimmed }
+        }
+
+        client.on('ready', () => {
+            client.shell((err, stream) => {
+                if (err) { done({ ok: false, output: '', error: `SSH shell failed: ${err.message}` }); return }
+
+                stream.on('data', (data: Buffer) => { output += data.toString() })
+                stream.stderr.on('data', (data: Buffer) => { output += data.toString() })
+
+                stream.on('close', () => { done(checkOutputForErrors()) })
+                stream.on('error', (streamErr: Error) => {
+                    done({ ok: false, output, error: `SSH shell stream error on ${params.host}: ${streamErr.message}` })
+                })
+
+                // Send commands sequentially with delays.
+                let i = 0
+                let stopped = false
+                const sendNext = (): void => {
+                    if (settled || stopped) { return }
+                    if (i < params.commands.length) {
+                        const cmd = params.commands[i++]
+                        try {
+                            // Control chars (e.g. Juniper Ctrl-D = \x04) must be sent raw
+                            if (cmd.length === 1 && cmd.charCodeAt(0) < 32) {
+                                stream.write(cmd)
+                            } else {
+                                stream.write(cmd + '\n')
+                            }
+                        } catch { stopped = true; return }
+                        setTimeout(sendNext, delay)
+                    } else {
+                        // All commands sent — give the device time to process the last
+                        // commit/save, then send `exit` to close the shell. If the shell
+                        // doesn't close within 10s, resolve with whatever we have.
+                        setTimeout(() => {
+                            try { stream.end('exit\n') } catch { /* no-op */ }
+                            setTimeout(() => {
+                                if (!settled) { done(checkOutputForErrors()) }
+                            }, 10_000)
+                        }, delay * 2)
+                    }
+                }
+                // Wait for the initial prompt before sending.
+                setTimeout(sendNext, delay)
             })
         })
 
-        client.on('error', (err) => { done({ ok: false, output, error: err.message }) })
+        client.on('error', (err) => { done({ ok: false, output, error: `SSH connection failed: ${err.message}` }) })
+        client.on('close', () => {
+            if (!settled) { done({ ok: false, output, error: 'SSH connection closed unexpectedly' }) }
+        })
 
         try {
             client.connect({
@@ -289,13 +458,19 @@ app.post('/api/discover', async (req, res) => {
 })
 
 app.post('/api/load-config', async (req, res) => {
-    const { host, port, username, password, commands, delayMs } = req.body
+    const { host, port, username, password, commands, delayMs, timeoutMs } = req.body
     console.log(`[LOAD-CONFIG] ${host}:${port || 22} — ${commands?.length || 0} commands`)
     if (!host || !username || !password || !commands?.length) {
         return res.status(400).json({ ok: false, error: 'Missing required fields' })
     }
-    const result = await sshShellSession({ host, port, username, password, commands, delayMs: delayMs || 300 })
-    console.log(`[LOAD-CONFIG] ${host} — ${result.ok ? 'OK' : 'FAILED'}`)
+    const result = await sshShellSession({ host, port, username, password, commands, delayMs: delayMs || 300, timeoutMs })
+    if (result.ok) {
+        console.log(`[LOAD-CONFIG] ${host} — OK (${result.output.length} chars)`)
+    } else {
+        const tail = (result.output || '').trim().slice(-400)
+        console.log(`[LOAD-CONFIG] ${host} — FAILED: ${result.error}`)
+        if (tail) { console.log(`[LOAD-CONFIG] ${host} — device said: …${tail}`) }
+    }
     res.json(result)
 })
 

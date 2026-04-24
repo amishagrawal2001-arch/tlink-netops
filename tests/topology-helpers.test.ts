@@ -219,8 +219,9 @@ describe('parseBaseCidr', () => {
     expect(() => parseBaseCidr('10.0.0.0/33')).toThrow()
   })
 
-  it('throws on prefix 31 ("10.0.0.0/31")', () => {
-    expect(() => parseBaseCidr('10.0.0.0/31')).toThrow()
+  // /31 is now valid (RFC 3021 point-to-point, added for auto-assign subnet size picker)
+  it('accepts prefix 31 ("10.0.0.0/31") — RFC 3021', () => {
+    expect(() => parseBaseCidr('10.0.0.0/31')).not.toThrow()
   })
 
   it('throws on prefix 32 ("10.0.0.0/32")', () => {

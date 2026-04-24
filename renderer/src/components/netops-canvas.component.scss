@@ -1836,36 +1836,572 @@ netops-3d-canvas {
   z-index: 100;
 }
 
+// Compact segmented toolbar — icon-only with tooltip-revealed labels,
+// grouped visually by purpose (config-ops vs. file-ops), subtle color
+// accents that don't overwhelm the canvas.
+.canvas-quick-actions {
+  // Give the column a container look: one shared background, button-group feel
+  padding: 4px;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid var(--border-panel, #2a2f3a);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  gap: 2px !important;            // override the inline .canvas-quick-actions gap:6px
+}
+
 .quick-action-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1.5px solid var(--border, #333);
-  background: var(--bg-panel, #1a1a2e);
-  color: #fff;
-  font-size: 14px;
+  // Square-rounded compact tiles instead of oversized circles
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text, #e6edf3);
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  transition: transform 0.12s, box-shadow 0.12s;
-  &:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  padding: 0;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.07);
+  }
+  &:active:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
   }
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.35;
     cursor: not-allowed;
-    transform: none;
   }
-  &.qa-pull { background: #1a3a3a; border-color: #14b8a6; }
-  &.qa-push { background: #1a3a1a; border-color: #22c55e; }
-  &.qa-save { background: #1a2a3a; border-color: #3b82f6; }
-  &.qa-export { background: #2a1a2a; border-color: #a855f7; }
-  .qa-label { display: none; }
-  .qa-icon { font-size: 16px; }
+
+  // Labels are visually hidden but remain in the accessibility tree.
+  // Tooltip on hover uses the native `title` attribute already set in pug.
+  .qa-label {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+  .qa-icon {
+    font-size: 14px;
+    display: inline-flex;
+  }
+
+  // Per-action accent colors — icon color + on-hover border hint, subtle
+  &.qa-pull       { color: #5eead4; &:hover:not(:disabled) { border-color: rgba(94, 234, 212, 0.4); } }
+  &.qa-push       { color: #86efac; &:hover:not(:disabled) { border-color: rgba(134, 239, 172, 0.4); } }
+  &.qa-push-clean { color: #fcd34d; &:hover:not(:disabled) { border-color: rgba(252, 211, 77, 0.4); } }
+  &.qa-save       { color: #93c5fd; &:hover:not(:disabled) { border-color: rgba(147, 197, 253, 0.4); } }
+  &.qa-export     { color: #d8b4fe; &:hover:not(:disabled) { border-color: rgba(216, 180, 254, 0.4); } }
 }
+
+// Inline separator between the config-op group and the file-op group
+// (added via JS-free pseudo on the Save button, but kept simple here:
+// just a thin line between push-clean and save).
+.quick-action-btn.qa-save {
+  margin-top: 4px;
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: -3px;
+    left: 6px; right: 6px;
+    height: 1px;
+    background: var(--border, #2a2f3a);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Bulk Replace (Review & Replace Configs) — polished dialog
+// ═════════════════════════════════════════════════════════════════════
+
+.bulk-replace-dialog {
+  // Override auto-ip-dialog defaults for a wider, taller, table-style layout.
+  // User can drag the bottom-right corner to resize, or click the maximize
+  // button in the header for a full-viewport layout.
+  width: 940px;
+  height: 680px;                              // default height; resizable
+  min-width: 600px;
+  min-height: 400px;
+  max-width: 98vw;
+  max-height: 96vh;
+  padding: 0;
+  gap: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;                           // the list inside scrolls, not the dialog
+  background: var(--bg-app, #0d1117);
+  border: 1px solid var(--border-panel, #2d3748);
+  border-radius: 8px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  resize: both;                               // native drag-to-resize handle (bottom-right)
+
+  // Maximized state — near-fullscreen. Native resize disabled in this mode.
+  &.maximized {
+    width: calc(100vw - 40px);
+    height: calc(100vh - 40px);
+    max-width: none;
+    max-height: none;
+    resize: none;
+  }
+}
+
+// The native resize handle (`::-webkit-resizer`) — style it subtly so it
+// reads as a drag affordance without shouting.
+.bulk-replace-dialog::-webkit-resizer {
+  background-color: transparent;
+  background-image: linear-gradient(135deg,
+    transparent 0 45%,
+    var(--text-muted, #8b949e) 45% 50%,
+    transparent 50% 60%,
+    var(--text-muted, #8b949e) 60% 65%,
+    transparent 65%);
+  background-size: 10px 10px;
+  background-position: bottom right;
+  background-repeat: no-repeat;
+}
+
+.bulk-replace-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border, #2a2f3a);
+}
+
+.bulk-replace-head-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bulk-replace-title {
+  margin: 0;
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text, #e6edf3);
+}
+
+.bulk-replace-close,
+.bulk-replace-maximize {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #8b949e);
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.12s;
+  &:hover { color: var(--text, #e6edf3); background: rgba(255, 255, 255, 0.05); }
+}
+.bulk-replace-close { font-size: 16px; }
+
+.bulk-replace-head-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.bulk-replace-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  &.pill-total    { background: rgba(139, 148, 158, 0.15); color: var(--text, #e6edf3); }
+  &.pill-active   { background: rgba(59, 130, 246, 0.18); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
+  &.pill-skipped  { background: rgba(148, 163, 184, 0.12); color: var(--text-muted, #94a3b8); }
+  &.pill-filtered { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+}
+
+.bulk-replace-hint {
+  color: var(--text-muted, #8b949e);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+// Toolbar for batch operations
+.bulk-replace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--border, #2a2f3a);
+  flex-wrap: wrap;
+
+  .toolbar-group { display: flex; gap: 6px; }
+  .toolbar-sep {
+    width: 1px; align-self: stretch;
+    background: var(--border, #2a2f3a);
+    margin: 0 6px;
+  }
+}
+
+// Shared toolbar / footer button style
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text, #e6edf3);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border-hover, #3d4452);
+  }
+  &:active:not(:disabled) { transform: translateY(1px); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  &.tb-small { padding: 3px 10px; font-size: 11px; }
+
+  &.tb-accent {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.3);
+    background: rgba(245, 158, 11, 0.08);
+    &:hover:not(:disabled) { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.5); }
+  }
+
+  &.tb-primary {
+    color: #fff;
+    background: #22c55e;
+    border-color: #16a34a;
+    font-weight: 600;
+    &:hover:not(:disabled) { background: #16a34a; }
+    &:disabled { background: rgba(34, 197, 94, 0.25); color: rgba(255, 255, 255, 0.5); border-color: transparent; }
+  }
+
+  .tb-icon { font-family: 'SF Mono', 'Menlo', monospace; }
+}
+
+// Filter bar — text search + vendor dropdown + hide-skipped toggle
+.bulk-replace-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border, #2a2f3a);
+  background: rgba(0, 0, 0, 0.12);
+  flex-wrap: wrap;
+
+  .filter-search {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+
+    .filter-icon {
+      position: absolute;
+      left: 8px;
+      font-size: 11px;
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .filter-input {
+      width: 100%;
+      padding: 5px 26px 5px 26px;
+      font-size: 12px;
+      color: var(--text, #e6edf3);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border, #2a2f3a);
+      border-radius: 5px;
+      outline: none;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      &::placeholder { color: var(--text-muted, #8b949e); opacity: 0.7; }
+      &:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+      }
+    }
+    .filter-clear {
+      position: absolute;
+      right: 4px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted, #8b949e);
+      font-size: 10px;
+      padding: 4px 6px;
+      cursor: pointer;
+      border-radius: 3px;
+      &:hover { color: var(--text, #e6edf3); background: rgba(255, 255, 255, 0.08); }
+    }
+  }
+
+  .filter-vendor {
+    padding: 5px 8px;
+    font-size: 11.5px;
+    color: var(--text, #e6edf3);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border, #2a2f3a);
+    border-radius: 5px;
+    cursor: pointer;
+    outline: none;
+    min-width: 120px;
+    &:focus { border-color: #3b82f6; }
+  }
+
+  .filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted, #8b949e);
+    cursor: pointer;
+    user-select: none;
+    padding: 3px 6px;
+    border-radius: 4px;
+    &:hover { color: var(--text, #e6edf3); }
+    input[type='checkbox'] { margin: 0; cursor: pointer; }
+  }
+
+  .filter-count {
+    margin-left: auto;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 10.5px;
+    color: var(--text-muted, #8b949e);
+    padding: 2px 8px;
+    background: rgba(139, 148, 158, 0.1);
+    border-radius: 3px;
+  }
+}
+
+// "No matches" empty state
+.bulk-replace-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted, #8b949e);
+  font-size: 12px;
+  font-style: italic;
+}
+
+// Scrollable list of node rows
+.bulk-replace-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px 6px;
+  background: var(--bg-canvas, #0a0e14);
+
+  // Refined scrollbar
+  &::-webkit-scrollbar { width: 8px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(139, 148, 158, 0.25);
+    border-radius: 4px;
+    &:hover { background: rgba(139, 148, 158, 0.4); }
+  }
+}
+
+// Individual node row (collapsed or expanded)
+.bulk-replace-row {
+  background: var(--bg-card, #161b22);
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  transition: opacity 0.15s, border-color 0.12s;
+
+  &:hover:not(.skipped) { border-color: var(--border-hover, #3d4452); }
+  &.expanded { border-color: rgba(59, 130, 246, 0.4); }
+  &.skipped  { opacity: 0.5; }
+}
+
+.br-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+  &:hover { background: rgba(255, 255, 255, 0.02); }
+}
+
+.br-chevron {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
+  width: 12px;
+  color: var(--text-muted, #8b949e);
+  flex-shrink: 0;
+}
+
+.br-index {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #8b949e);
+  background: rgba(139, 148, 158, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.br-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #e6edf3);
+  flex-shrink: 0;
+}
+
+.br-target {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .br-vendor { text-transform: capitalize; }
+  .br-sep    { opacity: 0.5; }
+  .br-host   { font-family: 'SF Mono', 'Menlo', monospace; }
+}
+
+.br-counts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.br-count {
+  font-size: 10.5px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 500;
+  &.count-del     { color: #fbbf24; background: rgba(245, 158, 11, 0.12); }
+  &.count-del.count-dim { opacity: 0.35; }
+  &.count-set     { color: #4ade80; background: rgba(34, 197, 94, 0.12); }
+}
+
+.br-skip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  &:hover { color: var(--text, #e6edf3); }
+  input[type='checkbox'] { margin: 0; cursor: pointer; }
+}
+
+.br-row-body {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border, #2a2f3a);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.br-row-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.br-field {
+  margin-top: 6px;
+}
+
+.br-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  &.fl-del { color: #fbbf24; }
+  &.fl-set { color: #4ade80; }
+}
+
+.br-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 4px;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+
+  &:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  }
+
+  &.ta-del {
+    min-height: 70px;
+    max-height: 180px;
+    background: #1a1409;
+    color: #fde3b8;
+    &::placeholder { color: rgba(253, 227, 184, 0.35); font-style: italic; }
+  }
+
+  &.ta-set {
+    min-height: 140px;
+    max-height: 320px;
+    background: #0a0f16;
+    color: #e6edf3;
+  }
+}
+
+// Footer action bar
+.bulk-replace-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border, #2a2f3a);
+  background: rgba(0, 0, 0, 0.2);
+
+  .br-footer-hint {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-muted, #8b949e);
+    font-style: italic;
+  }
+  .tb-btn:not(.br-footer-hint) { flex: 0 0 auto; }
+  .tb-btn:not(.tb-primary) { margin-left: auto; }
+  .tb-primary + .tb-btn    { margin-left: 0; }
+}
+
+// Light-theme overrides — keep textareas readable when the user's on light mode
+:host-context(.theme-light),
+.theme-light {
+  .bulk-replace-dialog { background: #ffffff; }
+  .bulk-replace-list   { background: #f6f8fa; }
+  .bulk-replace-row    { background: #ffffff; }
+  .br-row-body         { background: rgba(0, 0, 0, 0.02); }
+  .br-textarea.ta-del  { background: #fef7ed; color: #7c2d12; }
+  .br-textarea.ta-set  { background: #f6f8fa; color: #1f2328; }
+}
+
 
 // ─── Lab control buttons (bottom-right) ──────────────────────────────────────
 

@@ -188,6 +188,12 @@
   &:hover:not(:disabled) { background: #22c55e; color: #fff; }
 }
 
+.mapper-btn-push {
+  border-color: #00d2ff;
+  color: #00d2ff;
+  &:hover:not(:disabled) { background: #00d2ff; color: #0a0e1a; }
+}
+
 .mapper-status {
   font-size: 11px;
   color: var(--text-muted);

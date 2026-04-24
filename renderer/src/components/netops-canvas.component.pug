@@ -399,6 +399,14 @@
         button.menu-item(type='button', [disabled]='!hasConfigs || configPushAllRunning', (click)='pushAllConfigs(); closeMenus()')
           span.mi-icon 🚀
           span.mi-label {{ configPushAllRunning ? 'Pushing...' : 'Push All Configs to Devices' }}
+        button.menu-item(
+          type='button',
+          title='Push all configs with auto-generated top-of-hierarchy deletes prepended per node (clean-slate deploy)',
+          [disabled]='!hasConfigs || configPushAllRunning',
+          (click)='pushAllConfigsWithDeletes(); closeMenus()'
+        )
+          span.mi-icon ⇅
+          span.mi-label {{ configPushAllRunning ? 'Pushing...' : 'Replace All Configs (Delete + Set)' }}
         .menu-sep
         button.menu-item(type='button', (click)='openDashboard(); closeMenus()')
           span.mi-icon ◫
@@ -931,8 +939,10 @@
           [topology]='topology',
           [selectedNodeId]='selectedNodeId',
           [currentTheme]='currentTheme',
+          [liveData]='live3DData',
           (nodeSelected)='onNodeSelect3D($event)',
           (nodeDoubleClicked)='openNodeProperties($event)',
+          (nodeContextMenu)='onNodeContextMenu3D($event)',
           (nodeAdded)='onNodeAdded3D($event)',
           (nodeMoved)='onNodeMoved3D($event)',
           (linkCreated)='onLinkCreated3D($event)'
@@ -1959,9 +1969,10 @@
           ) View Config
           button.ctx-item(
             type='button',
+            title='Side-by-side compare this node\'s startup config with another topology node',
             [disabled]='!ctxNodeHasConfig',
             (click)='$event.stopPropagation(); ctxCompareConfig(ctxNodeId!)'
-          ) Compare Config
+          ) Diff with Another Node…
           button.ctx-item(
             type='button',
             [disabled]='!ctxNodeHasConfig',
@@ -1969,9 +1980,16 @@
           ) Troubleshoot
           button.ctx-item(
             type='button',
+            title='Fetch running config over SSH and diff against local startup config',
             [disabled]='!ctxNodeCanFetchDiff',
             (click)='$event.stopPropagation(); ctxFetchAndCompare(ctxNodeId!)'
-          ) Fetch &amp; Compare Config
+          ) Diff vs Live Device
+          button.ctx-item(
+            type='button',
+            title='Push this node\'s startup config to the live device',
+            [disabled]='!ctxNodeCanPush || configPushAllRunning',
+            (click)='$event.stopPropagation(); ctxPushConfig(ctxNodeId!)'
+          ) Push Config
           button.ctx-item(
             type='button',
             (click)='$event.stopPropagation(); ctxOpenConsole(ctxNodeId!)'
@@ -3433,6 +3451,180 @@
         button.btn-tool(type='button', (click)='applyBulkCredentials()') Apply
         button.btn-tool(type='button', (click)='showBulkCredDialog = false') Cancel
 
+  //- ── Peer Compare (Diff with Another Node) dialog ─────────────────────
+  .auto-ip-overlay(*ngIf='showPeerCompareDialog', (click)='cancelPeerCompare()')
+    .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()')
+      .auto-ip-title Diff with Another Node
+      .bulk-cred-form
+        .bulk-cred-row
+          span.bulk-cred-label Compare with
+          select.bulk-cred-input([(ngModel)]='peerCompareTargetId')
+            option(*ngFor='let c of peerCompareCandidates', [value]='c.id')
+              | {{ c.label }}{{ c.vendor ? ' · ' + c.vendor : '' }}{{ c.role ? ' · ' + c.role : '' }}
+      .auto-ip-actions
+        button.btn-tool(type='button', [disabled]='!peerCompareTargetId', (click)='runPeerCompare()') Compare
+        button.btn-tool(type='button', (click)='cancelPeerCompare()') Cancel
+
+  //- ── Push Config with Edit dialog ─────────────────────────────────────
+  //- Review, edit (add/delete lines), or clear the startup config before pushing.
+  //- Two sections: optional DELETE statements (run first), then SET statements.
+  .auto-ip-overlay(*ngIf='showPushEditDialog', (click)='cancelPushEdit()')
+    .auto-ip-dialog.push-edit-dialog((click)='$event.stopPropagation()', style='width:820px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column')
+      .auto-ip-title Push Config — {{ pushEditNodeLabel }}
+      .auto-ip-subtitle(style='font-size:12px;color:var(--text-muted);padding:0 16px 6px')
+        | Target: {{ pushEditNodeTarget }} · Vendor: {{ pushEditNodeVendor }} · {{ pushEditLineCount }} set / {{ pushEditDeleteLineCount }} delete line(s){{ pushEditModified ? ' · modified' : '' }}
+      .push-edit-toolbar(style='display:flex;flex-wrap:wrap;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border, #333)')
+        button.btn-tool(type='button', title='Wipe the SET textarea', (click)='clearPushEdit()') Clear Sets
+        button.btn-tool(type='button', title='Revert the SET textarea to the node\'s saved startup config', [disabled]='!pushEditModified', (click)='resetPushEdit()') Reset Sets
+        button.btn-tool(type='button', title='Auto-generate delete statements from the set lines (vendor-aware). Edit the output freely before pushing.', (click)='suggestPushEditDeletes()') ⇩ Suggest Deletes
+        button.btn-tool(type='button', title='Wipe the DELETE textarea', [disabled]='!pushEditDeleteLineCount', (click)='clearPushEditDeletes()') Clear Deletes
+        span(style='flex:1')
+        label(style='display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer')
+          input(type='checkbox', [(ngModel)]='pushEditSaveToNode')
+          span Save set body to node
+      //- DELETE section (optional, runs first)
+      .push-edit-section-label(style='font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:#f59e0b;padding:8px 16px 2px;border-top:1px solid var(--border, #333)')
+        | ▾ Delete statements (optional — run first to wipe existing keys)
+      textarea.push-edit-textarea(
+        [(ngModel)]='pushEditDeleteText',
+        spellcheck='false',
+        placeholder='(empty — nothing will be deleted. Example:\ndelete interfaces et-0/0/9 unit 0\ndelete system ntp server)',
+        style='min-height:110px;max-height:180px;width:100%;padding:8px 14px;background:#1a1410;color:#fde3b8;border:none;font-family:SF Mono, Menlo, Consolas, monospace;font-size:12px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box'
+      )
+      //- SET section (the body of the push)
+      .push-edit-section-label(style='font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:#4ade80;padding:8px 16px 2px;border-top:1px solid var(--border, #333)')
+        | ▾ Set statements (the new config to apply)
+      textarea.push-edit-textarea(
+        [(ngModel)]='pushEditText',
+        spellcheck='false',
+        placeholder='(empty — no new config will be applied)',
+        style='flex:1;min-height:260px;width:100%;padding:10px 14px;background:#0d1117;color:#e0e0e0;border:none;font-family:SF Mono, Menlo, Consolas, monospace;font-size:12px;line-height:1.5;resize:none;outline:none;box-sizing:border-box'
+      )
+      .auto-ip-actions(style='border-top:1px solid var(--border, #333)')
+        button.btn-tool.btn-primary(type='button', [disabled]='!pushEditText.trim() && !pushEditDeleteText.trim()', title='Push deletes first, then sets, to the device', (click)='confirmPushEdit()') Push
+        button.btn-tool(type='button', (click)='cancelPushEdit()') Cancel
+
+  //- ── Bulk Replace (review deletes + sets before pushing all) ──────────
+  //- NOTE: backdrop click does NOT dismiss — user must use the ✕ button or
+  //- Cancel. Stops accidental loss of edited deletes/sets after clicking
+  //- outside the dialog.
+  .auto-ip-overlay(*ngIf='showBulkReplaceDialog')
+    .auto-ip-dialog.bulk-replace-dialog(
+      [class.maximized]='bulkReplaceMaximized'
+    )
+      //- Header: title, counts, close button
+      .bulk-replace-head
+        .bulk-replace-head-top
+          h3.bulk-replace-title Review &amp; Replace Configs
+          button.bulk-replace-maximize(
+            type='button',
+            [title]='bulkReplaceMaximized ? "Restore" : "Maximize"',
+            (click)='toggleBulkReplaceMaximized()'
+          ) {{ bulkReplaceMaximized ? '❐' : '⛶' }}
+          button.bulk-replace-close(type='button', title='Cancel (Esc)', (click)='cancelBulkReplace()') ✕
+        .bulk-replace-head-meta
+          span.bulk-replace-pill.pill-total {{ bulkReplaceEntries.length }} node{{ bulkReplaceEntries.length === 1 ? '' : 's' }}
+          span.bulk-replace-pill.pill-active(*ngIf='activeBulkReplaceCount') {{ activeBulkReplaceCount }} to push
+          span.bulk-replace-pill.pill-skipped(*ngIf='skippedBulkReplaceCount') {{ skippedBulkReplaceCount }} skipped
+          span.bulk-replace-pill.pill-filtered(*ngIf='hasBulkReplaceFilters') filter active
+          span.bulk-replace-hint Review &amp; edit each node's deletes and sets · click a row to expand
+      //- Toolbar: batch actions
+      .bulk-replace-toolbar
+        .toolbar-group
+          button.tb-btn(type='button', title='Expand every node row', (click)='bulkReplaceExpandAll()') Expand All
+          button.tb-btn(type='button', title='Collapse every node row', (click)='bulkReplaceCollapseAll()') Collapse All
+        .toolbar-sep
+        .toolbar-group
+          button.tb-btn.tb-accent(type='button', title='Re-run delete-suggestion for every row (overwrites current deletes)', (click)='bulkReplaceReSuggestAll()')
+            span.tb-icon ⇩
+            | &nbsp;Re-suggest All
+          button.tb-btn(type='button', title='Wipe the delete section on every row', (click)='bulkReplaceClearAllDeletes()') Clear All Deletes
+      //- Filter bar
+      .bulk-replace-filter
+        .filter-search
+          span.filter-icon 🔎
+          input.filter-input(
+            type='text',
+            placeholder='Filter by label, vendor, or host…',
+            [(ngModel)]='bulkReplaceFilter',
+            (ngModelChange)='cdr.markForCheck()'
+          )
+          button.filter-clear(
+            *ngIf='bulkReplaceFilter',
+            type='button',
+            title='Clear search',
+            (click)='bulkReplaceFilter = ""; cdr.markForCheck()'
+          ) ✕
+        select.filter-vendor(
+          [(ngModel)]='bulkReplaceVendorFilter',
+          (ngModelChange)='cdr.markForCheck()',
+          title='Filter by vendor'
+        )
+          option(value='') All vendors
+          option(*ngFor='let v of bulkReplaceVendorOptions', [value]='v') {{ v }}
+        label.filter-toggle(title='Hide rows with Skip checked')
+          input(type='checkbox', [(ngModel)]='bulkReplaceHideSkipped', (ngModelChange)='cdr.markForCheck()')
+          span Hide skipped
+        button.tb-btn.tb-small(
+          *ngIf='hasBulkReplaceFilters',
+          type='button',
+          title='Reset all filters',
+          (click)='clearBulkReplaceFilters()'
+        ) Clear filters
+        span.filter-count {{ filteredBulkReplaceEntries.length }} / {{ bulkReplaceEntries.length }}
+      //- Scrollable node list
+      .bulk-replace-list
+        .bulk-replace-empty(*ngIf='filteredBulkReplaceEntries.length === 0')
+          | No nodes match the current filter.
+        .bulk-replace-row(
+          *ngFor='let entry of filteredBulkReplaceEntries; let idx = index; trackBy: bulkReplaceTrackBy',
+          [class.expanded]='entry.expanded',
+          [class.skipped]='entry.skip'
+        )
+          .br-row-head((click)='bulkReplaceToggleExpand(entry)')
+            span.br-chevron {{ entry.expanded ? '▾' : '▸' }}
+            span.br-index {{ idx + 1 }}
+            span.br-label {{ entry.nodeLabel }}
+            span.br-target
+              span.br-vendor {{ entry.vendor }}
+              span.br-sep ·
+              span.br-host {{ entry.target }}
+            .br-counts
+              span.br-count.count-del([class.count-dim]='!countConfigLines(entry.deleteText)') {{ countConfigLines(entry.deleteText) }} del
+              span.br-count.count-set {{ countConfigLines(entry.setText) }} set
+            label.br-skip((click)='$event.stopPropagation()')
+              input(type='checkbox', [(ngModel)]='entry.skip')
+              span Skip
+          .br-row-body(*ngIf='entry.expanded && !entry.skip')
+            .br-row-toolbar
+              button.tb-btn.tb-small.tb-accent(type='button', title='Re-suggest deletes from this row\'s set text', (click)='bulkReplaceReSuggest(entry)')
+                span.tb-icon ⇩
+                | &nbsp;Re-suggest
+              button.tb-btn.tb-small(type='button', title='Wipe this row\'s delete section', [disabled]='!countConfigLines(entry.deleteText)', (click)='bulkReplaceClearDeletes(entry)') Clear Deletes
+            .br-field
+              .br-field-label.fl-del Delete statements
+              textarea.br-textarea.ta-del(
+                [(ngModel)]='entry.deleteText',
+                spellcheck='false',
+                placeholder='(no deletes — nothing will be wiped before the set body)'
+              )
+            .br-field
+              .br-field-label.fl-set Set statements
+              textarea.br-textarea.ta-set(
+                [(ngModel)]='entry.setText',
+                spellcheck='false'
+              )
+      //- Footer actions
+      .bulk-replace-footer
+        .br-footer-hint(*ngIf='activeBulkReplaceCount === 0') All nodes are skipped — uncheck at least one Skip to enable Push All.
+        button.tb-btn.tb-primary(
+          type='button',
+          [disabled]='activeBulkReplaceCount === 0',
+          title='Swap each node\'s startup config to deletes+sets, push in parallel, then restore originals',
+          (click)='confirmBulkReplace()'
+        ) Push All ({{ activeBulkReplaceCount }})
+        button.tb-btn(type='button', (click)='cancelBulkReplace()') Cancel
+
   //- ── Set Protocol dialog ────────────────────────────────────────────
   .auto-ip-overlay(*ngIf='showProtocolDialog', (click)='showProtocolDialog = false')
     .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()')
@@ -3917,6 +4109,14 @@
     )
       span.qa-icon {{ configPushAllRunning ? '⏳' : '⬆' }}
       span.qa-label Push
+    button.quick-action-btn.qa-push-clean(
+      type='button',
+      title='Push all configs with auto-generated top-of-hierarchy deletes (wipes existing config per feature before applying set statements — use for clean-slate deploys)',
+      [disabled]='configPushAllRunning',
+      (click)='pushAllConfigsWithDeletes()'
+    )
+      span.qa-icon {{ configPushAllRunning ? '⏳' : '⇅' }}
+      span.qa-label Replace
     button.quick-action-btn.qa-save(
       type='button',
       title='Save topology file (Ctrl+S)',

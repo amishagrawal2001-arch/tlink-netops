@@ -1,9 +1,81 @@
-.netops-3d-container(
-  #canvasContainer='',
-  (mousedown)='onMouseDown($event)',
-  (mousemove)='onMouseMove($event)',
-  (mouseup)='onMouseUp($event)',
-  (dblclick)='onDblClick($event)',
-  (dragover)='onDragOver($event)',
-  (drop)='onDrop($event)'
-)
+.netops-3d-wrapper
+  //- ── 3D Toolbar (hidden when no nodes) ────────────────────────────
+  .netops-3d-toolbar(*ngIf='topology?.nodes?.length')
+    //- Layout picker
+    .toolbar-group
+      span.toolbar-label Layout:
+      select.toolbar-select([ngModel]='layoutMode', (ngModelChange)='setLayout($event)')
+        option(value='from-2d') From 2D
+        option(value='hierarchical') Hierarchical (tiered)
+        option(value='force-directed') Force-Directed
+        option(value='circular') Circular Ring
+        option(value='sphere') Sphere
+      button.toolbar-btn(type='button', *ngIf='manualPositionsCount > 0', title='Discard manual drags, reapply layout', (click)='resetManualPositions()')
+        | ↺ Reset ({{ manualPositionsCount }})
+
+    //- Preset views
+    .toolbar-group
+      span.toolbar-label View:
+      button.toolbar-btn(type='button', title='Top (1)', (click)='setPresetView("top")') 1 Top
+      button.toolbar-btn(type='button', title='Front (2)', (click)='setPresetView("front")') 2 Front
+      button.toolbar-btn(type='button', title='Side (3)', (click)='setPresetView("side")') 3 Side
+      button.toolbar-btn(type='button', title='Iso (4)', (click)='setPresetView("iso")') 4 Iso
+      button.toolbar-btn(type='button', title='Reset (0)', (click)='setPresetView("reset")') 0 Reset
+
+    //- Specialty features
+    .toolbar-group
+      button.toolbar-btn(type='button', title='Screenshot', (click)='captureScreenshot()') 📷 Screenshot
+      button.toolbar-btn(type='button', *ngIf='vrSupported', (click)='toggleVR()', [class.active]='vrActive')
+        | {{ vrActive ? '🥽 Exit VR' : '🥽 Enter VR' }}
+      button.toolbar-btn(type='button', *ngIf='pathHighlightNodeIds.size > 0', (click)='clearPathHighlight()')
+        | ✕ Clear Path
+
+    //- Keyboard hint
+    .toolbar-hint WASD = move · QE = up/down · 1–4 = view · 0 = reset
+
+  //- ── Canvas ────────────────────────────────────────────────────────
+  .netops-3d-container(
+    #canvasContainer='',
+    (mousedown)='onMouseDown($event)',
+    (mousemove)='onMouseMove($event)',
+    (mouseup)='onMouseUp($event)',
+    (mouseleave)='onMouseLeave()',
+    (dblclick)='onDblClick($event)',
+    (contextmenu)='onContextMenu($event)',
+    (dragover)='onDragOver($event)',
+    (drop)='onDrop($event)'
+  )
+
+  //- ── Hover Tooltip ─────────────────────────────────────────────────
+  .netops-3d-tooltip(
+    *ngIf='hoverNodeId && hoverNode',
+    [style.left.px]='hoverTooltipX',
+    [style.top.px]='hoverTooltipY'
+  )
+    .tooltip-title {{ hoverNode.label }}
+    .tooltip-row
+      span.tooltip-label Type:
+      span.tooltip-value {{ hoverNode.type }}
+      span.tooltip-value(*ngIf='hoverNode.role')  · {{ hoverNode.role }}
+    .tooltip-row(*ngIf='hoverNode.vendor')
+      span.tooltip-label Vendor:
+      span.tooltip-value {{ hoverNode.vendor }}
+    .tooltip-row(*ngIf='hoverNode.mgmtIp')
+      span.tooltip-label Mgmt:
+      span.tooltip-value {{ hoverNode.mgmtIp }}
+    .tooltip-row(*ngIf='hoverNode.loopbackIp')
+      span.tooltip-label Lo0:
+      span.tooltip-value {{ hoverNode.loopbackIp }}
+    .tooltip-row(*ngIf='hoverNode.asn != null')
+      span.tooltip-label ASN:
+      span.tooltip-value {{ hoverNode.asn }}
+    .tooltip-row(*ngIf='hoverCpu() != null')
+      span.tooltip-label CPU:
+      span.tooltip-value {{ hoverCpu() }}%
+    .tooltip-row(*ngIf='hoverMem() != null')
+      span.tooltip-label Mem:
+      span.tooltip-value {{ hoverMem() }}%
+    .tooltip-row(*ngIf='hoverBgp() !== "—"')
+      span.tooltip-label BGP:
+      span.tooltip-value {{ hoverBgp() }}
+    .tooltip-hint Right-click for actions
