@@ -755,6 +755,30 @@ ipcMain.handle('ssh-run-commands', async (_event, rawPayload: unknown): Promise<
 
 // ─── SSH shell session (for config loading) ─────────────────────────────────
 
+/**
+ * Classify a command as "control" (needs extra time — mode transitions,
+ * commit, save, exit) vs "body" (a config line that can be streamed fast).
+ * Mirrors the same logic in server/src/index.ts.
+ */
+function _isControlCommand (cmd: string): boolean {
+    const t = cmd.trim().toLowerCase()
+    if (!t) { return false }
+    if (cmd.length === 1 && cmd.charCodeAt(0) < 32) { return true }     // Ctrl-D / Ctrl-Z
+    const controlPatterns = [
+        /^cli$/, /^configure(\s|$)/, /^conf(\s|$)/,
+        /^sr_cli$/, /^enter\s+candidate$/, /^system-view$/,
+        /^fastcli(\s|$)/,
+        /^load\s+(set|replace|merge|override)\s+terminal$/,
+        /^commit(\s|$)/, /^commit\s+now$/,
+        /^end$/, /^exit$/, /^exit\s+all$/, /^quit$/, /^return$/,
+        /^write\s+(memory|mem|erase)/,
+        /^copy\s+running-config\s+startup-config/,
+        /^save(\s|$)/, /^save\s+configuration/,
+        /^sudo\s+config\s+save/,
+    ]
+    return controlPatterns.some(p => p.test(t))
+}
+
 function _runSshShellSession (
     payload: SshPayload, commands: string[], delayMs: number,
 ): Promise<SshResult> {
@@ -762,6 +786,10 @@ function _runSshShellSession (
         const conn = new Client()
         let settled = false
         let output = ''
+        // Dynamic pacing: caller-supplied `delayMs` becomes the *slow* delay
+        // for control commands; body lines stream 6× faster (min 50ms).
+        const slowDelay = Math.max(delayMs, 50)
+        const fastDelay = Math.max(Math.floor(delayMs / 6), 50)
 
         // Connection timeout — only covers SSH connect + shell open
         const connTimer = setTimeout(
@@ -889,25 +917,30 @@ function _runSshShellSession (
                     })
                 })
 
-                // Send commands sequentially with delays
+                // Send commands sequentially with dynamic delays:
+                //   • Control commands (configure/commit/save/exit/Ctrl-D) get
+                //     the slow delay so the device has time to process them.
+                //   • Config body lines get the fast delay — Juniper `load set
+                //     terminal` is buffered so lines can stream at near-wire
+                //     speed.
                 let index = 0
                 let stopped = false
                 function sendNext (): void {
                     if (settled || stopped) { return }
                     if (index >= commands.length) {
-                        // All commands sent — wait for final output, then close gracefully
+                        // All commands sent — wait for final output, then close gracefully.
+                        // 2 s grace replaces the old 10 s — most devices close within 1 s
+                        // of `exit` or never close at all.
                         setTimeout(() => {
                             try { stream.end('exit\n') } catch { /* no-op */ }
-                            // Grace timer: if stream doesn't close within 10s,
-                            // resolve (as success or device-error) with collected output.
-                            // Network device shells often don't close cleanly.
                             setTimeout(() => {
                                 if (!settled) { done(checkOutputForErrors()) }
-                            }, 10000)
-                        }, delayMs * 2)
+                            }, 2000)
+                        }, slowDelay * 2)
                         return
                     }
                     const cmd = commands[index++]
+                    const isControl = _isControlCommand(cmd)
                     try {
                         // Control chars (e.g. Ctrl-D \x04) must be sent raw without newline
                         if (cmd.length === 1 && cmd.charCodeAt(0) < 32) {
@@ -916,11 +949,11 @@ function _runSshShellSession (
                             stream.write(cmd + '\n')
                         }
                     } catch { stopped = true; return }
-                    setTimeout(sendNext, delayMs)
+                    setTimeout(sendNext, isControl ? slowDelay : fastDelay)
                 }
 
                 // Wait for initial prompt before sending commands
-                setTimeout(sendNext, delayMs)
+                setTimeout(sendNext, slowDelay)
             })
         })
 

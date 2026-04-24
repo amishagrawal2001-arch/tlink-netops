@@ -123,49 +123,37 @@ interface ShellParams {
     username: string
     password: string
     commands: string[]
-    /** Fast delay between ordinary config body lines. Default 50 ms. */
+    /** Slow delay (ms) for control commands. Default 300. */
     delayMs?: number
-    /** Slow delay for control commands (configure/commit/exit/save/etc.). Default 300 ms. */
-    slowDelayMs?: number
+    /** Fast delay (ms) for config body lines. Default 50. */
+    fastDelayMs?: number
+    /** Grace (ms) after sending `exit` before resolving. Default 2000. */
+    exitGraceMs?: number
     /** Hard upper bound for the whole session. Default: scaled with command count. */
     timeoutMs?: number
-    /** Grace period (ms) after sending `exit` before resolving with collected output. Default 2000. */
-    exitGraceMs?: number
 }
 
 /**
- * Classify a command as "control" (needs extra time — mode transitions, commits,
- * save, exit) vs "body" (a config line that can be streamed fast).
- *
- * Control commands see the slow delay; body lines see the fast delay.
+ * Classify a command as "control" (needs extra time — mode transitions,
+ * commit, save, exit) vs "body" (a config line that can be streamed fast).
+ * For a typical 28-command Juniper push, dynamic pacing drops send time from
+ * ~8.4s (300ms × 28) to ~2s (300ms × 6 control + 50ms × 22).
  */
 function _isControlCommand (cmd: string): boolean {
     const t = cmd.trim().toLowerCase()
     if (!t) { return false }
-    // Control chars (e.g. Juniper \x04) are commits — always slow.
     if (cmd.length === 1 && cmd.charCodeAt(0) < 32) { return true }
-    // Mode entry / exit / save / commit across vendors
     const controlPatterns = [
-        /^cli$/,
-        /^configure(\s|$)/,            // configure, configure terminal, configure exclusive
-        /^conf(\s|$)/,
-        /^sr_cli$/,
-        /^enter\s+candidate$/,          // Nokia SRL
-        /^system-view$/,                // Huawei
-        /^fastcli(\s|$)/,               // Arista bash wrapper
-        /^load\s+(set|replace|merge|override)\s+terminal$/,  // Juniper
-        /^commit(\s|$)/,                // Juniper / Nokia
-        /^commit\s+now$/,               // Nokia SRL
-        /^end$/,                        // Cisco/Arista exit config mode
-        /^exit$/,
-        /^exit\s+all$/,                 // Nokia SR-OS
-        /^quit$/,                       // Nokia SRL
-        /^return$/,                     // Huawei exit
-        /^write\s+(memory|mem|erase)/,  // Cisco save
-        /^copy\s+running-config\s+startup-config/,  // Cisco save
-        /^save(\s|$)/,                  // Huawei / Nokia / generic
-        /^save\s+configuration/,        // Extreme
-        /^sudo\s+config\s+save/,        // SONiC
+        /^cli$/, /^configure(\s|$)/, /^conf(\s|$)/,
+        /^sr_cli$/, /^enter\s+candidate$/, /^system-view$/,
+        /^fastcli(\s|$)/,
+        /^load\s+(set|replace|merge|override)\s+terminal$/,
+        /^commit(\s|$)/, /^commit\s+now$/,
+        /^end$/, /^exit$/, /^exit\s+all$/, /^quit$/, /^return$/,
+        /^write\s+(memory|mem|erase)/,
+        /^copy\s+running-config\s+startup-config/,
+        /^save(\s|$)/, /^save\s+configuration/,
+        /^sudo\s+config\s+save/,
     ]
     return controlPatterns.some(p => p.test(t))
 }
@@ -180,15 +168,16 @@ function _isControlCommand (cmd: string): boolean {
  *   - A hard session timeout ensures we never hang the request indefinitely.
  *   - Output is scanned for common device error patterns so that a rejected
  *     config push returns ok=false instead of masquerading as success.
+ *   - Dynamic pacing: control commands get the slow delay; body lines get fast.
  */
 function sshShellSession (params: ShellParams): Promise<{ ok: boolean; output: string; error?: string }> {
     return new Promise((resolve) => {
         const client = new Client()
-        // Fast delay for config body lines; slow delay for control commands.
-        const fastDelay = params.delayMs ?? 50
-        const slowDelay = params.slowDelayMs ?? 300
+        const slowDelay = params.delayMs ?? 300
+        const fastDelay = params.fastDelayMs ?? 50
         const exitGrace = params.exitGraceMs ?? 2000
-        // Scale session budget with command count; floor at 60s now that per-line delay is lower.
+        // Scale session budget with command count. With fast pacing, avg cost
+        // ≈ 150 ms/cmd, so budget = max(60s, cmds×150 + 30s slack).
         const sessionBudget = params.timeoutMs ?? Math.max(60_000, params.commands.length * 150 + 30_000)
         let output = ''
         let settled = false
@@ -295,13 +284,14 @@ function sshShellSession (params: ShellParams): Promise<{ ok: boolean; output: s
                     done({ ok: false, output, error: `SSH shell stream error on ${params.host}: ${streamErr.message}` })
                 })
 
-                // Send commands sequentially with delays.
+                // Send commands sequentially with dynamic pacing.
                 let i = 0
                 let stopped = false
                 const sendNext = (): void => {
                     if (settled || stopped) { return }
                     if (i < params.commands.length) {
                         const cmd = params.commands[i++]
+                        const isControl = _isControlCommand(cmd)
                         try {
                             // Control chars (e.g. Juniper Ctrl-D = \x04) must be sent raw
                             if (cmd.length === 1 && cmd.charCodeAt(0) < 32) {
@@ -310,21 +300,21 @@ function sshShellSession (params: ShellParams): Promise<{ ok: boolean; output: s
                                 stream.write(cmd + '\n')
                             }
                         } catch { stopped = true; return }
-                        setTimeout(sendNext, delay)
+                        setTimeout(sendNext, isControl ? slowDelay : fastDelay)
                     } else {
-                        // All commands sent — give the device time to process the last
-                        // commit/save, then send `exit` to close the shell. If the shell
-                        // doesn't close within 10s, resolve with whatever we have.
+                        // All commands sent — give the device time to process
+                        // the last commit/save, then send `exit`. 2 s grace
+                        // (was 10 s) — most devices close within 1 s or never.
                         setTimeout(() => {
                             try { stream.end('exit\n') } catch { /* no-op */ }
                             setTimeout(() => {
                                 if (!settled) { done(checkOutputForErrors()) }
-                            }, 10_000)
-                        }, delay * 2)
+                            }, exitGrace)
+                        }, slowDelay * 2)
                     }
                 }
                 // Wait for the initial prompt before sending.
-                setTimeout(sendNext, delay)
+                setTimeout(sendNext, slowDelay)
             })
         })
 

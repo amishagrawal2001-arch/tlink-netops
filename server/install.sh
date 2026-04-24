@@ -81,10 +81,12 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
-# Enable and start
+# Enable and (re)start — use `restart` so upgrading over an existing install
+# picks up the new binary. `systemctl start` is a no-op when the unit is
+# already running, which silently strands upgrades on the old code.
 sudo systemctl daemon-reload
 sudo systemctl enable netops-server
-sudo systemctl start netops-server
+sudo systemctl restart netops-server
 
 # Verify
 sleep 2

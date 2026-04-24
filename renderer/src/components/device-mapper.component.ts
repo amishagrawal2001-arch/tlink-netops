@@ -3,7 +3,7 @@ import {
     EventEmitter, Input, OnInit, Output,
 } from '@angular/core'
 import { TopologyNode, Topology } from '../api/interfaces'
-import { NetworkDiscoveryService, DiscoveredDevice } from '../services/network-discovery.service'
+import { NetworkDiscoveryService, DiscoveredDevice, DiscoveredLink } from '../services/network-discovery.service'
 import { InventoryService } from '../services/inventory.service'
 import { isValidMgmtAddress } from '../services/address-validators'
 
@@ -31,9 +31,17 @@ export class DeviceMapperComponent implements OnInit {
 
     @Input() topology!: Topology
     @Output() closed = new EventEmitter<void>()
-    @Output() mappingApplied = new EventEmitter<{ mappings: Map<string, MappingEntry>; push: boolean }>()
+    @Output() mappingApplied = new EventEmitter<{
+        mappings: Map<string, MappingEntry>;
+        push: boolean;
+        /** LLDP-discovered adjacencies. Canvas uses these to auto-insert links. */
+        discoveredLinks?: DiscoveredLink[];
+    }>()
 
     discoveredDevices: ExtendedDevice[] = []
+    /** LLDP adjacencies from the most recent discovery run. Persists until
+     *  the next discovery or "Clear All" — so Apply Mapping can draw links. */
+    discoveredLinks: DiscoveredLink[] = []
     topologyNodes: TopologyNode[] = []
     mappings = new Map<string, MappingEntry>()
     discovering = false
@@ -220,6 +228,12 @@ export class DeviceMapperComponent implements OnInit {
             const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
             const newDevices = result.devices.filter(d => !d.hostname || !existingHosts.has(d.hostname))
             this.discoveredDevices = [...this.discoveredDevices, ...newDevices]
+            // Merge newly-discovered links with existing (de-duped by endpoint tuple).
+            const linkKey = (l: DiscoveredLink): string =>
+                [l.srcHost, l.srcInterface, l.dstHost, l.dstInterface].join('|')
+            const existingLinkKeys = new Set(this.discoveredLinks.map(linkKey))
+            const newLinks = result.links.filter(l => !existingLinkKeys.has(linkKey(l)))
+            this.discoveredLinks = [...this.discoveredLinks, ...newLinks]
             this._saveInventory()
             this.autoMatch()
         } catch (err) {
@@ -458,13 +472,21 @@ export class DeviceMapperComponent implements OnInit {
 
     /** Save mappings to the topology without pushing configs */
     applyMapping (): void {
-        this.mappingApplied.emit({ mappings: new Map(this.mappings), push: false })
+        this.mappingApplied.emit({
+            mappings: new Map(this.mappings),
+            push: false,
+            discoveredLinks: this.discoveredLinks.length ? [...this.discoveredLinks] : undefined,
+        })
         this.closed.emit()
     }
 
     /** Save mappings AND push startup configs to mapped devices */
     applyAndPush (): void {
-        this.mappingApplied.emit({ mappings: new Map(this.mappings), push: true })
+        this.mappingApplied.emit({
+            mappings: new Map(this.mappings),
+            push: true,
+            discoveredLinks: this.discoveredLinks.length ? [...this.discoveredLinks] : undefined,
+        })
         this.closed.emit()
     }
 }

@@ -21,6 +21,7 @@ import {
 import { asnToAsdot, is4ByteAsn, generateTelemetryPipeline } from '../services/vendor-config-builder'
 import { TopologyGraphService } from '../services/topology-graph.service'
 import { getVendorCommands } from '../services/vendor-command-map'
+import { deriveDeletesFromConfig, detectMgmtInterfaces } from '../services/delete-heuristic'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
 import { LayoutAlgorithm, forceDirectedLayout, hierarchicalLayout, radialLayout, gridLayout } from '../services/layout-helpers'
 import { Netops3dCanvasComponent } from './netops-3d-canvas.component'
@@ -3119,120 +3120,31 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     }
 
     /**
-     * Top-of-hierarchy tokens for Juniper-style configs.
+     * Pure-function proxy to the `delete-heuristic` module. Handles the
+     * management-interface safety rail: if the node has a `mgmtIp`, detect
+     * which interface serves it and pass that to the shared heuristic so
+     * `delete interfaces` is narrowed to per-port deletes when it would
+     * otherwise wipe the management interface (dropping the SSH session).
      *
-     * Each key is a first-level container in the Juniper config tree.
-     * The value is how many tokens to keep from the set line:
-     *   1 = the container itself (`delete interfaces`)
-     *   2 = the container + its next sub-feature (`delete protocols lldp`,
-     *       `delete system ntp`)
-     *
-     * Everything not in this map defaults to 1 token (coarsest delete).
+     * @param config   raw config body (set lines, one per line)
+     * @param vendor   vendor string (affects keyword + style)
+     * @param nodeId   optional — when provided, looks up the node's mgmtIp and
+     *                 protects any interface whose address matches it, plus
+     *                 the well-known OOB names (em0, em1, fxp0, mgmt).
      */
-    private static readonly _JUNIPER_TOP_DEPTH: Record<string, number> = {
-        // One-token containers — delete wipes the whole subtree
-        'interfaces': 1,
-        'routing-options': 1,
-        'policy-options': 1,
-        'firewall': 1,
-        'forwarding-options': 1,
-        'chassis': 1,
-        'snmp': 1,
-        'event-options': 1,
-        'access': 1,
-        'accounting-options': 1,
-        'class-of-service': 1,
-        'applications': 1,
-
-        // Two-token containers — delete wipes one sub-feature at a time
-        // (e.g. `delete protocols bgp` keeps `protocols ospf` intact)
-        'protocols': 2,
-        'system': 2,
-        'routing-instances': 2,
-        'security': 2,
-        'services': 2,
-        'vlans': 2,
-        'bridge-domains': 2,
-        'logical-systems': 2,
-        'groups': 2,
-        'apply-groups': 2,
-    }
-
-    /**
-     * Auto-suggest delete statements at the top of the config hierarchy.
-     *
-     * Heuristic (Juniper-style): for each `set <container> <rest…> <value>`,
-     * generate `delete <container>` (or `delete <container> <subfeature>` for
-     * two-token containers like `protocols`, `system`). Aggressive by design:
-     * wiping `interfaces` alone removes ALL interface config on the device —
-     * appropriate for greenfield pushes, risky otherwise. The user should
-     * review and edit before pushing.
-     *
-     * Cisco / Arista fall back to `no <first-token-after-set>` since their
-     * hierarchy is flatter and `no ip route` wipes all static routes, etc.
-     *
-     * Result is deduped: 10 `set interfaces …` lines produce ONE
-     * `delete interfaces`.
-     *
-     * Examples (Juniper):
-     *   set interfaces et-0/0/9 unit 0 family inet address 10.0.0.41/30
-     *   set interfaces et-0/0/10 unit 0 family inet address 10.0.0.45/30
-     *   → delete interfaces            (single line, deduped)
-     *
-     *   set protocols lldp interface all
-     *   → delete protocols lldp
-     *
-     *   set system ntp server 10.0.0.254
-     *   set system syslog file messages
-     *   → delete system ntp
-     *     delete system syslog
-     */
-    /**
-     * Pure helper: derive top-of-hierarchy delete statements from a config body.
-     * Used by both the interactive dialog and the bulk "Suggest & Push All" flow.
-     *
-     * Juniper-style: `delete <container>` or `delete <container> <subfeature>`
-     *   based on the hierarchy depth map.
-     * Cisco-style:   `no <first-token-after-set>`.
-     *
-     * Returns deduped, ordered list (first occurrence wins).
-     */
-    private _deriveDeletesFromConfig (config: string, vendor: string): string[] {
-        const isCiscoStyle = ['cisco', 'arista', 'ios', 'eos', 'nxos'].some(v => vendor.toLowerCase().includes(v))
-        const keyword = isCiscoStyle ? 'no' : 'delete'
-        const depthMap = NetopsCanvasComponent._JUNIPER_TOP_DEPTH
-
-        const seen = new Set<string>()
-        const deletes: string[] = []
-
-        for (const raw of config.split('\n')) {
-            const line = raw.trim()
-            if (!line || line.startsWith('#') || line.startsWith('//')) { continue }
-            const match = /^set\s+(.+)$/i.exec(line)
-            if (!match) { continue }
-            const tokens = match[1].split(/\s+/).filter(Boolean)
-            if (!tokens.length) { continue }
-
-            let deletePath: string
-            if (isCiscoStyle) {
-                deletePath = tokens[0]
-            } else {
-                const first = tokens[0].toLowerCase()
-                const depth = depthMap[first] ?? 1
-                deletePath = tokens.slice(0, Math.min(depth, tokens.length)).join(' ')
+    private _deriveDeletesFromConfig (config: string, vendor: string, nodeId?: string): string[] {
+        let preserveInterfaces: Set<string> | undefined
+        if (nodeId) {
+            const node = this.topology.nodes.find(n => n.id === nodeId)
+            if (node?.mgmtIp) {
+                preserveInterfaces = detectMgmtInterfaces(config, node.mgmtIp)
             }
-
-            const deleteLine = `${keyword} ${deletePath}`
-            if (seen.has(deleteLine)) { continue }
-            seen.add(deleteLine)
-            deletes.push(deleteLine)
         }
-
-        return deletes
+        return deriveDeletesFromConfig(config, vendor, { preserveInterfaces })
     }
 
     suggestPushEditDeletes (): void {
-        const deletes = this._deriveDeletesFromConfig(this.pushEditText, this.pushEditNodeVendor ?? '')
+        const deletes = this._deriveDeletesFromConfig(this.pushEditText, this.pushEditNodeVendor ?? '', this.pushEditNodeId ?? undefined)
         if (!deletes.length) {
             this.statusMsg = 'No set statements found to derive deletes from'
             this.cdr.markForCheck()
@@ -5833,7 +5745,11 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
-    onMappingApplied (evt: { mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string; sshUsername?: string; sshPassword?: string }>; push: boolean }): void {
+    onMappingApplied (evt: {
+        mappings: Map<string, { hostname: string; mgmtIp: string; vendor: string; model: string; sshUsername?: string; sshPassword?: string }>;
+        push: boolean;
+        discoveredLinks?: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>;
+    }): void {
         const mappings = evt.mappings
         // Apply mapping to topology nodes — propagate SSH credentials so push can run unattended
         let credsMissing = 0
@@ -5857,6 +5773,73 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             if (!finalUser || !finalPass) { credsMissing++ }
         }
 
+        // ── Auto-insert topology links from LLDP adjacencies ─────────────
+        // After nodes are mapped, convert each DiscoveredLink into a
+        // TopologyLink IF both endpoints resolve to mapped nodes. Ports are
+        // matched by exact label; if none matches, we fall back to the first
+        // unused port on the node (or skip if nothing is free).
+        let linksAdded = 0
+        let linksSkipped = 0
+        if (evt.discoveredLinks?.length) {
+            // Build hostname → nodeId lookup from the latest mappings.
+            const hostToNodeId = new Map<string, string>()
+            for (const [nid, entry] of mappings) {
+                if (entry.hostname) { hostToNodeId.set(entry.hostname.toLowerCase(), nid) }
+            }
+
+            // Track ports already used by existing links so we don't double-bind.
+            const usedPorts = new Set<string>()
+            for (const l of this.topology.links) {
+                usedPorts.add(`${l.sourceNodeId}|${l.sourcePortId}`)
+                usedPorts.add(`${l.targetNodeId}|${l.targetPortId}`)
+            }
+
+            // Resolve an interface label to an actual port ID on the node.
+            // 1) Exact label match, 2) substring (normalize slashes/dashes),
+            // 3) first unused port, 4) null → skip.
+            const resolvePort = (nodeId: string, ifaceName: string): string | null => {
+                const node = this.topology.nodes.find(n => n.id === nodeId)
+                if (!node?.ports?.length) { return null }
+                const ifaceLower = ifaceName.toLowerCase()
+                const ifaceNorm = ifaceLower.replace(/[-_/]/g, '')
+                // 1) exact (case-insensitive)
+                for (const p of node.ports) {
+                    if (p.label?.toLowerCase() === ifaceLower &&
+                        !usedPorts.has(`${nodeId}|${p.id}`)) { return p.id }
+                }
+                // 2) normalized substring
+                for (const p of node.ports) {
+                    const labelNorm = (p.label ?? '').toLowerCase().replace(/[-_/]/g, '')
+                    if (labelNorm && ifaceNorm.endsWith(labelNorm) ||
+                        labelNorm.endsWith(ifaceNorm)) {
+                        if (!usedPorts.has(`${nodeId}|${p.id}`)) { return p.id }
+                    }
+                }
+                // 3) first unused
+                for (const p of node.ports) {
+                    if (!usedPorts.has(`${nodeId}|${p.id}`)) { return p.id }
+                }
+                return null
+            }
+
+            for (const link of evt.discoveredLinks) {
+                const srcId = hostToNodeId.get(link.srcHost.toLowerCase())
+                const dstId = hostToNodeId.get(link.dstHost.toLowerCase())
+                if (!srcId || !dstId || srcId === dstId) { linksSkipped++; continue }
+                const srcPort = resolvePort(srcId, link.srcInterface)
+                const dstPort = resolvePort(dstId, link.dstInterface)
+                if (!srcPort || !dstPort) { linksSkipped++; continue }
+                const added = this.svc.addLink(srcId, srcPort, dstId, dstPort)
+                if (added) {
+                    linksAdded++
+                    usedPorts.add(`${srcId}|${srcPort}`)
+                    usedPorts.add(`${dstId}|${dstPort}`)
+                } else {
+                    linksSkipped++
+                }
+            }
+        }
+
         // Auto-save topology so mapping persists across restarts
         this.saveTopology()
 
@@ -5865,13 +5848,19 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const credsNote = credsMissing
                 ? ` (${credsMissing} missing SSH credentials — set them before pushing)`
                 : ''
-            this.statusMsg = `Mapped ${mappings.size} nodes to physical devices${credsNote}`
+            const linkNote = linksAdded
+                ? ` · ${linksAdded} LLDP link${linksAdded === 1 ? '' : 's'} added`
+                : ''
+            this.statusMsg = `Mapped ${mappings.size} nodes to physical devices${credsNote}${linkNote}`
             this.cdr.markForCheck()
             return
         }
 
         // Apply & Push — warn if any are missing creds, then push
-        this.statusMsg = `Mapped ${mappings.size} nodes to physical devices`
+        const linkNote = linksAdded
+            ? ` · ${linksAdded} LLDP link${linksAdded === 1 ? '' : 's'} added`
+            : ''
+        this.statusMsg = `Mapped ${mappings.size} nodes to physical devices${linkNote}`
         this.cdr.markForCheck()
 
         if (mappings.size > 0) {
@@ -13801,7 +13790,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
         this.bulkReplaceEntries = eligible.map(n => {
             const setText = n.startupConfig ?? ''
-            const deleteText = this._deriveDeletesFromConfig(setText, n.vendor ?? '').join('\n')
+            const deleteText = this._deriveDeletesFromConfig(setText, n.vendor ?? '', n.id).join('\n')
             const host = (n.mgmtIp ?? '').split('/')[0]
             return {
                 nodeId: n.id,
@@ -13826,8 +13815,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     }
 
     /** Re-run suggest-deletes for one row (using its current set text). */
-    bulkReplaceReSuggest (entry: { setText: string; vendor: string; deleteText: string }): void {
-        entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor).join('\n')
+    bulkReplaceReSuggest (entry: { nodeId: string; setText: string; vendor: string; deleteText: string }): void {
+        entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor, entry.nodeId).join('\n')
         this.cdr.markForCheck()
     }
 
@@ -13839,7 +13828,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     /** Re-run suggest for every row at once. */
     bulkReplaceReSuggestAll (): void {
         for (const entry of this.bulkReplaceEntries) {
-            entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor).join('\n')
+            entry.deleteText = this._deriveDeletesFromConfig(entry.setText, entry.vendor, entry.nodeId).join('\n')
         }
         this.cdr.markForCheck()
     }
@@ -14032,7 +14021,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const configLines = node.startupConfig!.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0)
                 // Auto-deletes (vendor-aware) prefix — same rule as SSH path.
                 const deleteLines = autoDeletes
-                    ? this._deriveDeletesFromConfig(configLines.join('\n'), (node.vendor ?? '').trim())
+                    ? this._deriveDeletesFromConfig(configLines.join('\n'), (node.vendor ?? '').trim(), node.id)
                     : []
                 const result = await withTimeout(
                     api.clabPushConfig({
@@ -14075,7 +14064,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 // the same "clean slate per feature" behaviour as the per-node
                 // dialog's "⇩ Suggest Deletes", applied across the whole batch.
                 const deleteLines = autoDeletes
-                    ? this._deriveDeletesFromConfig(configLines.join('\n'), vendorKey)
+                    ? this._deriveDeletesFromConfig(configLines.join('\n'), vendorKey, node.id)
                     : []
 
                 const commands = [...preamble, ...deleteLines, ...configLines, ...postamble]
@@ -14089,9 +14078,13 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     `backend=${this.invSvc.hasBackend}, budget=${PUSH_TIMEOUT_MS / 1000}s)`,
                 )
                 let result: any
+                // Pass `undefined` for delayMs so the server uses its
+                // dynamic-pacing defaults (50 ms for config body, 300 ms for
+                // control commands). Legacy servers without dynamic pacing
+                // will default to 300 ms — still safe, just not the speedup.
                 if (this.invSvc.hasBackend) {
                     result = await withTimeout(
-                        this.invSvc.backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300),
+                        this.invSvc.backendClient.loadConfig(host, node.sshPort ?? 22, username, password, commands),
                         PUSH_TIMEOUT_MS, node.label,
                     )
                 } else {
@@ -14103,7 +14096,8 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                             password,
                             timeoutMs: 60000,
                             commands,
-                            delayMs: 300,
+                            // delayMs omitted — Electron main.ts sshShellSession
+                            // can apply the same fast/slow split (see app/src/main.ts).
                         }),
                         PUSH_TIMEOUT_MS, node.label,
                     )

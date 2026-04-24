@@ -8,8 +8,10 @@ describe('VENDOR_COMMAND_MAP completeness', () => {
         'cisco',
         'cisco-nxos',
         'cisco-iosxr',
-        'juniper',
-        'arista',
+        'juniper',         // physical (QFX, MX, EX…) — SSH drops to Junos CLI
+        'juniper-crpd',    // container — SSH drops to Unix shell, needs `cli -c`
+        'arista',          // physical / vEOS — SSH drops to EOS CLI
+        'arista-ceos',     // container — SSH drops to bash, needs `FastCli -p 15`
         'nokia',
         'nokia-sros',
         'sonic',
@@ -18,6 +20,9 @@ describe('VENDOR_COMMAND_MAP completeness', () => {
         'dell',
         'mikrotik',
         'extreme',
+        'fortinet',
+        'palo-alto',
+        'vyos',
     ]
 
     it.each(expectedVendors)('contains vendor "%s"', (vendor) => {
@@ -65,44 +70,107 @@ describe('getVendorCommands("cisco")', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. getVendorCommands('juniper') returns Juniper-specific commands
+// 3. getVendorCommands('juniper') — physical Junos (no cli wrapper)
 // ─────────────────────────────────────────────────────────────────────────────
-describe('getVendorCommands("juniper")', () => {
+describe('getVendorCommands("juniper") — physical', () => {
     const cmds = getVendorCommands('juniper')
 
-    it('wraps showVersion with cli -c', () => {
-        expect(cmds.showVersion).toBe('cli -c "show version"')
+    it('showVersion is bare (no cli wrapper)', () => {
+        expect(cmds.showVersion).toBe('show version')
     })
 
-    it('wraps showRunningConfig with cli -c and display set', () => {
-        expect(cmds.showRunningConfig).toBe('cli -c "show configuration | display set"')
+    it('showRunningConfig uses display set', () => {
+        expect(cmds.showRunningConfig).toBe('show configuration | display set')
     })
 
-    it('wraps showInterfaceBrief with cli -c', () => {
-        expect(cmds.showInterfaceBrief).toBe('cli -c "show interfaces terse"')
+    it('showInterfaceBrief is bare', () => {
+        expect(cmds.showInterfaceBrief).toBe('show interfaces terse')
     })
 
-    it('wraps showCpu with cli -c for chassis routing-engine', () => {
-        expect(cmds.showCpu).toBe('cli -c "show chassis routing-engine"')
+    it('showCpu for chassis routing-engine', () => {
+        expect(cmds.showCpu).toBe('show chassis routing-engine')
     })
 
-    it('wraps showAlarms with cli -c', () => {
-        expect(cmds.showAlarms).toBe('cli -c "show system alarms"')
+    it('showAlarms is bare', () => {
+        expect(cmds.showAlarms).toBe('show system alarms')
+    })
+
+    it('loadConfigPreamble does NOT include "cli"', () => {
+        expect(cmds.loadConfigPreamble).not.toContain('cli')
+        expect(cmds.loadConfigPreamble).toContain('configure')
+        expect(cmds.loadConfigPreamble).toContain('load set terminal')
     })
 
     it('differs from cisco commands', () => {
         const cisco = getVendorCommands('cisco')
-        expect(cmds.showVersion).not.toBe(cisco.showVersion)
         expect(cmds.showRunningConfig).not.toBe(cisco.showRunningConfig)
         expect(cmds.showInterfaceBrief).not.toBe(cisco.showInterfaceBrief)
     })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. getVendorCommands('arista') uses FastCli wrapper
+// 3a. getVendorCommands('juniper', 'cRPD') — container (cli -c wrapper)
 // ─────────────────────────────────────────────────────────────────────────────
-describe('getVendorCommands("arista")', () => {
+describe('getVendorCommands("juniper", model=cRPD) — container', () => {
+    const cmds = getVendorCommands('juniper', 'cRPD')
+
+    it('resolves to juniper-crpd variant', () => {
+        expect(cmds).toBe(VENDOR_COMMAND_MAP['juniper-crpd'])
+    })
+
+    it('wraps showVersion with cli -c', () => {
+        expect(cmds.showVersion).toBe('cli -c "show version"')
+    })
+
+    it('loadConfigPreamble starts with "cli"', () => {
+        expect(cmds.loadConfigPreamble?.[0]).toBe('cli')
+    })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. getVendorCommands('arista') — physical EOS (no FastCli wrapper)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('getVendorCommands("arista") — physical', () => {
     const cmds = getVendorCommands('arista')
+
+    it('showVersion is bare', () => {
+        expect(cmds.showVersion).toBe('show version')
+    })
+
+    it('showRunningConfig is bare', () => {
+        expect(cmds.showRunningConfig).toBe('show running-config')
+    })
+
+    it('showInterfaceBrief is bare', () => {
+        expect(cmds.showInterfaceBrief).toBe('show interfaces status')
+    })
+
+    it('showCpu is bare', () => {
+        expect(cmds.showCpu).toBe('show processes top once')
+    })
+
+    it('showRouteTable is bare', () => {
+        expect(cmds.showRouteTable).toBe('show ip route')
+    })
+
+    it('showInterfaceCounters is bare', () => {
+        expect(cmds.showInterfaceCounters).toBe('show interfaces counters')
+    })
+
+    it('loadConfigPreamble is "configure terminal"', () => {
+        expect(cmds.loadConfigPreamble).toEqual(['configure terminal'])
+    })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4a. getVendorCommands('arista', 'cEOS') — container (FastCli wrapper)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('getVendorCommands("arista", model=cEOS) — container', () => {
+    const cmds = getVendorCommands('arista', 'cEOS')
+
+    it('resolves to arista-ceos variant', () => {
+        expect(cmds).toBe(VENDOR_COMMAND_MAP['arista-ceos'])
+    })
 
     it('showVersion uses FastCli wrapper', () => {
         expect(cmds.showVersion).toMatch(/^FastCli -p 15 -c /)
@@ -465,8 +533,13 @@ describe('config push commands', () => {
         expect(cmds.loadConfigPostamble).toEqual([])
     })
 
-    it('arista loadConfigPreamble includes FastCli invocation', () => {
+    it('arista (physical) loadConfigPreamble is bare "configure terminal"', () => {
         const cmds = VENDOR_COMMAND_MAP['arista']
+        expect(cmds.loadConfigPreamble).toEqual(['configure terminal'])
+    })
+
+    it('arista-ceos (container) loadConfigPreamble uses FastCli invocation', () => {
+        const cmds = VENDOR_COMMAND_MAP['arista-ceos']
         expect(cmds.loadConfigPreamble).toBeDefined()
         expect(cmds.loadConfigPreamble!.some((c) => c.includes('FastCli'))).toBe(true)
     })
