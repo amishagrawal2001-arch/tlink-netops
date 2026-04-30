@@ -37,11 +37,137 @@ export class DeviceMapperComponent implements OnInit {
         /** LLDP-discovered adjacencies. Canvas uses these to auto-insert links. */
         discoveredLinks?: DiscoveredLink[];
     }>()
+    /** Auto-build a fresh topology directly from the discovered devices + LLDP
+     *  adjacencies. Bypasses the manual node mapping step entirely. */
+    @Output() buildFromDiscoveryRequested = new EventEmitter<{
+        devices: ExtendedDevice[];
+        links: DiscoveredLink[];
+        replace: boolean;
+    }>()
+    /** Streamed-discovery deltas — fires after every BFS/inventory wave so
+     *  the canvas can grow incrementally rather than waiting for the whole
+     *  discovery to finish. Cumulatively, the deltas equal the full result. */
+    @Output() liveDiscoveryDelta = new EventEmitter<{
+        newDevices: ExtendedDevice[];
+        newLinks: DiscoveredLink[];
+    }>()
+    /** Fires when the user picks a different role for a topology node from
+     *  the Mapping tab. Canvas owner persists via topology service. */
+    @Output() nodeRoleChanged = new EventEmitter<{ nodeId: string; role: string }>()
+
+    /** Available roles surfaced as a Mapping-tab dropdown. Mirrors the
+     *  NodeRole type from interfaces.ts so the labels stay friendly. */
+    readonly availableRoles: Array<{ value: string; label: string }> = [
+        { value: 'super-spine', label: 'Super-Spine' },
+        { value: 'spine',       label: 'Spine' },
+        { value: 'core',        label: 'Core' },
+        { value: 'aggregation', label: 'Aggregation' },
+        { value: 'border-leaf', label: 'Border-Leaf' },
+        { value: 'leaf',        label: 'Leaf' },
+        { value: 'tor',         label: 'ToR' },
+        { value: 'access',      label: 'Access' },
+        { value: 'gateway',     label: 'Gateway' },
+        { value: 'custom',      label: 'Custom / Unspecified' },
+    ]
+
+    /** Mapping tab dropdown handler. Mutates the local node ref so the UI
+     *  is immediately reactive, then emits upward so the topology service
+     *  picks up the change (triggers re-layout-aware tier inference,
+     *  config regeneration, persistence, undo/redo). */
+    onRoleChange (node: TopologyNode, event: Event): void {
+        const role = (event.target as HTMLSelectElement).value
+        ;(node as any).role = role
+        this.nodeRoleChanged.emit({ nodeId: node.id, role })
+        this.cdr.markForCheck()
+    }
+    /** When true, fold every wave's deltas straight onto the canvas. Defaults
+     *  to true; user can disable it to inspect/curate inventory before
+     *  committing to a topology build. */
+    @Input() liveBuildEnabled = true
 
     discoveredDevices: ExtendedDevice[] = []
     /** LLDP adjacencies from the most recent discovery run. Persists until
      *  the next discovery or "Clear All" — so Apply Mapping can draw links. */
     discoveredLinks: DiscoveredLink[] = []
+    /** Subset of discoveredDevices the user has checkbox-selected for build.
+     *  Empty set means "no explicit selection" → Build Topology uses ALL.
+     *  Stores hostname (lowercased) as the membership key. */
+    selectedDeviceHosts = new Set<string>()
+
+    /** True if the device is explicitly selected (or if no selection at all,
+     *  in which case everything is implicitly "selected" for the build). */
+    isDeviceSelected (dev: ExtendedDevice): boolean {
+        if (!this.selectedDeviceHosts.size) { return false }
+        return this.selectedDeviceHosts.has((dev.hostname || '').toLowerCase())
+    }
+    toggleDeviceSelection (dev: ExtendedDevice): void {
+        const key = (dev.hostname || '').toLowerCase()
+        if (!key) { return }
+        if (this.selectedDeviceHosts.has(key)) { this.selectedDeviceHosts.delete(key) }
+        else                                    { this.selectedDeviceHosts.add(key) }
+        this.cdr.markForCheck()
+    }
+    /** Select-all toggle: returns true when every visible (filtered) device is selected. */
+    get allFilteredSelected (): boolean {
+        const list = this.filteredDevices
+        if (!list.length) { return false }
+        return list.every(d => this.selectedDeviceHosts.has((d.hostname || '').toLowerCase()))
+    }
+    toggleSelectAllFiltered (): void {
+        const list = this.filteredDevices
+        if (this.allFilteredSelected) {
+            for (const d of list) { this.selectedDeviceHosts.delete((d.hostname || '').toLowerCase()) }
+        } else {
+            for (const d of list) {
+                const k = (d.hostname || '').toLowerCase()
+                if (k) { this.selectedDeviceHosts.add(k) }
+            }
+        }
+        this.cdr.markForCheck()
+    }
+    clearDeviceSelection (): void {
+        this.selectedDeviceHosts.clear()
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Bulk-delete every checkbox-selected device along with any LLDP link
+     * that touches one of them. Useful workflow:
+     *   1. Type a filter (e.g. "geoman" or "srv")
+     *   2. Click select-all in the header → all visible matches selected
+     *   3. Click 🗑 Delete Selected → all gone in one shot
+     *
+     * Confirms first because it's destructive.
+     */
+    deleteSelected (): void {
+        const sel = this.selectedDeviceHosts
+        if (!sel.size) { return }
+        const count = sel.size
+        const ok = confirm(
+            `Delete ${count} selected device(s) and any LLDP link(s) touching them?\n\n` +
+            `This cannot be undone (you'd need to re-run discovery).`,
+        )
+        if (!ok) { return }
+
+        // Lookup helper — case-insensitive against the selection set.
+        const isSel = (s: string): boolean => sel.has((s || '').toLowerCase())
+
+        // Drop devices whose hostname is in the selection.
+        this.discoveredDevices = this.discoveredDevices.filter(d => !isSel(d.hostname))
+        // Drop any LLDP link that touches a selected device on either end.
+        this.discoveredLinks = this.discoveredLinks.filter(l =>
+            !isSel(l.srcHost) && !isSel(l.dstHost),
+        )
+        sel.clear()
+        this.lastDiscoverySummary =
+            `Deleted ${count} device(s); inventory now ${this.discoveredDevices.length} ` +
+            `device(s), ${this.discoveredLinks.length} link(s)`
+        this._saveInventory()
+        this.cdr.markForCheck()
+    }
+    /** One-line summary of the most recent discovery — shown in the inventory
+     *  tab's action bar so users see the device + link count immediately. */
+    lastDiscoverySummary = ''
     topologyNodes: TopologyNode[] = []
     mappings = new Map<string, MappingEntry>()
     discovering = false
@@ -108,19 +234,42 @@ export class DeviceMapperComponent implements OnInit {
         const saved = await this._api?.prefGet?.('device-inventory')
         if (Array.isArray(saved)) {
             this.discoveredDevices = saved
-            this.cdr.markForCheck()
         }
+        // Restore LLDP links discovered in previous sessions so the user can
+        // re-build topology without re-running discovery after every restart.
+        const savedLinks = await this._api?.prefGet?.('device-inventory-links')
+        if (Array.isArray(savedLinks)) {
+            this.discoveredLinks = savedLinks
+        }
+        // Restore exclude patterns so the user's blocklist persists.
+        const savedPatterns = await this._api?.prefGet?.('discovery-exclude-patterns')
+        if (typeof savedPatterns === 'string') {
+            this.excludePatternsText = savedPatterns
+        }
+        this.cdr.markForCheck()
     }
 
     private _saveInventory (): void {
-        this._api?.prefSet?.('device-inventory', this.discoveredDevices)
+        // Strip the non-enumerable __diagnostics tag the discovery service
+        // attaches to result arrays (it's a debug aid, not user data).
+        const cleanDevices = this.discoveredDevices.map(d => ({ ...d }))
+        const cleanLinks = this.discoveredLinks.map(l => ({ ...l }))
+        this._api?.prefSet?.('device-inventory', cleanDevices)
+        // Persist LLDP adjacencies separately — same lifecycle as devices.
+        this._api?.prefSet?.('device-inventory-links', cleanLinks)
+        // Persist exclude patterns
+        this._api?.prefSet?.('discovery-exclude-patterns', this.excludePatternsText)
     }
 
     editDevice (idx: number): void { this.editingIdx = idx; this.cdr.markForCheck() }
 
-    saveDeviceEdit (idx: number, field: string, event: Event): void {
+    saveDeviceEdit (dev: ExtendedDevice, field: string, event: Event): void {
         const value = (event.target as HTMLInputElement).value
-        if (idx >= 0 && idx < this.discoveredDevices.length) {
+        // Look up the live entry by reference identity, NOT by filtered-list
+        // index — `dev` came from `filteredDevices` which is index-shifted
+        // when a search filter is active.
+        const idx = this.discoveredDevices.indexOf(dev)
+        if (idx >= 0) {
             (this.discoveredDevices[idx] as any)[field] = value
             this._saveInventory()
         }
@@ -163,8 +312,26 @@ export class DeviceMapperComponent implements OnInit {
         setTimeout(() => URL.revokeObjectURL(url), 1000)
     }
 
-    removeDevice (idx: number): void {
+    removeDevice (dev: ExtendedDevice): void {
+        // Same fix as saveDeviceEdit — locate the live entry by reference.
+        // The previous index-based version deleted the wrong device whenever
+        // a search filter was active because filteredDevices index ≠
+        // discoveredDevices index.
+        const idx = this.discoveredDevices.indexOf(dev)
+        if (idx < 0) { return }
         this.discoveredDevices.splice(idx, 1)
+        // Drop any LLDP links and selection-state that referenced this device
+        // — otherwise stale entries pile up and re-attach to future runs.
+        const host = (dev.hostname || '').toLowerCase()
+        const ip   = (dev.mgmtIp   || '').toLowerCase()
+        const matches = (s: string): boolean => {
+            const v = (s || '').toLowerCase()
+            return !!((host && v === host) || (ip && v === ip))
+        }
+        this.discoveredLinks = this.discoveredLinks.filter(l =>
+            !matches(l.srcHost) && !matches(l.dstHost),
+        )
+        if (host) { this.selectedDeviceHosts.delete(host) }
         this._saveInventory()
         this.cdr.markForCheck()
     }
@@ -176,6 +343,12 @@ export class DeviceMapperComponent implements OnInit {
 
     confirmClearAll (): void {
         this.discoveredDevices = []
+        // Wipe associated LLDP adjacencies + selection too — without devices
+        // they have no meaning, and stale links would re-attach unexpectedly
+        // to a future discovery run.
+        this.discoveredLinks = []
+        this.selectedDeviceHosts.clear()
+        this.lastDiscoverySummary = ''
         this._saveInventory()
         this.showClearConfirm = false
         this.cdr.markForCheck()
@@ -187,21 +360,135 @@ export class DeviceMapperComponent implements OnInit {
     showDiscoveryForm = false
     discoveryForm = { host: '', username: '', password: '' }
     discoveryError = ''
+    /** Newline-separated regex patterns. Any host whose name OR mgmt IP
+     *  matches any pattern is skipped during discovery — never visited,
+     *  never added to inventory, never recorded as a link endpoint. Lines
+     *  starting with `#` are comments; blank lines are ignored. Patterns
+     *  are matched case-insensitively. Persisted across app restarts. */
+    excludePatternsText = ''
 
+    /** Persist excludePatternsText whenever the user edits it. Throttle
+     *  by reusing the existing inventory-save (which already writes to
+     *  prefs) — the cost is one extra prefSet of a small string. */
+    onExcludePatternsChanged (): void {
+        this._saveInventory()
+        this.cdr.markForCheck()
+    }
+
+    /** Toggle the inline regex-syntax help below the textarea. */
+    showExcludeHelp = false
+    toggleExcludeHelp (): void { this.showExcludeHelp = !this.showExcludeHelp; this.cdr.markForCheck() }
+
+    /** Preset exclude patterns. One click appends the regex to the textarea
+     *  (deduped if already present). Patterns are tuned for typical lab
+     *  noise — mgmt switches, Linux/server hosts, SDN controllers, etc. */
+    readonly excludePresets: Array<{ label: string; pattern: string; description: string }> = [
+        { label: '🛠 Mgmt switches',  pattern: '^(geoman-|oob-|mgmt-)',
+          description: 'Hostnames starting with geoman-, oob-, or mgmt-' },
+        { label: '🖥 Linux servers',  pattern: '(srv\\d+|host\\d+|^dc-t\\d+srv)',
+          description: 'srv1, host42, dc-tNNsrv… typical compute hostnames' },
+        { label: '☁ Hypervisors',    pattern: '(esxi|kvm|hyperv|vmware)',
+          description: 'ESXi / KVM / Hyper-V / VMware-tagged hosts' },
+        { label: '🔮 SDN controllers', pattern: '(contrail-|openstack|^cont\\.)',
+          description: 'Contrail, OpenStack, etc.' },
+        { label: '🧪 Lab subdomain',   pattern: '\\.lab\\.',
+          description: 'Anything FQDN-suffixed with .lab.' },
+        { label: '📡 Mgmt VLAN IPs',  pattern: '^(10\\.99\\.|192\\.168\\.99\\.)',
+          description: 'Common mgmt subnets — adjust for your network' },
+        { label: '🐧 OS-tagged',      pattern: '(linux|ubuntu|debian|centos|rhel)',
+          description: 'Hostnames containing OS names' },
+    ]
+
+    /** Append a preset pattern to the textarea if it's not already there. */
+    appendExcludePreset (pattern: string): void {
+        const lines = (this.excludePatternsText || '').split('\n').map(s => s.trim())
+        // Already present? Skip to avoid duplicates.
+        if (lines.includes(pattern.trim())) { return }
+        const sep = (!this.excludePatternsText || /\n$/.test(this.excludePatternsText)) ? '' : '\n'
+        this.excludePatternsText = `${this.excludePatternsText}${sep}${pattern}\n`
+        this._saveInventory()
+        this.cdr.markForCheck()
+    }
+
+    /** Compile the textarea content into RegExp[]. Invalid lines are
+     *  skipped (with a console warning) so a typo in one pattern doesn't
+     *  break discovery for the other patterns. */
+    private _compileExcludePatterns (): RegExp[] {
+        const out: RegExp[] = []
+        for (const raw of (this.excludePatternsText || '').split('\n')) {
+            const line = raw.trim()
+            if (!line || line.startsWith('#')) { continue }
+            try {
+                out.push(new RegExp(line, 'i'))
+            } catch (err) {
+                console.warn(`[discovery] invalid exclude pattern "${line}": ${(err as Error).message}`)
+            }
+        }
+        return out
+    }
+    /** Which discovery algorithm the form's Start button runs:
+     *  - 'bfs':       walk LLDP outward from the seed (expands inventory)
+     *  - 'inventory': probe only the current inventory and keep only
+     *                 links whose both endpoints are in inventory */
+    discoveryMode: 'bfs' | 'inventory' = 'bfs'
+
+    /** Count of inventory devices that already have per-device SSH credentials.
+     *  When this equals discoveredDevices.length, the form doesn't need
+     *  fallback credentials at all — we just reuse each device's own creds. */
+    get devicesWithCreds (): number {
+        return this.discoveredDevices.filter(d => d.sshUsername && d.sshPassword).length
+    }
+
+    /** True iff every inventory device has its own SSH credentials, so the
+     *  fallback fields in the Discover form are unnecessary. */
+    get allInventoryHasCreds (): boolean {
+        return this.discoveredDevices.length > 0 &&
+               this.devicesWithCreds === this.discoveredDevices.length
+    }
+
+    /** Opens the inline discovery form (pre-filling saved prefs) and lets the
+     *  user pick a mode. Called by the single "🔍 Discover" button. */
     async startDiscovery (): Promise<void> {
         if (!this.showDiscoveryForm) {
-            // Show form first, pre-fill from saved prefs
+            // Show form first, pre-fill from saved prefs.
+            // If inventory exists, default to inventory-only (user's probably
+            // just trying to fill in cabling, not re-walk the fabric).
             const api = this._api
             this.discoveryForm.host = await api?.prefGet?.('discovery-host') ?? ''
             this.discoveryForm.username = await api?.prefGet?.('discovery-user') ?? ''
             this.discoveryForm.password = ''
+            this.discoveryMode = this.discoveredDevices.length > 0 ? 'inventory' : 'bfs'
             this.showDiscoveryForm = true
             this.discoveryError = ''
             this.cdr.markForCheck()
             return
         }
 
-        // Validate
+        // Route based on selected mode.
+        if (this.discoveryMode === 'inventory') {
+            // Inventory mode uses per-device credentials automatically.
+            // Fallback credentials are only required if at least one device
+            // in inventory is missing its own creds.
+            const devicesMissingCreds = this.discoveredDevices.length - this.devicesWithCreds
+            const needsFallback = devicesMissingCreds > 0
+            if (needsFallback && (!this.discoveryForm.username || !this.discoveryForm.password)) {
+                this.discoveryError =
+                    `${devicesMissingCreds} of ${this.discoveredDevices.length} device(s) have no SSH ` +
+                    `credentials — enter fallback username/password for those, or cancel and fill them in ` +
+                    `the inventory table first.`
+                this.cdr.markForCheck()
+                return
+            }
+            if (this.discoveryForm.username) {
+                this._api?.prefSet?.('discovery-user', this.discoveryForm.username)
+            }
+            this.showDiscoveryForm = false
+            this.cdr.markForCheck()
+            await this.discoverInventoryLinks()
+            return
+        }
+
+        // BFS mode: host + username + password all required.
         if (!this.discoveryForm.host || !this.discoveryForm.username || !this.discoveryForm.password) {
             this.discoveryError = 'All fields are required'
             this.cdr.markForCheck()
@@ -222,18 +509,104 @@ export class DeviceMapperComponent implements OnInit {
             if (this.invSvc.hasBackend) {
                 this.discoverySvc.setBackendClient(this.invSvc.backendClient)
             }
+            // Snapshot pre-discovery counts; the streaming callbacks pre-merge
+            // each wave's deltas into discoveredDevices/discoveredLinks, so we
+            // need this baseline to compute "(N new)" accurately at the end.
+            const preCountDevices = this.discoveredDevices.length
+            const preCountLinks   = this.discoveredLinks.length
             const result = await this.discoverySvc.discoverFromSeed(
-                this.discoveryForm.host, 22, this.discoveryForm.username, this.discoveryForm.password, { maxDepth: 3 }
+                this.discoveryForm.host, 22, this.discoveryForm.username, this.discoveryForm.password,
+                {
+                    maxDepth: 3,
+                    concurrency: 8,
+                    timeoutMs: 8000,
+                    maxHosts: 500,
+                    excludePatterns: this._compileExcludePatterns(),
+                    // Stream deltas to inventory + canvas as each wave completes.
+                    onDevices: (newDevices) => {
+                        const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
+                        const fresh = newDevices.filter(d => !existingHosts.has(d.hostname))
+                        if (!fresh.length) { return }
+                        this.discoveredDevices = [...this.discoveredDevices, ...fresh]
+                        this._saveInventory()
+                        if (this.liveBuildEnabled) {
+                            this.liveDiscoveryDelta.emit({
+                                newDevices: fresh,
+                                newLinks: [],
+                            })
+                        }
+                        this.cdr.markForCheck()
+                    },
+                    onLinks: (newLinks) => {
+                        const linkKey = (l: DiscoveredLink): string =>
+                            [l.srcHost, l.srcInterface, l.dstHost, l.dstInterface].join('|')
+                        const existing = new Set(this.discoveredLinks.map(linkKey))
+                        const fresh = newLinks.filter(l => !existing.has(linkKey(l)))
+                        if (!fresh.length) { return }
+                        this.discoveredLinks = [...this.discoveredLinks, ...fresh]
+                        // Persist after each wave so a mid-discovery cancel
+                        // (or app crash) doesn't lose the links built so far.
+                        this._saveInventory()
+                        if (this.liveBuildEnabled) {
+                            this.liveDiscoveryDelta.emit({
+                                newDevices: [],
+                                newLinks: fresh,
+                            })
+                        }
+                        this.cdr.markForCheck()
+                    },
+                    onProgress: (info) => {
+                        // Show currently-probed hosts so the user can see the
+                        // BFS isn't stuck — useful for big topologies where
+                        // a single wave may take ~8s waiting on SSH timeouts.
+                        const sample = info.currentHosts?.length
+                            ? ` · probing ${info.currentHosts.slice(0, 3).join(', ')}` +
+                              (info.currentHosts.length > 3 ? ` +${info.currentHosts.length - 3}` : '')
+                            : ''
+                        this.lastDiscoverySummary =
+                            `Discovering… processed ${info.processed}, ${info.queued} queued ` +
+                            `(${(info.elapsedMs / 1000).toFixed(1)}s)${sample}`
+                        this.cdr.markForCheck()
+                    },
+                },
             )
+            // Streaming callbacks already merged each wave's deltas. The two
+            // dedup-merges below are no-ops in the streaming path but stay
+            // defensively in case live mode was disabled or a callback was
+            // dropped — they're cheap.
             const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
             const newDevices = result.devices.filter(d => !d.hostname || !existingHosts.has(d.hostname))
             this.discoveredDevices = [...this.discoveredDevices, ...newDevices]
-            // Merge newly-discovered links with existing (de-duped by endpoint tuple).
             const linkKey = (l: DiscoveredLink): string =>
                 [l.srcHost, l.srcInterface, l.dstHost, l.dstInterface].join('|')
             const existingLinkKeys = new Set(this.discoveredLinks.map(linkKey))
             const newLinks = result.links.filter(l => !existingLinkKeys.has(linkKey(l)))
             this.discoveredLinks = [...this.discoveredLinks, ...newLinks]
+
+            // Use the pre-discovery snapshot so "N new" reflects this run's
+            // contribution even when the canvas was already updated live.
+            const newDevicesThisRun = this.discoveredDevices.length - preCountDevices
+            const newLinksThisRun   = this.discoveredLinks.length   - preCountLinks
+            this.lastDiscoverySummary =
+                `Discovery complete: ${result.devices.length} device${result.devices.length === 1 ? '' : 's'} ` +
+                `(${newDevicesThisRun} new), ${result.links.length} LLDP adjacenc${result.links.length === 1 ? 'y' : 'ies'} ` +
+                `(${newLinksThisRun} new)`
+
+            // If discovery returned 0 devices, attach the actual probe output
+            // so the user can see what the device said (instead of chasing
+            // silent failures in the console).
+            if (result.devices.length === 0 && this.discoverySvc.lastProbeResult.length > 0) {
+                const probes = this.discoverySvc.lastProbeResult
+                    .map(a => `  "${a.cmd}" → ${a.ok ? `${a.chars} chars: ${a.preview.slice(0, 180)}` : `error: ${a.err}`}`)
+                    .join('\n')
+                this.discoveryError = `Discovery found 0 devices. Probe output from seed:\n${probes}`
+            }
+
+            console.log(`[discovery] ${this.lastDiscoverySummary}`)
+            console.log('[discovery] devices:', result.devices.map(d => ({ hostname: d.hostname, mgmtIp: d.mgmtIp, vendor: d.vendor })))
+            console.log('[discovery] links:', result.links)
+            console.log('[discovery] lastProbeResult:', this.discoverySvc.lastProbeResult)
+
             this._saveInventory()
             this.autoMatch()
         } catch (err) {
@@ -241,6 +614,150 @@ export class DeviceMapperComponent implements OnInit {
         }
 
         this.discovering = false
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Closed-inventory LLDP discovery.
+     *
+     * Unlike startDiscovery (which walks LLDP neighbors outward from a seed),
+     * this mode probes ONLY the devices already in inventory and keeps only
+     * those LLDP adjacencies where both endpoints are in inventory. Used when
+     * the user has curated their device list and just wants cabling filled in.
+     */
+    async discoverInventoryLinks (): Promise<void> {
+        if (!this.discoveredDevices.length) {
+            this.discoveryError = 'Inventory is empty. Add devices first (🔍 Discover, Upload CSV, or + Add Device).'
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Each device is probed with its own SSH creds if present; the form's
+        // user/pass act as a fallback for devices missing creds. Only raise
+        // the form when there's NO usable path for at least one device.
+        const seedUser = this.discoveryForm.username
+        const seedPass = this.discoveryForm.password
+        const haveFallback = !!(seedUser && seedPass)
+        const devicesWithoutCreds = this.discoveredDevices.filter(d => !d.sshUsername || !d.sshPassword)
+        if (devicesWithoutCreds.length > 0 && !haveFallback) {
+            // Some devices have no creds and no fallback is set — ask for one.
+            this.showDiscoveryForm = true
+            this.discoveryMode = 'inventory'
+            this.discoveryError =
+                `${devicesWithoutCreds.length} of ${this.discoveredDevices.length} device(s) have no SSH ` +
+                `credentials. Enter a fallback username/password to use for those, or cancel and fill the ` +
+                `creds into the inventory table first.`
+            this.cdr.markForCheck()
+            return
+        }
+
+        this.discovering = true
+        this.discoveryError = ''
+        this.cdr.markForCheck()
+
+        try {
+            if (this.invSvc.hasBackend) {
+                this.discoverySvc.setBackendClient(this.invSvc.backendClient)
+            }
+            const result = await this.discoverySvc.discoverLinksAmongInventory(
+                this.discoveredDevices.map(d => ({
+                    hostname: d.hostname,
+                    mgmtIp: d.mgmtIp,
+                    sshUsername: d.sshUsername,
+                    sshPassword: d.sshPassword,
+                })),
+                {
+                    fallbackUsername: seedUser,
+                    fallbackPassword: seedPass,
+                    port: 22,
+                    timeoutMs: 8000,
+                    concurrency: 8,
+                    excludePatterns: this._compileExcludePatterns(),
+                    onProgress: (info) => {
+                        this.lastDiscoverySummary =
+                            `Probing inventory… ${info.processed}/${info.total} ` +
+                            `(${(info.elapsedMs / 1000).toFixed(1)}s)`
+                        this.cdr.markForCheck()
+                    },
+                    // Stream link deltas live so the canvas grows as we go.
+                    // (Inventory mode doesn't add devices — they're all known —
+                    // so onDevices isn't strictly needed, but we wire it for
+                    // vendor/model enrichment as discoveries land.)
+                    onLinks: (newLinks) => {
+                        const linkKey = (l: DiscoveredLink): string =>
+                            [l.srcHost, l.srcInterface, l.dstHost, l.dstInterface].join('|')
+                        const existing = new Set(this.discoveredLinks.map(linkKey))
+                        const fresh = newLinks.filter(l => !existing.has(linkKey(l)))
+                        if (!fresh.length) { return }
+                        this.discoveredLinks = [...this.discoveredLinks, ...fresh]
+                        // Persist immediately so links survive cancel/crash.
+                        this._saveInventory()
+                        if (this.liveBuildEnabled) {
+                            this.liveDiscoveryDelta.emit({ newDevices: [], newLinks: fresh })
+                        }
+                        this.cdr.markForCheck()
+                    },
+                    onDevices: (newDevices) => {
+                        // Update vendor/model on existing inventory entries.
+                        for (const dev of newDevices) {
+                            const existing = this.discoveredDevices.find(d =>
+                                d.hostname?.toLowerCase() === dev.hostname.toLowerCase() ||
+                                d.mgmtIp?.toLowerCase() === dev.mgmtIp.toLowerCase(),
+                            )
+                            if (existing) {
+                                if (!existing.vendor && dev.vendor) { existing.vendor = dev.vendor }
+                                if (!existing.model && dev.model)   { existing.model  = dev.model }
+                            }
+                        }
+                        if (this.liveBuildEnabled) {
+                            this.liveDiscoveryDelta.emit({ newDevices, newLinks: [] })
+                        }
+                        this.cdr.markForCheck()
+                    },
+                },
+            )
+
+            // Merge discovered links into existing, de-duped by endpoint tuple.
+            const linkKey = (l: DiscoveredLink): string =>
+                [l.srcHost, l.srcInterface, l.dstHost, l.dstInterface].join('|')
+            const existingLinkKeys = new Set(this.discoveredLinks.map(linkKey))
+            const newLinks = result.links.filter(l => !existingLinkKeys.has(linkKey(l)))
+            this.discoveredLinks = [...this.discoveredLinks, ...newLinks]
+
+            // Fold vendor/model back onto existing inventory entries if we
+            // learned them from a successful probe.
+            for (const dev of result.devices) {
+                const existing = this.discoveredDevices.find(d =>
+                    d.hostname?.toLowerCase() === dev.hostname.toLowerCase() ||
+                    d.mgmtIp?.toLowerCase() === dev.mgmtIp.toLowerCase(),
+                )
+                if (!existing) { continue }
+                if (!existing.vendor && dev.vendor) { existing.vendor = dev.vendor }
+                if (!existing.model && dev.model)   { existing.model  = dev.model }
+            }
+
+            this.lastDiscoverySummary =
+                `Inventory discovery complete: probed ${this.discoveredDevices.length} device(s), ` +
+                `${result.devices.length} reachable, ${result.links.length} unique link(s) ` +
+                `(${newLinks.length} new)`
+
+            console.log(`[discovery-inv] ${this.lastDiscoverySummary}`)
+            console.log('[discovery-inv] links:', result.links)
+
+            this._saveInventory()
+        } catch (err) {
+            this.discoveryError = `Inventory discovery failed: ${(err as Error).message}`
+        }
+
+        this.discovering = false
+        this.cdr.markForCheck()
+    }
+
+    /** Abort an in-flight discovery at the next wave boundary. Called by the
+     *  Cancel button shown only while `discovering === true`. */
+    cancelDiscovery (): void {
+        this.discoverySvc.abort()
+        this.lastDiscoverySummary = (this.lastDiscoverySummary || 'Discovering…') + ' — cancelling…'
         this.cdr.markForCheck()
     }
 
@@ -487,6 +1004,49 @@ export class DeviceMapperComponent implements OnInit {
             push: true,
             discoveredLinks: this.discoveredLinks.length ? [...this.discoveredLinks] : undefined,
         })
+        this.closed.emit()
+    }
+
+    /**
+     * Auto-build a topology from the discovered devices + LLDP adjacencies.
+     * Skips the manual mapping step — every device becomes a node, every LLDP
+     * neighbor becomes a link.
+     *
+     * @param replace  true = wipe current canvas first; false = merge in.
+     */
+    buildTopologyFromDiscovery (replace: boolean): void {
+        if (!this.discoveredDevices.length) { return }
+
+        // Filter by checkbox selection if any are selected, else use ALL.
+        // Empty selection means "no explicit selection" (the default state) —
+        // we treat it as "build everything" for backward compatibility.
+        let devices = this.discoveredDevices
+        let links = this.discoveredLinks
+        if (this.selectedDeviceHosts.size > 0) {
+            const sel = this.selectedDeviceHosts
+            const isSel = (host: string): boolean => sel.has((host || '').toLowerCase())
+            devices = this.discoveredDevices.filter(d => isSel(d.hostname))
+            // Keep only links where BOTH endpoints are in the selected subset.
+            // Drops cross-boundary links (selected ↔ unselected) so the new
+            // topology is self-contained.
+            links = this.discoveredLinks.filter(l => isSel(l.srcHost) && isSel(l.dstHost))
+        }
+
+        if (!devices.length) {
+            alert('No devices selected. Tick at least one row, or clear selection to use all.')
+            return
+        }
+
+        if (replace && this.topology?.nodes?.length) {
+            const ok = confirm(
+                `Replace the current topology with ${devices.length} discovered ` +
+                `device(s) and ${links.length} LLDP link(s)?\n\n` +
+                `This will delete the existing ${this.topology.nodes.length} node(s) and ` +
+                `${this.topology.links.length} link(s).`,
+            )
+            if (!ok) { return }
+        }
+        this.buildFromDiscoveryRequested.emit({ devices: [...devices], links: [...links], replace })
         this.closed.emit()
     }
 }

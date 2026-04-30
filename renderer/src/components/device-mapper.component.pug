@@ -22,8 +22,16 @@
       button.mapper-btn.mapper-btn-discover(
         type='button',
         [disabled]='discovering',
+        title='Opens a dialog where you pick the discovery mode: BFS from a seed, or closed-inventory (probe only current inventory).',
         (click)='startDiscovery()'
       ) {{ discovering ? 'Discovering...' : '🔍 Discover' }}
+      button.mapper-btn(
+        *ngIf='discovering',
+        type='button',
+        title='Stop the running discovery at the next wave boundary (within a few seconds).',
+        style='border-color:#ef4444;color:#ef4444',
+        (click)='cancelDiscovery()'
+      ) ✕ Cancel
       button.mapper-btn(
         type='button',
         (click)='fileInput.click()'
@@ -44,19 +52,127 @@
         [disabled]='!discoveredDevices.length',
         (click)='autoMatch(); activeTab = "mapping"; cdr.markForCheck()'
       ) ⚡ Auto-Match
-      span.mapper-status(*ngIf='discoveredDevices.length') {{ discoveredDevices.length }} devices
+      span.mapper-status(*ngIf='discoveredDevices.length')
+        | {{ discoveredDevices.length }} device{{ discoveredDevices.length === 1 ? '' : 's' }}
+        span(*ngIf='discoveredLinks.length', style='margin-left:6px;color:#60a5fa')
+          | · {{ discoveredLinks.length }} LLDP link{{ discoveredLinks.length === 1 ? '' : 's' }}
+    //- Discovery summary — shown after a discovery completes.
+    .mapper-discovery-summary(*ngIf='lastDiscoverySummary')
+      | ✓ {{ lastDiscoverySummary }}
+    //- Discovery error / probe-output details — shown if the seed returned
+    //- nothing parseable. Sticky so users can copy the preview text.
+    .mapper-discovery-error(*ngIf='discoveryError && !showDiscoveryForm')
+      pre(style='margin:0;white-space:pre-wrap;font-family:SF Mono,Menlo,monospace;font-size:11px') ⚠ {{ discoveryError }}
+      button.mapper-btn(type='button', style='margin-top:6px', (click)='discoveryError = ""; cdr.markForCheck()') Dismiss
 
-    //- Discovery form (inline)
+    //- Discovery form (inline) — lets the user pick BFS vs inventory-only
     .mapper-inline-form(*ngIf='showDiscoveryForm')
       .mapper-form-row
+        label.mapper-form-label Mode
+        select.mapper-form-input(
+          [(ngModel)]='discoveryMode',
+          (ngModelChange)='discoveryError = ""; cdr.markForCheck()',
+          title='BFS walks LLDP outward from the seed and discovers new devices. Inventory-only probes the current inventory list and keeps only links where both endpoints are in inventory.',
+        )
+          option(value='bfs') BFS from seed (expand inventory)
+          option(value='inventory', [disabled]='!discoveredDevices.length')
+            | Inventory only ({{ discoveredDevices.length }} device{{ discoveredDevices.length === 1 ? '' : 's' }})
+      .mapper-form-row(*ngIf='discoveryMode === "bfs"')
         label.mapper-form-label Seed IP
         input.mapper-form-input(type='text', [(ngModel)]='discoveryForm.host', placeholder='e.g. 172.16.0.1')
-      .mapper-form-row
+      //- Credential fields are required for BFS, and for inventory mode only
+      //- when some devices are missing per-device creds. When every inventory
+      //- device already has SSH creds, we skip asking entirely.
+      .mapper-form-row(*ngIf='discoveryMode === "bfs" || !allInventoryHasCreds')
         label.mapper-form-label Username
-        input.mapper-form-input(type='text', [(ngModel)]='discoveryForm.username', placeholder='SSH username')
-      .mapper-form-row
+        input.mapper-form-input(
+          type='text',
+          [(ngModel)]='discoveryForm.username',
+          [placeholder]='discoveryMode === "inventory" ? "Fallback SSH username (for devices without creds)" : "SSH username"',
+        )
+      .mapper-form-row(*ngIf='discoveryMode === "bfs" || !allInventoryHasCreds')
         label.mapper-form-label Password
-        input.mapper-form-input(type='password', [(ngModel)]='discoveryForm.password', placeholder='SSH password')
+        input.mapper-form-input(
+          type='password',
+          [(ngModel)]='discoveryForm.password',
+          [placeholder]='discoveryMode === "inventory" ? "Fallback SSH password" : "SSH password"',
+        )
+      .mapper-form-row(*ngIf='discoveryMode === "inventory"')
+        span(style='font-size:11px; color:var(--text-muted); flex:1')
+          span(*ngIf='allInventoryHasCreds', style='color:#86efac')
+            | ✓ All {{ discoveredDevices.length }} inventory device{{ discoveredDevices.length === 1 ? '' : 's' }} {{ discoveredDevices.length === 1 ? 'has' : 'have' }} SSH credentials — using them automatically.
+          span(*ngIf='!allInventoryHasCreds')
+            | {{ devicesWithCreds }}/{{ discoveredDevices.length }} device(s) have their own SSH credentials.
+            |  The fallback above will be used for the remaining {{ discoveredDevices.length - devicesWithCreds }}.
+      .mapper-form-row(*ngIf='discoveryMode === "inventory"')
+        span(style='font-size:11px; color:var(--text-muted); flex:1')
+          | Probes only the {{ discoveredDevices.length }} device(s) in inventory. Keeps only LLDP links between them. No BFS expansion.
+      .mapper-form-row(*ngIf='discoveryMode === "bfs"')
+        span(style='font-size:11px; color:var(--text-muted); flex:1')
+          | Walks LLDP outward from the seed, up to 3 hops. Adds every reachable device to inventory.
+      .mapper-form-row
+        label.mapper-form-label Live build
+        label(style='font-size:11px; color:var(--text-muted); flex:1; display:flex; align-items:center; gap:6px')
+          input(type='checkbox', [(ngModel)]='liveBuildEnabled')
+          | Stream nodes + links to the canvas as they're discovered (off = build only when you click 🔗 Build Topology)
+      //- ── Regex exclusion list ─────────────────────────────────────────
+      //- Hosts whose name OR mgmt IP matches any of these patterns are
+      //- skipped during discovery — never visited, never added to inventory.
+      //- One regex per line. # for comments. Persisted across sessions.
+      .mapper-form-row(style='align-items:flex-start')
+        label.mapper-form-label(style='padding-top:4px') Exclude
+        textarea.mapper-form-input(
+          rows='3',
+          [(ngModel)]='excludePatternsText',
+          (ngModelChange)='onExcludePatternsChanged()',
+          style='font-family: SF Mono, Menlo, monospace; font-size:11px; resize:vertical; min-height:48px',
+          placeholder='# regex per line — hosts matching are skipped\n# e.g. mgmt-net hosts, Linux servers\n^geoman-\nsrv\\d+\n\\.mgmt\\.'
+        )
+      //- ── Preset chips: click to append a common pattern ───────────────
+      .mapper-form-row(style='align-items:flex-start; flex-wrap:wrap; gap:4px; padding-left:78px')
+        span(style='font-size:11px; color:var(--text-muted); width:100%; margin-bottom:4px; display:flex; align-items:center; gap:8px')
+          | Click a preset to add:
+          a(href='javascript:void(0)', (click)='toggleExcludeHelp()',
+            style='font-size:11px; color:var(--accent); margin-left:auto; cursor:pointer; text-decoration:underline')
+            | {{ showExcludeHelp ? 'Hide' : 'Show' }} regex syntax
+        button.mapper-preset-chip(
+          *ngFor='let p of excludePresets',
+          type='button',
+          [title]='p.description + " — pattern: " + p.pattern',
+          (click)='appendExcludePreset(p.pattern)'
+        ) {{ p.label }}
+      //- ── Inline regex syntax cheatsheet (toggle) ───────────────────────
+      .mapper-form-row(*ngIf='showExcludeHelp', style='align-items:flex-start; padding-left:78px')
+        .mapper-exclude-help
+          .mapper-exclude-help-title Regex syntax (case-insensitive)
+          ul
+            li
+              code ^geoman-
+              |  — anchored prefix (matches names that START with geoman-)
+            li
+              code srv$
+              |  — anchored suffix (ends with srv)
+            li
+              code (foo|bar)
+              |  — alternation (matches foo OR bar)
+            li
+              code \.mgmt\.
+              |  — literal dot in FQDN segment (escape dots)
+            li
+              code srv\d+
+              |  — srv followed by one+ digits (srv1, srv42)
+            li
+              code [^a-z]
+              |  — character class (any non-letter)
+            li # comment line — ignored
+          .mapper-exclude-help-foot
+            | Each line is matched independently against the hostname AND mgmt IP.
+            |  Invalid patterns are skipped (logged to console). Lines starting with
+            |  #
+            |  are comments.
+      .mapper-form-row
+        span(style='font-size:11px; color:var(--text-muted); flex:1; padding-left:78px')
+          | Patterns are case-insensitive regex. Matched against hostname AND mgmt IP. Saved automatically.
       .mapper-form-row
         span.mapper-form-error(*ngIf='discoveryError') {{ discoveryError }}
         button.mapper-btn(type='button', (click)='showDiscoveryForm = false; cdr.markForCheck()') Cancel
@@ -111,6 +227,13 @@
       table.mapper-table(*ngIf='discoveredDevices.length')
         thead
           tr
+            th(style='width:24px', title='Select for Build Topology')
+              input(
+                type='checkbox',
+                [checked]='allFilteredSelected',
+                (change)='toggleSelectAllFiltered()',
+                title='Select all / clear selection'
+              )
             th #
             th Hostname
             th IP Address
@@ -120,46 +243,55 @@
             th SSH Pass
             th Actions
         tbody
-          tr.mapper-row(*ngFor='let dev of filteredDevices; let i = index')
+          tr.mapper-row(
+            *ngFor='let dev of filteredDevices; let i = index',
+            [class.mapper-row-selected]='isDeviceSelected(dev)'
+          )
+            td(style='text-align:center')
+              input(
+                type='checkbox',
+                [checked]='isDeviceSelected(dev)',
+                (change)='toggleDeviceSelection(dev)'
+              )
             td {{ i + 1 }}
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.hostname',
-                (change)='saveDeviceEdit(i, "hostname", $event)'
+                (change)='saveDeviceEdit(dev, "hostname", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.mgmtIp',
-                (change)='saveDeviceEdit(i, "mgmtIp", $event)'
+                (change)='saveDeviceEdit(dev, "mgmtIp", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.vendor',
-                (change)='saveDeviceEdit(i, "vendor", $event)'
+                (change)='saveDeviceEdit(dev, "vendor", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.model',
-                (change)='saveDeviceEdit(i, "model", $event)'
+                (change)='saveDeviceEdit(dev, "model", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.sshUsername || ""',
-                (change)='saveDeviceEdit(i, "sshUsername", $event)'
+                (change)='saveDeviceEdit(dev, "sshUsername", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='password',
                 [value]='dev.sshPassword || ""',
-                (change)='saveDeviceEdit(i, "sshPassword", $event)'
+                (change)='saveDeviceEdit(dev, "sshPassword", $event)'
               )
             td
-              button.mapper-remove-btn(type='button', title='Remove', (click)='removeDevice(i)') ✕
+              button.mapper-remove-btn(type='button', title='Remove', (click)='removeDevice(dev)') ✕
 
     //- ── Mapping Tab ────────────────────────────────────────────────
     .mapper-table-wrap(*ngIf='activeTab === "mapping"')
@@ -180,7 +312,22 @@
           )
             td.mapper-cell-name {{ node.label }}
             td {{ node.vendor || '—' }} {{ node.model ? '/ ' + node.model : '' }}
-            td {{ node.role || node.type }}
+            td
+              select.mapper-select(
+                [value]='node.role || ""',
+                title='Change the topology role for this node. Affects tier-based layout, ASN/OSPF/IS-IS auto-config, and config-generation templates.',
+                (change)='onRoleChange(node, $event)'
+              )
+                //- [selected] explicitly marks the matching option so the
+                //- dropdown reflects the persisted role even after the
+                //- topology re-emits (Angular's [value] on <select> doesn't
+                //- always re-sync option selection on later change-detect).
+                option(value='', [selected]='!node.role') — auto / {{ node.type }} —
+                option(
+                  *ngFor='let r of availableRoles',
+                  [value]='r.value',
+                  [selected]='node.role === r.value'
+                ) {{ r.label }}
             td.mapper-cell-arrow {{ mappings.has(node.id) ? '✓' : '→' }}
             td
               select.mapper-select(
@@ -201,6 +348,33 @@
       span.mapper-summary(*ngIf='activeTab === "inventory"') {{ discoveredDevices.length }} devices in inventory
       span.mapper-summary(*ngIf='activeTab === "mapping"') {{ mappings.size }}/{{ topologyNodes.length }} nodes mapped
       .mapper-footer-actions
+        //- Selection-count chip — only shown while user has a checkbox selection
+        span.mapper-selection-chip(
+          *ngIf='activeTab === "inventory" && selectedDeviceHosts.size > 0',
+          title='Click to clear selection',
+          (click)='clearDeviceSelection()'
+        )
+          | {{ selectedDeviceHosts.size }} of {{ discoveredDevices.length }} selected ✕
+        //- Bulk-delete the checkbox-selected devices (and their LLDP links).
+        //- Tip: use the search filter + select-all to delete by pattern in one click.
+        button.mapper-btn.mapper-btn-delete-sel(
+          *ngIf='activeTab === "inventory" && selectedDeviceHosts.size > 0',
+          type='button',
+          title='Remove the selected device(s) and any LLDP link(s) touching them. Tip: use the search filter + select-all to bulk-delete by pattern.',
+          (click)='deleteSelected()'
+        ) 🗑 Delete Selected ({{ selectedDeviceHosts.size }})
+        button.mapper-btn.mapper-btn-apply(
+          *ngIf='activeTab === "inventory" && discoveredDevices.length',
+          type='button',
+          [title]='selectedDeviceHosts.size > 0 ? "Build topology from the " + selectedDeviceHosts.size + " selected device(s) and the LLDP links between them" : "Create a topology node for every discovered device and draw a link for every LLDP adjacency. Adds to the current canvas."',
+          (click)='buildTopologyFromDiscovery(false)'
+        ) 🔗 Build Topology{{ selectedDeviceHosts.size > 0 ? ' (' + selectedDeviceHosts.size + ')' : '' }}
+        button.mapper-btn(
+          *ngIf='activeTab === "inventory" && discoveredDevices.length',
+          type='button',
+          [title]='selectedDeviceHosts.size > 0 ? "Wipe the current canvas, then build from the " + selectedDeviceHosts.size + " selected device(s)" : "Wipe the current canvas, then build from discovery."',
+          (click)='buildTopologyFromDiscovery(true)'
+        ) ⟳ Replace &amp; Build
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', (click)='exportInventoryCsv()') 📥 Export CSV
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length && !showClearConfirm', (click)='clearAllDevices()') Clear All
         span.mapper-confirm(*ngIf='showClearConfirm')

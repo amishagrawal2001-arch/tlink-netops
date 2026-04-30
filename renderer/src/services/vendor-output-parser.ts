@@ -184,10 +184,14 @@ export function detectVendorFromOutput (output: string): string {
 export function parseShowVersion (vendor: string, output: string): ParsedVersion {
     const v = (vendor ?? '').trim().toLowerCase()
     switch (v) {
-        case 'cisco': return parseCiscoVersion(output)
-        case 'juniper': return parseJuniperVersion(output)
-        case 'arista': return parseAristaVersion(output)
-        case 'nokia': return parseNokiaVersion(output)
+        case 'cisco': case 'cisco-nxos': case 'cisco-iosxr':
+            return parseCiscoVersion(output)
+        case 'juniper': case 'juniper-crpd':
+            return parseJuniperVersion(output)
+        case 'arista': case 'arista-ceos':
+            return parseAristaVersion(output)
+        case 'nokia': case 'nokia-sros':
+            return parseNokiaVersion(output)
         case 'huawei': return parseHuaweiVersion(output)
         case 'mikrotik': return parseMikrotikVersion(output)
         case 'extreme': return parseExtremeVersion(output)
@@ -1026,32 +1030,169 @@ function parseCiscoLldpNeighbors (output: string): ParsedLldpNeighbor[] {
     return results
 }
 
-function parseJuniperLldpNeighbors (output: string): ParsedLldpNeighbor[] {
-    // Juniper: `show lldp neighbors` — tabular:
-    //   Local Interface  Parent Interface  Chassis Id  Port info  System Name
-    //   ge-0/0/0         -                 aa:bb:cc    eth0       spine1
+/**
+ * Parse Junos `show lldp neighbors | display xml` output.
+ * Returns one entry per <lldp-neighbor-information> element.
+ *
+ * Junos LLDP XML reliably separates these fields:
+ *   <lldp-local-port-id>            (our localPort)
+ *   <lldp-remote-port-id>           (real interface name like "et-0/0/9")
+ *   <lldp-remote-port-description>  (free text like "Connected to R3")
+ *   <lldp-remote-system-name>       (neighbor hostname)
+ *   <lldp-remote-management-address>(neighbor mgmt IP, when advertised)
+ *
+ * We prefer port-id over port-description for the neighborPort field —
+ * that's the LLDP-defined identifier, not human-readable annotation text.
+ */
+function parseJuniperLldpXml (output: string): ParsedLldpNeighbor[] {
     const results: ParsedLldpNeighbor[] = []
-    for (const line of output.split('\n')) {
-        // Skip headers and separator lines
-        if (/Local Interface/i.test(line) || /^[-=\s]+$/.test(line.trim())) { continue }
-        const m = line.match(/^\s*(\S+)\s+\S+\s+\S+\s+(\S+(?:\s+\S+)*?)\s{2,}(\S+.*)/)
-        if (m) {
-            results.push({
-                localPort: m[1],
-                neighborPort: m[2].trim(),
-                neighborHostname: m[3].trim(),
-            })
+    // Use the browser's DOMParser (Electron renderer = Chromium env).
+    let doc: Document | null = null
+    try {
+        doc = new DOMParser().parseFromString(output, 'text/xml')
+    } catch { return results }
+    if (!doc) { return results }
+    // If the XML failed to parse, the result has a <parsererror> element.
+    if (doc.querySelector('parsererror')) {
+        // Try a forgiving regex-based extraction as a last resort.
+        return _juniperLldpXmlRegex(output)
+    }
+
+    const entries = doc.getElementsByTagName('lldp-neighbor-information')
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i]
+        const pick = (tag: string): string => {
+            const n = e.getElementsByTagName(tag)[0]
+            return (n?.textContent ?? '').trim()
+        }
+        const localPort        = pick('lldp-local-port-id') || pick('lldp-local-interface')
+        const remotePortId     = pick('lldp-remote-port-id')
+        const remotePortDesc   = pick('lldp-remote-port-description')
+        const remoteSysName    = pick('lldp-remote-system-name')
+        const remoteSysDesc    = pick('lldp-remote-system-description')
+        const remoteMgmtIp     = pick('lldp-remote-management-address') || pick('lldp-remote-management-address-ipv4')
+        if (!remoteSysName) { continue }   // can't identify peer
+        // Skip MAC-only "system names" (bridged endpoints w/o real LLDP sys-name)
+        if (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(remoteSysName)) { continue }
+
+        results.push({
+            localPort,
+            // Prefer the structured port-id; fall back to port-description if
+            // some devices only advertise that.
+            neighborPort: remotePortId || remotePortDesc,
+            neighborHostname: remoteSysName,
+            neighborMgmtIp: remoteMgmtIp || undefined,
+            neighborSystemDesc: remoteSysDesc || undefined,
+        })
+    }
+    return results
+}
+
+/**
+ * Regex fallback for parsing Junos LLDP XML when the response was truncated
+ * or wrapped in shell preamble that broke DOM parsing. Best-effort.
+ */
+function _juniperLldpXmlRegex (output: string): ParsedLldpNeighbor[] {
+    const results: ParsedLldpNeighbor[] = []
+    // Capture each <lldp-neighbor-information>…</…> block and pull tags out.
+    const blockRe = /<lldp-neighbor-information[^>]*>([\s\S]*?)<\/lldp-neighbor-information>/gi
+    const tagRe = (block: string, tag: string): string => {
+        const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'))
+        return m ? m[1].trim() : ''
+    }
+    let m: RegExpExecArray | null
+    while ((m = blockRe.exec(output)) !== null) {
+        const block = m[1]
+        const localPort      = tagRe(block, 'lldp-local-port-id') || tagRe(block, 'lldp-local-interface')
+        const remotePortId   = tagRe(block, 'lldp-remote-port-id')
+        const remotePortDesc = tagRe(block, 'lldp-remote-port-description')
+        const remoteSysName  = tagRe(block, 'lldp-remote-system-name')
+        const remoteMgmtIp   = tagRe(block, 'lldp-remote-management-address') || tagRe(block, 'lldp-remote-management-address-ipv4')
+        if (!remoteSysName) { continue }
+        if (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(remoteSysName)) { continue }
+        results.push({
+            localPort,
+            neighborPort: remotePortId || remotePortDesc,
+            neighborHostname: remoteSysName,
+            neighborMgmtIp: remoteMgmtIp || undefined,
+        })
+    }
+    return results
+}
+
+function parseJuniperLldpNeighbors (output: string): ParsedLldpNeighbor[] {
+    // Prefer XML output when present — it keeps port-id and port-description
+    // in separate fields. The plain-text table conflates them in the "Port
+    // info" column, which corrupts neighbor port names when interfaces have
+    // descriptions (e.g. "Connected to R3" gets used as the port name).
+    if (/<lldp-neighbors-information/i.test(output) || /<rpc-reply/i.test(output)) {
+        const xml = parseJuniperLldpXml(output)
+        if (xml.length) { return xml }
+        // fall through to text parser if XML body was empty / malformed
+    }
+
+    // Juniper: `show lldp neighbors` — fixed-width tabular, 4–5 columns:
+    //   Local Interface  Parent Interface  Chassis Id        Port info    System Name
+    //   et-0/0/0         -                 aa:bb:cc…         et-0/0/22    stqc-q5230-04.example   ← 5-col
+    //   et-0/0/6:1       -                 50:7c:6f:36:4b:01 50:7c:6f:…                          ← 4-col (no sys name)
+    //
+    // Strategy: detect the header row (contains "Local Interface"), then for
+    // every subsequent non-blank line, split on 2+ whitespace and map columns.
+    // Skip rows without a System Name because we can't identify the neighbor
+    // (they're usually bridged endpoints that don't advertise LLDP sys-name).
+    const results: ParsedLldpNeighbor[] = []
+    let sawHeader = false
+
+    for (const rawLine of output.split('\n')) {
+        const line = rawLine.replace(/\s+$/, '')  // right-trim only; preserve leading
+        if (!line.trim()) { continue }
+
+        // Identify header; everything before it is preamble (banner, MOTD, etc).
+        if (/^\s*Local Interface/i.test(line)) { sawHeader = true; continue }
+        if (!sawHeader) { continue }
+
+        // Separator rows (dashes, equals signs)
+        if (/^[-=\s]+$/.test(line.trim())) { continue }
+        // Trailing summary lines like "Total entries: N" or blank wrap
+        if (/^\s*(Total|total entries)/i.test(line)) { continue }
+
+        // Split on 2+ whitespace — fixed-width columns separated by multi-space
+        const parts = line.trim().split(/\s{2,}/).filter(p => p.length)
+        if (parts.length < 4) { continue }   // need at least local/parent/chassis/port-info
+
+        const localPort = parts[0]
+        // parts[1] is parent-interface (usually "-"); parts[2] is chassis MAC — both ignored
+        let neighborPort = ''
+        let neighborHostname = ''
+
+        if (parts.length >= 5) {
+            neighborPort = parts[3]
+            neighborHostname = parts[4]
+            // Port-info column may carry a port DESCRIPTION (e.g. "Connected
+            // to R3") instead of the actual port-id when the remote interface
+            // has a description configured. We can't tell them apart from the
+            // text table (the XML output we now request normally is what
+            // disambiguates). As a heuristic, reject any "port name" that
+            // contains whitespace or starts with a non-iface char — better
+            // to record the link with empty port than the wrong port.
+            if (/\s/.test(neighborPort) || /^[A-Za-z][a-z]+\s/.test(neighborPort)) {
+                neighborPort = ''
+            }
+        } else {
+            // 4 columns → no System Name advertised by neighbor.
+            // parts[3] is usually the remote port or (rarely) a repeat of the
+            // chassis MAC. Either way, without a system name we can't identify
+            // the neighbor, so skip.
             continue
         }
-        // Simpler: just local-intf + port-info + system-name
-        const m2 = line.match(/^\s*(\S+)\s+.*?\s+(\S+)\s+(\S+)\s*$/)
-        if (m2 && !/^[-=]/.test(line.trim())) {
-            results.push({
-                localPort: m2[1],
-                neighborPort: m2[2],
-                neighborHostname: m2[3],
-            })
-        }
+
+        // Reject garbage: port/hostname that looks like a MAC address only,
+        // or empty system names.
+        if (!neighborHostname) { continue }
+        if (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(neighborHostname)) { continue }
+        if (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(localPort)) { continue }
+
+        results.push({ localPort, neighborPort, neighborHostname })
     }
     return results
 }
@@ -1200,13 +1341,14 @@ export function parseLldpNeighbors (vendor: string, output: string): ParsedLldpN
     if (!output || !output.trim()) { return [] }
     const v = (vendor ?? '').trim().toLowerCase()
     switch (v) {
-        case 'cisco': case 'dell': case 'hpe': case 'extreme':
+        case 'cisco': case 'cisco-nxos': case 'cisco-iosxr':
+        case 'dell': case 'hpe': case 'extreme':
             return parseCiscoLldpNeighbors(output)
-        case 'juniper':
+        case 'juniper': case 'juniper-crpd':
             return parseJuniperLldpNeighbors(output)
-        case 'arista':
+        case 'arista': case 'arista-ceos':
             return parseAristaLldpNeighbors(output)
-        case 'nokia':
+        case 'nokia': case 'nokia-sros':
             return parseNokiaSrlLldpNeighbors(output)
         case 'sonic':
             return parseSonicLldpNeighbors(output)

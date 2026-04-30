@@ -1,0 +1,86 @@
+.dryrun-overlay((click)='close()')
+  .dryrun-dialog((click)='$event.stopPropagation()')
+    .dryrun-header
+      h3.dryrun-title
+        | Dry Run Push
+        span.dryrun-subtitle Preview what would change — nothing is committed
+      span.dryrun-stats
+        ng-container(*ngIf='!overallLoading')
+          span.dryrun-stat-add(*ngIf='totals.added')   +{{ totals.added }}
+          span.dryrun-stat-del(*ngIf='totals.removed') −{{ totals.removed }}
+          span.dryrun-stat-info {{ totals.withChanges }}/{{ totals.nodes }} with changes
+          span.dryrun-stat-err(*ngIf='totals.errors') {{ totals.errors }} error(s)
+        ng-container(*ngIf='overallLoading')
+          span.dryrun-stat-info pulling configs…
+      button.dryrun-close(type='button', (click)='close()') ✕
+
+    //- ── Toolbar ──────────────────────────────────────────────────────────
+    .dryrun-toolbar
+      label.dryrun-toolbar-toggle
+        input(type='checkbox', [checked]='foldUnchangedLines', (change)='toggleFold()')
+        | Fold unchanged lines
+
+    //- ── Per-node rows ────────────────────────────────────────────────────
+    .dryrun-body
+      .dryrun-empty(*ngIf='!rows.length')
+        | No pushable nodes in scope. Each row needs a startup config and SSH credentials.
+
+      .dryrun-row(*ngFor='let r of rows', [class.expanded]='r.expanded')
+        .dryrun-row-head((click)='toggleRow(r)')
+          span.dryrun-status-dot(
+            [class.status-pending]='r.status === "pending"',
+            [class.status-pulling]='r.status === "pulling"',
+            [class.status-ready]='r.status === "ready"',
+            [class.status-error]='r.status === "error" || r.status === "no-live" || r.status === "no-intent"',
+            [class.status-noop]='r.status === "ready" && !r.added && !r.removed'
+          )
+          span.dryrun-row-host {{ r.node.label }}
+          span.dryrun-row-vendor {{ r.node.vendor || '—' }}
+          span.dryrun-row-spacer
+          //- Per-row stats
+          ng-container(*ngIf='r.status === "pending"')
+            span.dryrun-row-status (queued)
+          ng-container(*ngIf='r.status === "pulling"')
+            span.dryrun-row-status pulling…
+          ng-container(*ngIf='r.status === "ready" && (r.added || r.removed)')
+            span.dryrun-row-add +{{ r.added }}
+            span.dryrun-row-del −{{ r.removed }}
+            span.dryrun-row-toggle {{ r.expanded ? '▾' : '▸' }}
+          ng-container(*ngIf='r.status === "ready" && !r.added && !r.removed')
+            span.dryrun-row-noop ✓ no changes
+          ng-container(*ngIf='r.status === "error"')
+            span.dryrun-row-err ✕ {{ r.error }}
+          ng-container(*ngIf='r.status === "no-live"')
+            span.dryrun-row-err ✕ live config empty
+          ng-container(*ngIf='r.status === "no-intent"')
+            span.dryrun-row-err ✕ no intended config
+
+        //- Inline diff (only when expanded)
+        .dryrun-row-diff(*ngIf='r.expanded && r.hunks')
+          .dryrun-diff-line(
+            *ngFor='let h of r.hunks',
+            [class.diff-line-add]='h.type === "add"',
+            [class.diff-line-del]='h.type === "del"',
+            [class.diff-line-eq]='h.type === "eq"',
+            [class.diff-line-fold]='h.type === "eq" && (h.aLine == null && h.bLine == null)'
+          )
+            span.dryrun-diff-marker
+              ng-container(*ngIf='h.type === "add"') +
+              ng-container(*ngIf='h.type === "del"') −
+              ng-container(*ngIf='h.type === "eq" && (h.aLine != null || h.bLine != null)') &nbsp;
+            span.dryrun-diff-text {{ h.text }}
+
+    //- ── Footer actions ───────────────────────────────────────────────────
+    .dryrun-footer
+      span.dryrun-footer-note(*ngIf='!overallLoading && totals.withChanges === 0')
+        | All scoped devices already match their intended config — push would be a no-op.
+      span.dryrun-footer-note(*ngIf='!overallLoading && totals.withChanges > 0')
+        | {{ totals.withChanges }} device(s) will receive changes if you push now.
+      .dryrun-footer-spacer
+      button.dryrun-btn(type='button', (click)='close()') Cancel
+      button.dryrun-btn.dryrun-btn-push(
+        type='button',
+        [disabled]='overallLoading || totals.withChanges === 0',
+        (click)='confirmPush()',
+        title='Apply only to nodes with diffs'
+      ) Push to {{ totals.withChanges }} device{{ totals.withChanges === 1 ? '' : 's' }}

@@ -188,6 +188,14 @@
   &:hover:not(:disabled) { background: #22c55e; color: #fff; }
 }
 
+// Danger variant — used by Delete Selected. Red-tinted to flag it as
+// destructive vs the normal mapper-btn neutral chrome.
+.mapper-btn-delete-sel {
+  border-color: #ef4444;
+  color: #ef4444;
+  &:hover:not(:disabled) { background: #ef4444; color: #fff; }
+}
+
 .mapper-btn-push {
   border-color: #00d2ff;
   color: #00d2ff;
@@ -198,6 +206,24 @@
   font-size: 11px;
   color: var(--text-muted);
   margin-left: auto;
+}
+
+.mapper-discovery-summary {
+  padding: 6px 20px;
+  font-size: 11px;
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.08);
+  border-bottom: 1px solid var(--border, #333);
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+.mapper-discovery-error {
+  padding: 10px 20px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .mapper-table-wrap {
@@ -236,6 +262,9 @@
   transition: background 0.1s;
   &:hover { background: var(--bg-hover, #1a1a2e); }
   &.mapped { background: rgba(34, 197, 94, 0.05); }
+  // Subtle blue tint for rows the user has checkbox-picked for Build Topology.
+  &.mapper-row-selected { background: rgba(59, 130, 246, 0.12); }
+  &.mapper-row-selected:hover { background: rgba(59, 130, 246, 0.20); }
 }
 
 .mapper-cell-name { font-weight: 600; }
@@ -293,4 +322,101 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+// Click-to-append preset chips for common exclude regex patterns.
+// Sit below the textarea so the user has one-click access to common
+// blocklist patterns without needing to learn regex.
+.mapper-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-card, #161b22);
+  color: var(--text, #e0e0e0);
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  font-family: inherit;
+  line-height: 1.3;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: var(--accent, #3b82f6);
+    color: #93c5fd;
+  }
+}
+
+// Inline regex cheatsheet shown when user clicks "Show regex syntax".
+.mapper-exclude-help {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  background: var(--bg-card, #161b22);
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  padding: 8px 12px;
+  flex: 1;
+  font-family: inherit;
+
+  .mapper-exclude-help-title {
+    font-weight: 600;
+    color: var(--text, #e0e0e0);
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 6px;
+    li {
+      padding: 1px 0;
+      color: var(--text, #e0e0e0);
+    }
+  }
+
+  code {
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 11px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 2px;
+  }
+
+  .mapper-exclude-help-foot {
+    color: var(--text-muted, #888);
+    font-size: 10.5px;
+    line-height: 1.4;
+    border-top: 1px solid var(--border, #333);
+    padding-top: 6px;
+    margin-top: 4px;
+  }
+}
+
+// Selection-count chip in the footer — clickable to clear the selection.
+.mapper-selection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s;
+  margin-right: 4px;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+  }
 }

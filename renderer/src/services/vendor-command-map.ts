@@ -83,7 +83,11 @@ export const VENDOR_COMMAND_MAP: Record<string, VendorCommands> = {
         showAlarms: 'show system alarms',
         showRouteTable: 'show route',
         showInterfaceCounters: 'show interfaces statistics',
-        showLldpNeighbors: 'show lldp neighbors',
+        // XML output keeps port-id and port-description in separate fields.
+        // The plain-text table conflates them in the "Port info" column, which
+        // breaks BFS link-building when an interface has a description set
+        // (e.g. "Connected to R3" gets returned as the neighbor port name).
+        showLldpNeighbors: 'show lldp neighbors | display xml | no-more',
         showBgpSummary: 'show bgp summary',
         loadConfigPreamble: ['configure', 'load set terminal'],
         loadConfigPostamble: ['\x04', 'commit', 'exit', 'exit'],
@@ -101,7 +105,8 @@ export const VENDOR_COMMAND_MAP: Record<string, VendorCommands> = {
         showAlarms: 'cli -c "show system alarms"',
         showRouteTable: 'cli -c "show route"',
         showInterfaceCounters: 'cli -c "show interfaces statistics"',
-        showLldpNeighbors: 'cli -c "show lldp neighbors"',
+        // See note above: prefer XML so port-id is unambiguous.
+        showLldpNeighbors: 'cli -c "show lldp neighbors | display xml | no-more"',
         showBgpSummary: 'cli -c "show bgp summary"',
         loadConfigPreamble: ['cli', 'configure', 'load set terminal'],
         loadConfigPostamble: ['\x04', 'commit', 'exit', 'exit'],

@@ -22,6 +22,8 @@ import { AutomationDashboardComponent } from './components/automation-dashboard.
 import { SchedulerPanelComponent }      from './components/scheduler-panel.component'
 import { WorkflowEditorComponent }  from './components/workflow-editor.component'
 import { ChangeManagerComponent }   from './components/change-manager.component'
+import { ConfigDiffComponent }      from './components/config-diff.component'
+import { DryRunSummaryComponent }   from './components/dry-run-summary.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
 import { TabManagerService }       from './services/tab-manager.service'
 import { LicenseService }          from './services/license.service'
@@ -53,6 +55,8 @@ import { TAB_MANAGER }             from './api/tokens'
         SchedulerPanelComponent,
         WorkflowEditorComponent,
         ChangeManagerComponent,
+        ConfigDiffComponent,
+        DryRunSummaryComponent,
         SafeHtmlPipe,
     ],
     providers: [

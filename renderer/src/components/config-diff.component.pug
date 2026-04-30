@@ -1,0 +1,113 @@
+.diff-overlay((click)='close()')
+  .diff-dialog((click)='$event.stopPropagation()')
+    .diff-header
+      h3.diff-title
+        | Config Diff
+        span.diff-node-label(*ngIf='node')   {{ node.label }}
+      span.diff-stats
+        span.diff-stat-add(*ngIf='stats.added')   +{{ stats.added }}
+        span.diff-stat-del(*ngIf='stats.removed') −{{ stats.removed }}
+        span.diff-stat-eq(*ngIf='!stats.added && !stats.removed') no differences
+      button.diff-close(type='button', (click)='close()') ✕
+
+    //- ── Source selectors row ─────────────────────────────────────────────
+    .diff-sources
+      .diff-source-col
+        .diff-source-label A (left)
+        select.diff-source-select(
+          [(ngModel)]='aSource',
+          (ngModelChange)='onSourceChange("a")',
+          title='Pick what to compare on the left side'
+        )
+          option(value='generated') Generated (intended config)
+          option(value='live')      Live (SSH pull)
+          option(value='backup', [disabled]='!backups.length') Backup
+          option(value='manual')    Manual paste
+        select.diff-source-select(
+          *ngIf='aSource === "backup"',
+          [(ngModel)]='aBackupId',
+          (ngModelChange)='onSourceChange("a")',
+          style='margin-top:4px'
+        )
+          option(*ngFor='let b of backups', [value]='b.id')
+            | {{ b.timestamp | slice:0:19 }} ({{ b.configType }})
+        button.diff-refresh-btn(
+          *ngIf='aSource === "live"',
+          type='button',
+          [disabled]='aLoading',
+          (click)='refresh("a")',
+          style='margin-top:4px'
+        ) {{ aLoading ? 'Pulling…' : '🔄 Refresh' }}
+        textarea.diff-manual-input(
+          *ngIf='aSource === "manual"',
+          rows='4',
+          [(ngModel)]='aManualText',
+          (ngModelChange)='onManualChange("a", $event)',
+          placeholder='Paste config text here…'
+        )
+        .diff-source-error(*ngIf='aError') {{ aError }}
+
+      .diff-source-arrow ↔
+
+      .diff-source-col
+        .diff-source-label B (right)
+        select.diff-source-select(
+          [(ngModel)]='bSource',
+          (ngModelChange)='onSourceChange("b")'
+        )
+          option(value='generated') Generated (intended config)
+          option(value='live')      Live (SSH pull)
+          option(value='backup', [disabled]='!backups.length') Backup
+          option(value='manual')    Manual paste
+        select.diff-source-select(
+          *ngIf='bSource === "backup"',
+          [(ngModel)]='bBackupId',
+          (ngModelChange)='onSourceChange("b")',
+          style='margin-top:4px'
+        )
+          option(*ngFor='let b of backups', [value]='b.id')
+            | {{ b.timestamp | slice:0:19 }} ({{ b.configType }})
+        button.diff-refresh-btn(
+          *ngIf='bSource === "live"',
+          type='button',
+          [disabled]='bLoading',
+          (click)='refresh("b")',
+          style='margin-top:4px'
+        ) {{ bLoading ? 'Pulling…' : '🔄 Refresh' }}
+        textarea.diff-manual-input(
+          *ngIf='bSource === "manual"',
+          rows='4',
+          [(ngModel)]='bManualText',
+          (ngModelChange)='onManualChange("b", $event)',
+          placeholder='Paste config text here…'
+        )
+        .diff-source-error(*ngIf='bError') {{ bError }}
+
+    //- ── Diff toolbar ──────────────────────────────────────────────────────
+    .diff-toolbar
+      label.diff-toolbar-toggle
+        input(type='checkbox', [checked]='foldUnchangedLines', (change)='toggleFold()')
+        | Fold unchanged ({{ contextLines }} lines context)
+      .diff-toolbar-spacer
+      button.diff-tool-btn(type='button', (click)='copyDiff()', title='Copy unified diff to clipboard') 📋 Copy
+
+    //- ── Hunks ─────────────────────────────────────────────────────────────
+    .diff-body
+      .diff-empty(*ngIf='!hunks.length && !aLoading && !bLoading')
+        | (No content to compare. Pick sources above.)
+      .diff-loading(*ngIf='aLoading || bLoading') Loading…
+      .diff-hunks(*ngIf='hunks.length')
+        .diff-line(
+          *ngFor='let h of hunks; let i = index',
+          [class.diff-line-add]='h.type === "add"',
+          [class.diff-line-del]='h.type === "del"',
+          [class.diff-line-eq]='h.type === "eq"',
+          [class.diff-line-fold]='h.type === "eq" && (h.aLine == null && h.bLine == null)'
+        )
+          span.diff-gutter-a {{ h.aLine || '' }}
+          span.diff-gutter-b {{ h.bLine || '' }}
+          span.diff-marker
+            ng-container(*ngIf='h.type === "add"') +
+            ng-container(*ngIf='h.type === "del"') −
+            ng-container(*ngIf='h.type === "eq" && (h.aLine != null || h.bLine != null)') &nbsp;
+          span.diff-text {{ h.text }}

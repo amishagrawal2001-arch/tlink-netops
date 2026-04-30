@@ -169,7 +169,35 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // menu bar
     openMenu: string | null = null
     showIpLabels = true
-    showInterfaceLabels = true
+    /** When false (default), node labels render as short names — anything
+     *  before the first dot in the FQDN. So `spine-1.englab.juniper.net`
+     *  displays as `spine-1`. Toggle to true to show full FQDNs. The
+     *  underlying node.label is unchanged; this only affects rendering. */
+    showFqdn = false
+    toggleShowFqdn (): void { this.showFqdn = !this.showFqdn; this.cdr.markForCheck() }
+
+    /** Returns the label as it should be displayed on the canvas given the
+     *  current showFqdn setting. Used for node-text rendering. */
+    nodeDisplayLabel (node: { label?: string }): string {
+        const lbl = node.label || ''
+        if (this.showFqdn) { return lbl }
+        // Short-name only: take everything before the first dot. If the
+        // hostname looks like an IP address (4 dotted-decimal octets) or
+        // has no dots at all, return it unchanged.
+        if (!lbl.includes('.')) { return lbl }
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(lbl)) { return lbl }
+        return lbl.split('.')[0]
+    }
+    /** Collapses the right-side properties sidebar to a thin handle while
+     *  keeping the current selection. Toggled via a chevron on the panel's
+     *  left edge so the user can preview canvas behind it without losing
+     *  their selection context. Defaults to expanded. */
+    propsSidebarCollapsed = false
+    togglePropsSidebar (): void { this.propsSidebarCollapsed = !this.propsSidebarCollapsed; this.cdr.markForCheck() }
+    // Off by default — on dense fabrics (45 nodes / 200 links) the per-link
+    // interface labels stack into an unreadable mass. Hover or click a link
+    // to see its labels regardless of this toggle.
+    showInterfaceLabels = false
     autoIpBaseCidr = '10.0.0.0/8'
     autoLoopbackBaseCidr = '172.16.0.0/16'
     showAutoIpDialog = false
@@ -420,6 +448,40 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showSchedulerPanel = false
     showChangeManager = false
     showBackendSettings = false
+    /** Config diff viewer state. Open with `openConfigDiff(nodeId?)`. */
+    showConfigDiff = false
+    configDiffNodeId = ''
+    /** Open the Config Diff dialog for a specific node, or the currently
+     *  selected one when nodeId is omitted. */
+    openConfigDiff (nodeId?: string): void {
+        const id = nodeId
+            ?? (this.selectedNodeId || (this.selectedNodeIds.size === 1 ? [...this.selectedNodeIds][0] : ''))
+        if (!id) {
+            this.statusMsg = 'Select a node first to compare its configs'
+            return
+        }
+        this.configDiffNodeId = id
+        this.showConfigDiff = true
+        this.cdr.markForCheck()
+    }
+
+    /** Dry-run summary state. Pulls live config + diffs against intended
+     *  for every pushable node. Operator can then commit or cancel. */
+    showDryRunSummary = false
+    dryRunNodeIds: string[] = []
+    /** Open the dry-run summary for either a specific subset (passed in)
+     *  or all push-eligible nodes (when ids empty). */
+    openDryRun (nodeIds: string[] = []): void {
+        this.dryRunNodeIds = nodeIds
+        this.showDryRunSummary = true
+        this.cdr.markForCheck()
+    }
+    /** Called by DryRunSummaryComponent when user confirms push. Forwards
+     *  to the existing pushAllConfigs path with skipConfirm=true (the
+     *  dry-run UI is the confirmation). */
+    onDryRunPushRequested (evt: { nodeIds: string[] }): void {
+        this.pushAllConfigs({ skipConfirm: true, nodeIds: evt.nodeIds })
+    }
     backendUrl = 'http://localhost:4000'
     backendConnecting = false
     showConfigViewer = false
@@ -473,6 +535,38 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 
     // Health summary widget
     showHealthWidget = false
+
+    // ── Remove Devices by Pattern dialog ──────────────────────────────────
+    // Lets the user bulk-remove canvas nodes whose label matches a regex.
+    showRemovePatternDialog = false
+    removePattern = ''
+    /** Live preview: nodes whose label matches the current regex.
+     *  Re-computed every time the user types in the dialog. */
+    get removePatternMatches (): TopologyNode[] {
+        if (!this.removePattern.trim()) { return [] }
+        let re: RegExp
+        try { re = new RegExp(this.removePattern, 'i') }
+        catch { return [] }
+        return this.topology.nodes.filter(n => re.test(n.label || '') || re.test(n.mgmtIp || ''))
+    }
+    openRemovePatternDialog (): void {
+        this.removePattern = ''
+        this.showRemovePatternDialog = true
+        this.cdr.markForCheck()
+    }
+    confirmRemovePattern (): void {
+        const targets = this.removePatternMatches
+        if (!targets.length) { return }
+        const ok = confirm(
+            `Remove ${targets.length} node(s) and any link(s) touching them from the canvas?\n\n` +
+            `This affects only the topology canvas — inventory in the Device Mapper is unchanged.`,
+        )
+        if (!ok) { return }
+        for (const n of targets) { this.svc.removeNode(n.id) }
+        this.statusMsg = `Removed ${targets.length} node(s) by pattern: ${this.removePattern}`
+        this.showRemovePatternDialog = false
+        this.cdr.markForCheck()
+    }
 
     // Set Protocol dialog
     showProtocolDialog = false
@@ -5044,7 +5138,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return this._closestPerimeterPoint(ann, otherPt.x, otherPt.y)
         }
         const node = this._nodeMap.get(nodeId)
-        if (node) { return { x: this.nodeCx(node), y: this.nodeCy(node) } }
+        if (node) {
+            const cx = this.nodeCx(node)
+            const cy = this.nodeCy(node)
+            // Clip the endpoint to the node's rectangle edge so the link
+            // terminates AT the node border instead of running into its center
+            // (which made links look like they passed through the node).
+            if (otherPt) {
+                return this._rectEdgePoint(cx, cy, this.nodeW(node), this.nodeH(node), otherPt.x, otherPt.y)
+            }
+            return { x: cx, y: cy }
+        }
         return null
     }
 
@@ -5286,7 +5390,30 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
     linkLabel (link: TopologyLink): string {
         const sp = this.portLabel(link.sourceNodeId, link.sourcePortId)
         const tp = this.portLabel(link.targetNodeId, link.targetPortId)
-        return `${sp} ↔ ${tp}`
+        const base = `${sp} ↔ ${tp}`
+        // For parallel bundles (multiple cables between the same pair) only
+        // the central link carries a label, and that label includes a "×N"
+        // count instead of N stacked labels piling on top of each other.
+        const { total } = this._parallelInfo(link)
+        if (total > 1) { return `${base}  ×${total}` }
+        return base
+    }
+
+    /**
+     * Should this link's interface label render right now?
+     * - Always render if hovered or selected (so user can probe specific cables).
+     * - Otherwise: only the "representative" link of each parallel bundle
+     *   gets a label, even when showInterfaceLabels is on. Cuts a 200-label
+     *   hairball down by ~70% on dense Clos fabrics.
+     */
+    shouldRenderLinkLabel (link: TopologyLink): boolean {
+        if (this.hoveredLinkId === link.id) { return true }
+        if (this.isLinkSelected(link.id)) { return true }
+        if (!this.showInterfaceLabels) { return false }
+        const { index, total } = this._parallelInfo(link)
+        if (total <= 1) { return true }
+        // Pick the middle link of the bundle as the label-bearer.
+        return index === Math.floor(total / 2)
     }
 
     linkIpLabel (link: TopologyLink): string {
@@ -5692,56 +5819,100 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         return result
     }
 
-    /** Build topology from LLDP discovery result — creates nodes + links automatically */
-    buildTopologyFromDiscovery (devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }>,
-                                links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>): void {
-        // Create nodes with grid layout
-        const nodeMap = new Map<string, string>() // hostname → nodeId
-        let x = 100, y = 100
-        const cols = Math.ceil(Math.sqrt(devices.length))
-        for (let i = 0; i < devices.length; i++) {
-            const dev = devices[i]
-            const type = dev.vendor.toLowerCase().includes('firewall') ? 'firewall' as const : 'router' as const
-            const node = this.svc.addNode(type, x, y)
-            this.svc.updateNodeConfig(node.id, {
-                label: dev.hostname,
-                vendor: dev.vendor,
-                model: dev.model,
-                mgmtIp: dev.mgmtIp,
-                mapped: true,
-                mappedBy: 'hostname',
-            } as any)
-            nodeMap.set(dev.hostname, node.id)
-            x += 200
-            if ((i + 1) % cols === 0) { x = 100; y += 180 }
-        }
+    /**
+     * Build topology from LLDP discovery result. Delegates to the service-level
+     * implementation which infers roles, lays out by tier, dedupes adjacencies,
+     * and creates ports matching real interface names.
+     */
+    buildTopologyFromDiscovery (
+        devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[] }>,
+        links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>,
+        opts: { replace?: boolean; sshUsername?: string; sshPassword?: string } = {},
+    ): void {
+        const r = this.svc.buildFromDiscovery(devices, links, opts)
+        const skipped = r.linksSkipped ? `, ${r.linksSkipped} link(s) skipped` : ''
+        this.statusMsg = `Built from LLDP: +${r.nodesAdded} node(s), ${r.nodesUpdated} updated, +${r.linksAdded} link(s)${skipped}`
+        this.saveTopology()
+        this.cdr.markForCheck()
+    }
 
-        // Create links
-        for (const link of links) {
-            const srcId = nodeMap.get(link.srcHost)
-            const tgtId = nodeMap.get(link.dstHost)
-            if (!srcId || !tgtId || srcId === tgtId) { continue }
-            // Check if link already exists
-            const exists = this.topology.links.some(l =>
-                (l.sourceNodeId === srcId && l.targetNodeId === tgtId) ||
-                (l.sourceNodeId === tgtId && l.targetNodeId === srcId)
-            )
-            if (exists) { continue }
-            const srcNode = this.topology.nodes.find(n => n.id === srcId)
-            const tgtNode = this.topology.nodes.find(n => n.id === tgtId)
-            if (!srcNode || !tgtNode) { continue }
-            const srcPort = srcNode.ports.find(p => !this.topology.links.some(l =>
-                (l.sourceNodeId === srcId && l.sourcePortId === p.id) || (l.targetNodeId === srcId && l.targetPortId === p.id)
-            ))
-            const tgtPort = tgtNode.ports.find(p => !this.topology.links.some(l =>
-                (l.sourceNodeId === tgtId && l.sourcePortId === p.id) || (l.targetNodeId === tgtId && l.targetPortId === p.id)
-            ))
-            if (srcPort && tgtPort) {
-                this.svc.addLink(srcId, srcPort.id, tgtId, tgtPort.id)
-            }
-        }
+    /** Wired to <device-mapper (buildFromDiscoveryRequested)>. */
+    onBuildFromDiscovery (evt: {
+        devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[]; sshUsername?: string; sshPassword?: string }>;
+        links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>;
+        replace: boolean;
+    }): void {
+        // Capture creds from the first device that has them (most common case:
+        // discovery used a single seed credential for the whole BFS).
+        const seed = evt.devices.find(d => d.sshUsername || d.sshPassword)
+        this.buildTopologyFromDiscovery(evt.devices, evt.links, {
+            replace: evt.replace,
+            sshUsername: seed?.sshUsername,
+            sshPassword: seed?.sshPassword,
+        })
+        this.showDeviceMapper = false
+        this.cdr.markForCheck()
+    }
 
-        this.statusMsg = `Built topology: ${devices.length} devices, ${links.length} links from LLDP discovery`
+    /**
+     * Streamed-discovery handler — fires after every BFS/inventory wave with
+     * just the devices and links that landed in that wave. Folds them into
+     * the live topology immediately so the canvas grows as discovery runs,
+     * rather than waiting for the whole crawl to finish.
+     *
+     * The user can keep the Device Mapper open and watch the canvas behind
+     * it populate device-by-device + link-by-link.
+     */
+    onLiveDiscoveryDelta (evt: {
+        newDevices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[]; sshUsername?: string; sshPassword?: string }>;
+        newLinks: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>;
+    }): void {
+        if (!evt.newDevices.length && !evt.newLinks.length) { return }
+        const seed = evt.newDevices.find(d => d.sshUsername || d.sshPassword)
+        // replace=false → merge with existing canvas. buildFromDiscovery's
+        // hostname-keyed dedup ensures repeated waves don't double-add nodes
+        // or links; canonical-pair link dedup handles A↔B / B↔A duplicates.
+        const r = this.svc.buildFromDiscovery(evt.newDevices, evt.newLinks, {
+            replace: false,
+            sshUsername: seed?.sshUsername,
+            sshPassword: seed?.sshPassword,
+        })
+        const total = `${this.topology.nodes.length} nodes, ${this.topology.links.length} links`
+        this.statusMsg = `Live discovery: +${r.nodesAdded} node(s), +${r.linksAdded} link(s) — ${total}`
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Persist a role change made from the Device Mapper's Mapping tab.
+     * Routes through the topology service so the change is patched
+     * (triggers undo/redo, change detection, save, config regen).
+     * An empty string clears the role (back to type-based default).
+     */
+    onMapperNodeRoleChanged (evt: { nodeId: string; role: string }): void {
+        const role = evt.role || undefined
+        this.svc.updateNodeConfig(evt.nodeId, { role: role as any })
+        // Persist immediately so the role survives a close-without-apply.
+        this.saveTopology()
+        this.statusMsg = role
+            ? `Role updated: ${role}`
+            : `Role cleared`
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Re-flow every node into a clean layout. Called by the Devices →
+     * Layout submenu. Supported modes:
+     *   - hierarchical: tier rows (super-spine / spine / leaf / ToR)
+     *   - grid:         sqrt(N) × sqrt(N) grid
+     *   - circular:     evenly-spaced ring
+     *   - force:        spring simulation (Fruchterman-Reingold)
+     * Doesn't touch links — only positions.
+     */
+    relayoutTopology (mode: 'hierarchical' | 'grid' | 'circular' | 'force' = 'hierarchical'): void {
+        const r = this.svc.relayoutAll(mode)
+        this.statusMsg = r.moved
+            ? `Re-layout (${mode}): moved ${r.moved} node(s)`
+            : `Re-layout (${mode}): nothing to move`
         this.cdr.markForCheck()
     }
 

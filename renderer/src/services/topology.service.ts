@@ -1233,6 +1233,580 @@ export class TopologyService {
         }
     }
 
+    // ── Build from network discovery (LLDP) ───────────────────────────────────
+
+    /**
+     * Build (or extend) the topology from a network-discovery result.
+     * Creates one TopologyNode per discovered device and one TopologyLink per
+     * LLDP adjacency. Existing nodes with matching hostnames are updated in
+     * place rather than duplicated.
+     *
+     * @param devices Discovered devices (hostname, mgmtIp, vendor, model, interfaces).
+     * @param links   LLDP adjacencies between hostnames + interface names.
+     * @param opts.replace        If true, wipe the current topology first. Default: false.
+     * @param opts.sshUsername    Carry these creds onto every newly-created node.
+     * @param opts.sshPassword
+     * @returns Summary counts.
+     */
+    buildFromDiscovery (
+        devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[]; aliases?: string[] }>,
+        links: Array<{ srcHost: string; srcInterface: string; dstHost: string; dstInterface: string }>,
+        opts: { replace?: boolean; sshUsername?: string; sshPassword?: string } = {},
+    ): { nodesAdded: number; nodesUpdated: number; linksAdded: number; linksSkipped: number } {
+        // Snapshot starting state
+        const startNodes: TopologyNode[] = opts.replace ? [] : [...this.topology.nodes]
+        const startLinks: TopologyLink[] = opts.replace ? [] : [...this.topology.links]
+
+        // hostname/IP/short-name → node lookup table.
+        //
+        // LLDP frequently reports the neighbor system-name as an FQDN
+        // (`spine-1.lab.example.com`), but the local node label may be the
+        // short form (`spine-1`) or vice versa. Also, some LLDP variants
+        // report the management IP instead of the hostname. Register every
+        // plausible key for each node so cross-form lookups work.
+        const byHost = new Map<string, TopologyNode>()
+        const shortName = (s: string): string => (s ?? '').toLowerCase().split('.')[0]
+        const registerNode = (n: TopologyNode): void => {
+            const labelLower = (n.label || '').toLowerCase()
+            if (labelLower && !byHost.has(labelLower)) { byHost.set(labelLower, n) }
+            const sn = shortName(labelLower)
+            if (sn && sn !== labelLower && !byHost.has(sn)) { byHost.set(sn, n) }
+            const ip = (n.mgmtIp || '').toLowerCase()
+            if (ip && !byHost.has(ip)) { byHost.set(ip, n) }
+        }
+        for (const n of startNodes) { registerNode(n) }
+
+        // Heuristic role inference from hostname / model
+        const inferRole = (hostname: string, model: string): NodeRole => {
+            const h = (hostname || '').toLowerCase()
+            const m = (model || '').toLowerCase()
+            if (h.includes('super-spine') || h.includes('superspine')) { return 'super-spine' }
+            if (h.includes('spine') || /(^|[-_])sp\d/.test(h))         { return 'spine' }
+            if (h.includes('border-leaf') || h.includes('borderleaf')) { return 'border-leaf' }
+            if (h.includes('leaf') || /(^|[-_])lf\d/.test(h))          { return 'leaf' }
+            if (h.includes('tor'))                                     { return 'tor' }
+            if (h.includes('core'))                                    { return 'core' }
+            if (h.includes('agg'))                                     { return 'aggregation' }
+            if (h.includes('access'))                                  { return 'access' }
+            // Cisco-style fabric clues from model when hostname is opaque
+            if (m.includes('qfx10') || m.includes('9500') || m.includes('7800')) { return 'spine' }
+            if (m.includes('qfx5') || m.includes('9300') || m.includes('7300'))  { return 'leaf' }
+            return 'custom'
+        }
+
+        // Maps role to (NodeType, layoutRow, displayLabel)
+        const roleLayout: Record<NodeRole, { type: NodeType; row: number }> = {
+            'super-spine': { type: 'router', row: 0 },
+            'spine':       { type: 'router', row: 1 },
+            'core':        { type: 'router', row: 1 },
+            'aggregation': { type: 'switch', row: 2 },
+            'border-leaf': { type: 'switch', row: 2 },
+            'leaf':        { type: 'switch', row: 2 },
+            'tor':         { type: 'switch', row: 3 },
+            'access':      { type: 'switch', row: 3 },
+            'gateway':     { type: 'router', row: 1 },
+            'custom':      { type: 'switch', row: 2 },
+        }
+
+        const COL_W = 200             // horizontal spacing between nodes in a tier row
+        const ROW_H = 220             // vertical spacing between tier rows (separate, non-overlapping)
+        const WRAP_ROW_H = 160        // vertical offset between wrapped sub-rows of the same tier
+        const MAX_COLS = 10           // wrap tier after this many nodes (more rows, less crowding)
+        const X_ORIGIN = 120
+        const Y_ORIGIN = 100
+
+        // Build the in-memory node array
+        const nodes: TopologyNode[] = [...startNodes]
+        let nodesAdded = 0
+        let nodesUpdated = 0
+
+        // Fuzzy lookup: try the verbatim key, then short-name, then IP.
+        // This is the SAME match policy used by inventory-mode discovery and
+        // is what makes mixed-FQDN/short-name inventories link up correctly.
+        const lookupNode = (rawKey: string): TopologyNode | undefined => {
+            const k = (rawKey || '').toLowerCase()
+            if (!k) { return undefined }
+            return byHost.get(k) ?? byHost.get(shortName(k))
+        }
+
+        // Pass 1: create-or-update node per discovered device
+        for (const dev of devices) {
+            const key = (dev.hostname || dev.mgmtIp || '').toLowerCase()
+            if (!key) { continue }
+            // Match against verbatim, short-name, AND mgmt IP.
+            const existing = lookupNode(key) ?? lookupNode(dev.mgmtIp)
+            const role = inferRole(dev.hostname, dev.model)
+            const meta = roleLayout[role] ?? roleLayout.custom
+
+            if (existing) {
+                // Merge: keep existing position, fill gaps in vendor/model/mgmtIp.
+                const idx = nodes.findIndex(n => n.id === existing.id)
+                if (idx >= 0) {
+                    nodes[idx] = {
+                        ...existing,
+                        vendor: existing.vendor || dev.vendor,
+                        model: existing.model || dev.model,
+                        mgmtIp: existing.mgmtIp || dev.mgmtIp,
+                        role: existing.role ?? role,
+                        mapped: true,
+                        mappedBy: existing.mappedBy ?? 'hostname',
+                        sshUsername: existing.sshUsername || opts.sshUsername,
+                        sshPassword: existing.sshPassword || opts.sshPassword,
+                    }
+                    nodesUpdated++
+                    // Re-register so the merged version is reachable via the
+                    // discovered device's keys too (e.g. existing label is
+                    // "Spine-2" but discovery just confirmed it's also
+                    // "spine-2.englab.juniper.net").
+                    registerNode(nodes[idx])
+                    if (key && !byHost.has(key)) { byHost.set(key, nodes[idx]) }
+                }
+            } else {
+                const ports: NodePort[] = (dev.interfaces?.length
+                    ? dev.interfaces
+                    : DEFAULT_PORTS[meta.type].map(p => p.label)
+                ).map(label => ({ id: uuid(), label, enabled: true }))
+
+                const node: TopologyNode = {
+                    id: uuid(),
+                    type: meta.type,
+                    label: dev.hostname || dev.mgmtIp,
+                    x: 0, y: 0,                            // laid out below
+                    status: 'stopped',
+                    ports,
+                    vendor: dev.vendor,
+                    model: dev.model,
+                    mgmtIp: dev.mgmtIp,
+                    role,
+                    mapped: true,
+                    mappedBy: 'hostname',
+                    sshUsername: opts.sshUsername,
+                    sshPassword: opts.sshPassword,
+                }
+                nodes.push(node)
+                registerNode(node)             // registers verbatim + short + IP
+                if (key && !byHost.has(key)) { byHost.set(key, node) }
+                // Register every BFS-collected alias too so links that
+                // reference this device by FQDN/sys-name resolve even when
+                // BFS reached it via mgmt IP (and vice versa).
+                for (const alias of (dev.aliases ?? [])) {
+                    const a = (alias || '').toLowerCase()
+                    if (a && !byHost.has(a)) { byHost.set(a, node) }
+                    const sa = shortName(a)
+                    if (sa && !byHost.has(sa)) { byHost.set(sa, node) }
+                }
+                nodesAdded++
+            }
+        }
+
+        // Pass 2: layout newly-added nodes by role row + column index.
+        // Existing nodes keep their positions. Each tier row wraps at MAX_COLS
+        // and every tier is centered horizontally against the widest tier —
+        // so 4 spines sit centered over a row of 40 leaves, not jammed at the
+        // left edge.
+        const existingIds = new Set(startNodes.map(n => n.id))
+        const newNodes = nodes.filter(n => !existingIds.has(n.id))
+
+        // Group new nodes by their tier row, preserving creation order.
+        const tierGroups = new Map<number, TopologyNode[]>()
+        for (const n of newNodes) {
+            const role = (n.role ?? 'custom') as NodeRole
+            const row = (roleLayout[role] ?? roleLayout.custom).row
+            if (!tierGroups.has(row)) { tierGroups.set(row, []) }
+            tierGroups.get(row)!.push(n)
+        }
+
+        // Width of the widest sub-row across all tiers (after wrapping).
+        // Used as the reference for centering every tier.
+        let canvasCols = 0
+        for (const group of tierGroups.values()) {
+            canvasCols = Math.max(canvasCols, Math.min(group.length, MAX_COLS))
+        }
+        if (canvasCols === 0) { canvasCols = 1 }
+        const canvasWidthPx = (canvasCols - 1) * COL_W
+
+        // Position nodes row-by-row. Place each tier (possibly wrapped) and
+        // advance the Y cursor by enough rows to contain it plus a tier gap.
+        const sortedTiers = [...tierGroups.keys()].sort((a, b) => a - b)
+        let yCursor = Y_ORIGIN
+        for (const tier of sortedTiers) {
+            const group = tierGroups.get(tier)!
+            const subRows = Math.ceil(group.length / MAX_COLS)
+            for (let i = 0; i < group.length; i++) {
+                const subRow = Math.floor(i / MAX_COLS)
+                const colInSubRow = i % MAX_COLS
+                // Count of nodes on THIS sub-row (last sub-row may be shorter)
+                const nodesOnThisSubRow = Math.min(MAX_COLS, group.length - subRow * MAX_COLS)
+                const subRowWidthPx = (nodesOnThisSubRow - 1) * COL_W
+                const subRowLeft = X_ORIGIN + (canvasWidthPx - subRowWidthPx) / 2
+                group[i].x = subRowLeft + colInSubRow * COL_W
+                group[i].y = yCursor + subRow * WRAP_ROW_H
+            }
+            yCursor += Math.max(1, subRows) * WRAP_ROW_H + ROW_H
+        }
+
+        // Pass 3: convert LLDP adjacencies into TopologyLinks.
+        // De-dupe by canonical endpoint pair so A↔B and B↔A don't both appear.
+        const newLinks: TopologyLink[] = [...startLinks]
+        const usedPorts = new Set<string>()
+        for (const l of newLinks) {
+            usedPorts.add(`${l.sourceNodeId}|${l.sourcePortId}`)
+            usedPorts.add(`${l.targetNodeId}|${l.targetPortId}`)
+        }
+        const linkPairSeen = new Set<string>()
+        for (const l of newLinks) {
+            const a = `${l.sourceNodeId}|${l.sourcePortId}`
+            const b = `${l.targetNodeId}|${l.targetPortId}`
+            linkPairSeen.add(a < b ? `${a}::${b}` : `${b}::${a}`)
+        }
+
+        // Find-or-create a port on a node by interface label (case-insensitive).
+        // LLDP gives real iface names; if the node was pre-existing and has only
+        // generic ports, we add the iface as a fresh port so the link can latch.
+        // When ifaceLabel is empty (e.g. LLDP returned a description we
+        // rejected), pick the first port not already bound to a link instead
+        // of creating a port with a blank label.
+        const findOrAddPort = (node: TopologyNode, ifaceLabel: string): NodePort => {
+            // Empty label → pick first unused port; if all are used, create a
+            // synthetic placeholder so the link still renders.
+            if (!ifaceLabel || !ifaceLabel.trim()) {
+                for (const p of node.ports) {
+                    if (!usedPorts.has(`${node.id}|${p.id}`)) { return p }
+                }
+                const placeholder: NodePort = {
+                    id: uuid(), label: `port-${node.ports.length + 1}`, enabled: true,
+                }
+                node.ports.push(placeholder)
+                return placeholder
+            }
+            const target = ifaceLabel.toLowerCase()
+            const targetNorm = target.replace(/[-_/]/g, '')
+            // 1) exact (case-insensitive)
+            for (const p of node.ports) {
+                if ((p.label || '').toLowerCase() === target) { return p }
+            }
+            // 2) normalized (handles et-0/0/0 vs et0/0/0)
+            for (const p of node.ports) {
+                if ((p.label || '').toLowerCase().replace(/[-_/]/g, '') === targetNorm) { return p }
+            }
+            // 3) create
+            const fresh: NodePort = { id: uuid(), label: ifaceLabel, enabled: true }
+            node.ports.push(fresh)
+            return fresh
+        }
+
+        let linksAdded = 0
+        let linksSkipped = 0
+        // Track which adjacencies failed to resolve so we can log a useful
+        // diagnostic when 0 links land — usually means LLDP-reported
+        // hostnames don't match any inventory entry.
+        const unresolvedHosts = new Set<string>()
+        for (const adj of links) {
+            const src = lookupNode(adj.srcHost)
+            const dst = lookupNode(adj.dstHost)
+            if (!src || !dst || src.id === dst.id) {
+                if (!src) { unresolvedHosts.add(adj.srcHost) }
+                if (!dst) { unresolvedHosts.add(adj.dstHost) }
+                linksSkipped++; continue
+            }
+            const srcPort = findOrAddPort(src, adj.srcInterface)
+            const dstPort = findOrAddPort(dst, adj.dstInterface)
+            const a = `${src.id}|${srcPort.id}`
+            const b = `${dst.id}|${dstPort.id}`
+            const pair = a < b ? `${a}::${b}` : `${b}::${a}`
+            if (linkPairSeen.has(pair) || usedPorts.has(a) || usedPorts.has(b)) {
+                linksSkipped++; continue
+            }
+            newLinks.push({
+                id: uuid(),
+                type: 'ethernet',
+                sourceNodeId: src.id,
+                sourcePortId: srcPort.id,
+                targetNodeId: dst.id,
+                targetPortId: dstPort.id,
+            })
+            linkPairSeen.add(pair)
+            usedPorts.add(a); usedPorts.add(b)
+            linksAdded++
+        }
+
+        // Surface a debug log when nothing linked — pinpoints unresolved
+        // hostnames so the user knows why their canvas stayed empty.
+        if (linksAdded === 0 && unresolvedHosts.size > 0) {
+            console.warn(
+                `[buildFromDiscovery] 0 links added — ${unresolvedHosts.size} LLDP hostname(s) ` +
+                `did not match any node in inventory: ${[...unresolvedHosts].slice(0, 8).join(', ')}` +
+                (unresolvedHosts.size > 8 ? ` …and ${unresolvedHosts.size - 8} more` : '') +
+                `. Available node labels: ${[...nodes].slice(0, 8).map(n => n.label).join(', ')}`,
+            )
+        }
+
+        // Commit
+        this._patch({ nodes, links: newLinks })
+        return { nodesAdded, nodesUpdated, linksAdded, linksSkipped }
+    }
+
+    /**
+     * Re-flow ALL existing nodes into a clean layout. Supported modes:
+     *   - 'hierarchical' (default) — tier rows with barycenter sort
+     *   - 'grid'                   — sqrt(N) × sqrt(N) grid
+     *   - 'circular'               — evenly spaced ring
+     *   - 'force'                  — spring simulation (Fruchterman-Reingold)
+     *
+     * Useful after incremental discovery left the canvas crowded, or when
+     * nodes have been added/removed and you want a clean reset.
+     */
+    relayoutAll (mode: 'hierarchical' | 'grid' | 'circular' | 'force' = 'hierarchical'): { moved: number } {
+        const nodes = [...this.topology.nodes]
+        if (!nodes.length) { return { moved: 0 } }
+
+        let moved = 0
+        const before = nodes.map(n => ({ id: n.id, x: n.x, y: n.y }))
+
+        if (mode === 'grid')          { this._layoutGrid(nodes) }
+        else if (mode === 'circular') { this._layoutCircular(nodes) }
+        else if (mode === 'force')    { this._layoutForce(nodes) }
+        else                          { this._layoutHierarchical(nodes) }
+
+        // Count actually-moved nodes (some may have stayed put within rounding).
+        for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i].x !== before[i].x || nodes[i].y !== before[i].y) { moved++ }
+        }
+
+        // Replace nodes array (fresh ref so change-detection fires).
+        this._patch({ nodes: [...nodes] })
+        return { moved }
+    }
+
+    /** Simple grid layout: sqrt(N) cols, fixed cell size. */
+    private _layoutGrid (nodes: TopologyNode[]): void {
+        const COL_W = 200, ROW_H = 180, X_ORIGIN = 120, Y_ORIGIN = 100
+        const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
+        for (let i = 0; i < nodes.length; i++) {
+            const r = Math.floor(i / cols)
+            const c = i % cols
+            nodes[i].x = X_ORIGIN + c * COL_W
+            nodes[i].y = Y_ORIGIN + r * ROW_H
+        }
+    }
+
+    /** Circular: nodes evenly spaced around a ring. Radius scales with N. */
+    private _layoutCircular (nodes: TopologyNode[]): void {
+        const N = nodes.length
+        const radius = Math.max(200, N * 22)            // scale with node count
+        const cx = 120 + radius                         // center x
+        const cy = 100 + radius                         // center y
+        const angleStep = (Math.PI * 2) / N
+        for (let i = 0; i < N; i++) {
+            const angle = -Math.PI / 2 + i * angleStep  // start at top, go clockwise
+            nodes[i].x = cx + radius * Math.cos(angle)
+            nodes[i].y = cy + radius * Math.sin(angle)
+        }
+    }
+
+    /**
+     * Force-directed layout (lightweight Fruchterman-Reingold).
+     * - Every pair of nodes repels (Coulomb-like)
+     * - Each link pulls its endpoints together (Hooke-like spring)
+     * - Iterates with cooling temperature so the system settles
+     *
+     * Tuned for 10–200 nodes. Above that consider a worker; for now we
+     * cap iterations so the UI thread stays responsive.
+     */
+    private _layoutForce (nodes: TopologyNode[]): void {
+        const N = nodes.length
+        if (N < 2) { return }
+
+        // Seed positions: scatter randomly inside a square of side ~ k*sqrt(N).
+        const k = 200
+        const side = k * Math.sqrt(N)
+        const cx = 120 + side / 2
+        const cy = 100 + side / 2
+        const idIdx = new Map<string, number>()
+        for (let i = 0; i < N; i++) {
+            idIdx.set(nodes[i].id, i)
+            nodes[i].x = cx + (Math.random() - 0.5) * side
+            nodes[i].y = cy + (Math.random() - 0.5) * side
+        }
+
+        // Precompute adjacency (link list for spring forces)
+        const links = this.topology.links
+            .map(l => [idIdx.get(l.sourceNodeId), idIdx.get(l.targetNodeId)])
+            .filter((p): p is [number, number] => p[0] != null && p[1] != null)
+
+        const ITERATIONS = Math.min(200, 100 + N * 2)
+        const area = side * side
+        const naturalLength = Math.sqrt(area / N)        // ideal edge length
+        let temperature = side / 10                      // initial step cap
+
+        for (let iter = 0; iter < ITERATIONS; iter++) {
+            // displacement accumulator
+            const dx = new Array(N).fill(0)
+            const dy = new Array(N).fill(0)
+
+            // Repulsion: every node pushes every other node away (O(N²)).
+            for (let i = 0; i < N; i++) {
+                for (let j = i + 1; j < N; j++) {
+                    let ddx = nodes[i].x - nodes[j].x
+                    let ddy = nodes[i].y - nodes[j].y
+                    let dist = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01
+                    const force = (naturalLength * naturalLength) / dist
+                    ddx = (ddx / dist) * force
+                    ddy = (ddy / dist) * force
+                    dx[i] += ddx; dy[i] += ddy
+                    dx[j] -= ddx; dy[j] -= ddy
+                }
+            }
+            // Attraction: each link pulls endpoints together.
+            for (const [a, b] of links) {
+                let ddx = nodes[a].x - nodes[b].x
+                let ddy = nodes[a].y - nodes[b].y
+                const dist = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01
+                const force = (dist * dist) / naturalLength
+                ddx = (ddx / dist) * force
+                ddy = (ddy / dist) * force
+                dx[a] -= ddx; dy[a] -= ddy
+                dx[b] += ddx; dy[b] += ddy
+            }
+            // Apply, capped by current temperature (cooling schedule).
+            for (let i = 0; i < N; i++) {
+                const disp = Math.sqrt(dx[i] * dx[i] + dy[i] * dy[i]) || 0.01
+                const capped = Math.min(disp, temperature)
+                nodes[i].x += (dx[i] / disp) * capped
+                nodes[i].y += (dy[i] / disp) * capped
+            }
+            // Linear cooling
+            temperature = Math.max(0.5, temperature * (1 - iter / ITERATIONS))
+        }
+        // Translate so min(x,y) is at the origin offset (canvas coords are positive).
+        let minX = Infinity, minY = Infinity
+        for (const n of nodes) {
+            if (n.x < minX) { minX = n.x }
+            if (n.y < minY) { minY = n.y }
+        }
+        const tx = 120 - minX
+        const ty = 100 - minY
+        for (const n of nodes) { n.x += tx; n.y += ty }
+    }
+
+    /** Hierarchical (tier-row) layout — extracted from the previous relayoutAll. */
+    private _layoutHierarchical (nodes: TopologyNode[]): void {
+        if (!nodes.length) { return }
+
+        // Same role → tier mapping the build uses. Mirrored here to keep the
+        // re-layout self-contained (callers don't have to pass a config).
+        const roleLayout: Record<string, { row: number }> = {
+            'super-spine': { row: 0 },
+            'spine':       { row: 1 },
+            'core':        { row: 1 },
+            'aggregation': { row: 2 },
+            'border-leaf': { row: 2 },
+            'leaf':        { row: 2 },
+            'tor':         { row: 3 },
+            'access':      { row: 3 },
+            'gateway':     { row: 1 },
+            'custom':      { row: 2 },
+        }
+        // Heuristic role inference for nodes that don't have a role tag.
+        const inferRole = (n: { role?: string; label?: string; type: string; model?: string }): string => {
+            if (n.role && n.role !== 'custom') { return n.role }
+            const h = (n.label || '').toLowerCase()
+            const m = (n.model || '').toLowerCase()
+            if (h.includes('super-spine') || h.includes('superspine')) { return 'super-spine' }
+            if (h.includes('spine'))                                    { return 'spine' }
+            if (h.includes('border-leaf') || h.includes('borderleaf'))  { return 'border-leaf' }
+            if (h.includes('leaf'))                                     { return 'leaf' }
+            if (h.includes('tor'))                                      { return 'tor' }
+            if (h.includes('core'))                                     { return 'core' }
+            if (h.includes('agg'))                                      { return 'aggregation' }
+            if (h.includes('access'))                                   { return 'access' }
+            if (m.includes('qfx10') || m.includes('9500') || m.includes('7800')) { return 'spine' }
+            if (m.includes('qfx5') || m.includes('9300') || m.includes('7300'))  { return 'leaf' }
+            return 'custom'
+        }
+
+        const COL_W = 200
+        const ROW_H = 220
+        const WRAP_ROW_H = 160
+        const MAX_COLS = 10
+        const X_ORIGIN = 120
+        const Y_ORIGIN = 100
+
+        // Group every node by inferred tier row.
+        const tierGroups = new Map<number, TopologyNode[]>()
+        for (const n of nodes) {
+            const role = inferRole(n)
+            const row = (roleLayout[role] ?? roleLayout.custom).row
+            if (!tierGroups.has(row)) { tierGroups.set(row, []) }
+            tierGroups.get(row)!.push(n)
+        }
+
+        // ── Barycenter sort: minimize edge crossings between adjacent tiers ──
+        //
+        // For each pair of tiers (top→bottom and bottom→top), reorder the
+        // lower tier's nodes by the mean column index of their connections
+        // in the upper tier. Iterates a few sweeps to stabilize. This is
+        // the same algorithm graphviz / dagre use for layered graph layout.
+        //
+        // Effect on a 4-spine 30-leaf Clos: leaves reorder so that leaves
+        // connected to spine-1 cluster on the left, spine-2 next, etc —
+        // dramatically cuts edge crossings without changing topology.
+        const sortedTierIds = [...tierGroups.keys()].sort((a, b) => a - b)
+        if (sortedTierIds.length >= 2 && this.topology.links.length > 0) {
+            // node.id → adjacency set (counts duplicates, used for barycenter)
+            const adjByNode = new Map<string, string[]>()
+            for (const l of this.topology.links) {
+                if (!adjByNode.has(l.sourceNodeId)) { adjByNode.set(l.sourceNodeId, []) }
+                if (!adjByNode.has(l.targetNodeId)) { adjByNode.set(l.targetNodeId, []) }
+                adjByNode.get(l.sourceNodeId)!.push(l.targetNodeId)
+                adjByNode.get(l.targetNodeId)!.push(l.sourceNodeId)
+            }
+            const barycenter = (n: TopologyNode, peerTier: TopologyNode[]): number => {
+                const peerIdx = new Map<string, number>()
+                peerTier.forEach((p, i) => peerIdx.set(p.id, i))
+                const adj = adjByNode.get(n.id) ?? []
+                const cols = adj.map(id => peerIdx.get(id)).filter((x): x is number => x != null)
+                if (!cols.length) { return Number.MAX_SAFE_INTEGER } // floats to the right
+                return cols.reduce((a, b) => a + b, 0) / cols.length
+            }
+            // 4 sweeps: down, up, down, up — usually converges in 2.
+            for (let sweep = 0; sweep < 4; sweep++) {
+                const tierOrder = sweep % 2 === 0 ? sortedTierIds : [...sortedTierIds].reverse()
+                for (let i = 1; i < tierOrder.length; i++) {
+                    const peer = tierGroups.get(tierOrder[i - 1])!
+                    const me = tierGroups.get(tierOrder[i])!
+                    me.sort((a, b) => barycenter(a, peer) - barycenter(b, peer))
+                }
+            }
+        }
+
+        // Find widest tier (after wrapping) to center every other tier against.
+        let canvasCols = 0
+        for (const group of tierGroups.values()) {
+            canvasCols = Math.max(canvasCols, Math.min(group.length, MAX_COLS))
+        }
+        if (canvasCols === 0) { canvasCols = 1 }
+        const canvasWidthPx = (canvasCols - 1) * COL_W
+
+        // Position each tier; advance Y cursor enough to clear wrapped sub-rows.
+        let yCursor = Y_ORIGIN
+        for (const tier of sortedTierIds) {
+            const group = tierGroups.get(tier)!
+            const subRows = Math.ceil(group.length / MAX_COLS)
+            for (let i = 0; i < group.length; i++) {
+                const subRow = Math.floor(i / MAX_COLS)
+                const colInSubRow = i % MAX_COLS
+                const nodesOnThisSubRow = Math.min(MAX_COLS, group.length - subRow * MAX_COLS)
+                const subRowWidthPx = (nodesOnThisSubRow - 1) * COL_W
+                const subRowLeft = X_ORIGIN + (canvasWidthPx - subRowWidthPx) / 2
+                group[i].x = subRowLeft + colInSubRow * COL_W
+                group[i].y = yCursor + subRow * WRAP_ROW_H
+            }
+            yCursor += Math.max(1, subRows) * WRAP_ROW_H + ROW_H
+        }
+        // No _patch here — the dispatcher (relayoutAll) commits and counts moves.
+    }
+
     // ── Service Profiles ──────────────────────────────────────────────────────
 
     /**

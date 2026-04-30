@@ -210,6 +210,8 @@
         (mouseenter)='onMenuEnter("view")'
       ) View
       .menu-dropdown(*ngIf='openMenu === "view"')
+        //- ── Zoom / Navigation ─────────────────────────────────────────
+        .menu-item-section Zoom
         button.menu-item(type='button', [disabled]='vpScale >= maxScale', (click)='zoomIn(); closeMenus()')
           span.mi-icon +
           span.mi-label Zoom In
@@ -221,13 +223,28 @@
         button.menu-item(type='button', (click)='resetView(); closeMenus()')
           span.mi-icon ⊕
           span.mi-label Fit / Reset View
-        .menu-sep
+
+        //- ── Labels (what's drawn on nodes/links) ──────────────────────
+        .menu-item-divider
+        .menu-item-section Labels
         button.menu-item(type='button', [class.menu-item-checked]='showIpLabels', (click)='toggleIpVisibility(); closeMenus()')
           span.mi-check {{ showIpLabels ? '✓' : '' }}
-          span.mi-label Show IP Labels
+          span.mi-label IP Labels
+        button.menu-item(type='button', [class.menu-item-checked]='showIpv6Labels', (click)='showIpv6Labels = !showIpv6Labels; closeMenus()')
+          span.mi-check {{ showIpv6Labels ? '✓' : '' }}
+          span.mi-label IPv6 Labels
         button.menu-item(type='button', [class.menu-item-checked]='showInterfaceLabels', (click)='toggleInterfaceLabels(); closeMenus()')
           span.mi-check {{ showInterfaceLabels ? '✓' : '' }}
-          span.mi-label Show Interface Labels
+          span.mi-label Interface Labels
+        button.menu-item(type='button', [class.menu-item-checked]='showFqdn',
+          (click)='toggleShowFqdn(); closeMenus()',
+          title='When off (default), node labels show only the short name (everything before the first dot). When on, the full FQDN is displayed.')
+          span.mi-check {{ showFqdn ? '✓' : '' }}
+          span.mi-label FQDN (full hostnames)
+
+        //- ── Overlays (visualization modes) ────────────────────────────
+        .menu-item-divider
+        .menu-item-section Overlays
         button.menu-item(type='button', [class.menu-item-checked]='showVlanView', (click)='toggleVlanView(); closeMenus()')
           span.mi-check {{ showVlanView ? '✓' : '' }}
           span.mi-label VLAN View
@@ -237,64 +254,69 @@
         button.menu-item(type='button', [class.menu-item-checked]='showTrafficFlowView', (click)='toggleTrafficFlowView(); closeMenus()')
           span.mi-check {{ showTrafficFlowView ? '✓' : '' }}
           span.mi-label Traffic Flows
-        .menu-sep
-        button.menu-item(type='button', [class.menu-item-checked]='showTrafficFlowPanel', (click)='toggleTrafficFlowPanel(); closeMenus()')
-          span.mi-check {{ showTrafficFlowPanel ? '✓' : '' }}
-          span.mi-label Flow Panel
         button.menu-item(type='button', [class.menu-item-checked]='showRouteView', (click)='toggleRouteView(); closeMenus()')
           span.mi-check {{ showRouteView ? '✓' : '' }}
-          span.mi-label Route Table View
+          span.mi-label Route Table
         button.menu-item(type='button', [class.menu-item-checked]='showCounterView', (click)='toggleCounterView(); closeMenus()')
           span.mi-check {{ showCounterView ? '✓' : '' }}
           span.mi-label Interface Counters
-        button.menu-item(type='button', [class.menu-item-checked]='showIpv6Labels', (click)='showIpv6Labels = !showIpv6Labels; closeMenus()')
-          span.mi-check {{ showIpv6Labels ? '✓' : '' }}
-          span.mi-label IPv6 Labels
-        .menu-sep
-        button.menu-item(type='button', [class.menu-item-checked]='showHealthWidget', (click)='showHealthWidget = !showHealthWidget; closeMenus()')
-          span.mi-check {{ showHealthWidget ? '✓' : '' }}
-          span.mi-label Health Widget
         button.menu-item(type='button', [class.menu-item-checked]='showAlarmOverlay', (click)='showAlarmOverlay = !showAlarmOverlay; closeMenus()')
           span.mi-check {{ showAlarmOverlay ? '✓' : '' }}
           span.mi-label Alarm Overlay
+
+        //- ── Side panels / floating widgets ────────────────────────────
+        .menu-item-divider
+        .menu-item-section Panels
         button.menu-item(type='button', [class.menu-item-checked]='showMinimap', (click)='showMinimap = !showMinimap; closeMenus()')
           span.mi-check {{ showMinimap ? '✓' : '' }}
           span.mi-label Minimap
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("force"); closeMenus()')
-          span.mi-icon ⊛
-          span.mi-label Auto-Layout: Force
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("hierarchical"); closeMenus()')
-          span.mi-icon ⊟
-          span.mi-label Auto-Layout: Hierarchical
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("radial"); closeMenus()')
-          span.mi-icon ◎
-          span.mi-label Auto-Layout: Radial
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("grid"); closeMenus()')
-          span.mi-icon ⊞
-          span.mi-label Auto-Layout: Grid
-        button.menu-item(type='button', (click)='toggleLinkStyle(); closeMenus()')
-          span.mi-check {{ !linkStyleCurved ? '✓' : '' }}
-          span.mi-label Straight Links
-        .menu-sep
+        button.menu-item(type='button', [class.menu-item-checked]='showHealthWidget', (click)='showHealthWidget = !showHealthWidget; closeMenus()')
+          span.mi-check {{ showHealthWidget ? '✓' : '' }}
+          span.mi-label Health Widget
+        button.menu-item(type='button', [class.menu-item-checked]='showTrafficFlowPanel', (click)='toggleTrafficFlowPanel(); closeMenus()')
+          span.mi-check {{ showTrafficFlowPanel ? '✓' : '' }}
+          span.mi-label Flow Panel
         button.menu-item(type='button', [class.menu-item-checked]='showIpam', (click)='toggleIpam(); closeMenus()')
           span.mi-check {{ showIpam ? '✓' : '' }}
           span.mi-label IPAM Panel
         button.menu-item(type='button', [class.menu-item-checked]='showSyslogPanel', (click)='toggleSyslogPanel(); closeMenus()')
           span.mi-check {{ showSyslogPanel ? '✓' : '' }}
           span.mi-label Syslog Feed
-        .menu-sep
+
+        //- ── Canvas chrome (links, grid, background) ───────────────────
+        .menu-item-divider
+        .menu-item-section Canvas
+        button.menu-item(type='button', (click)='toggleLinkStyle(); closeMenus()')
+          span.mi-check {{ !linkStyleCurved ? '✓' : '' }}
+          span.mi-label Straight Links
         button.menu-item(type='button', [class.menu-item-checked]='showGrid', (click)='toggleGrid(); closeMenus()')
           span.mi-check {{ showGrid ? '✓' : '' }}
           span.mi-label Show Grid
         button.menu-item(type='button', [class.menu-item-checked]='gridSize === "small"', (click)='setGridSize("small"); closeMenus()')
           span.mi-check {{ gridSize === 'small' ? '✓' : '' }}
-          span.mi-label Grid: Small
+          span.mi-label   Grid: Small
         button.menu-item(type='button', [class.menu-item-checked]='gridSize === "medium"', (click)='setGridSize("medium"); closeMenus()')
           span.mi-check {{ gridSize === 'medium' ? '✓' : '' }}
-          span.mi-label Grid: Medium
+          span.mi-label   Grid: Medium
         button.menu-item(type='button', [class.menu-item-checked]='gridSize === "large"', (click)='setGridSize("large"); closeMenus()')
           span.mi-check {{ gridSize === 'large' ? '✓' : '' }}
-          span.mi-label Grid: Large
+          span.mi-label   Grid: Large
+
+        //- ── Quick auto-layout (older algorithms; canonical layout sub-menu lives under Devices) ──
+        .menu-item-divider
+        .menu-item-section Quick Layout
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("hierarchical"); closeMenus()')
+          span.mi-icon ⊟
+          span.mi-label Hierarchical
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("force"); closeMenus()')
+          span.mi-icon ⊛
+          span.mi-label Force
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("radial"); closeMenus()')
+          span.mi-icon ◎
+          span.mi-label Radial
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoLayout("grid"); closeMenus()')
+          span.mi-icon ⊞
+          span.mi-label Grid
 
     //- ── Devices ──────────────────────────
     .menu-item-wrap
@@ -305,40 +327,75 @@
         (mouseenter)='onMenuEnter("devices")'
       ) Devices
       .menu-dropdown(*ngIf='openMenu === "devices"')
+        //- ── Inventory I/O ──────────────────────────────────────────────
+        .menu-item-section Inventory
+        button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
+          span.mi-icon 🔗
+          span.mi-label Device Mapper / Discovery…
         button.menu-item(type='button', (click)='openDeviceImport(); closeMenus()')
           span.mi-icon ⌁
           span.mi-label Import Device CSV…
-        button.menu-item(type='button', (click)='showDeviceMapper = true; closeMenus()')
-          span.mi-icon 🔗
-          span.mi-label Device Mapper Wizard…
-        button.menu-item(type='button', [disabled]='!mappedNodeCount', (click)='showMappedDevicesPanel = true; closeMenus()')
-          span.mi-icon 📋
-          span.mi-label Mapped Devices ({{ mappedNodeCount }})
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='exportDeviceCsv(); closeMenus()')
           span.mi-icon ⇣
           span.mi-label Export Device CSV
-        .menu-sep
-        button.menu-item(type='button', [disabled]='linkCount === 0', (click)='autoAddressTopology(); closeMenus()')
-          span.mi-icon ◌
-          span.mi-label Auto-Assign IPv4 IPs…
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoGenerateLoopbacks(); closeMenus()')
-          span.mi-icon Lo
-          span.mi-label Auto-Assign IPv4 Loopbacks
-        .menu-sep
-        button.menu-item(type='button', [disabled]='linkCount === 0', (click)='autoAddressV6(); closeMenus()')
-          span.mi-icon v6
-          span.mi-label Auto-Assign IPv6 /127 IPs
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoGenerateLoopbacksV6(); closeMenus()')
-          span.mi-icon v6
-          span.mi-label Auto-Assign IPv6 Loopbacks
-        .menu-sep
-        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openServiceDialog(); closeMenus()')
-          span.mi-icon ⬡
-          span.mi-label Apply Service Profile…
+        button.menu-item(type='button', [disabled]='!mappedNodeCount', (click)='showMappedDevicesPanel = true; closeMenus()')
+          span.mi-icon 📋
+          span.mi-label Mapped Devices ({{ mappedNodeCount }})
+
+        //- ── Layout ────────────────────────────────────────────────────
+        .menu-item-divider
+        .menu-item-section Layout
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='relayoutTopology("hierarchical"); closeMenus()',
+          title='Tier rows (super-spine / spine / leaf / ToR) with barycenter sort to minimize edge crossings')
+          span.mi-icon ⊞
+          span.mi-label Hierarchical (tiers)
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='relayoutTopology("force"); closeMenus()',
+          title='Force-directed (spring simulation) — connected nodes pull together, all nodes repel. Best for non-hierarchical fabrics.')
+          span.mi-icon ✦
+          span.mi-label Force-directed
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='relayoutTopology("circular"); closeMenus()',
+          title='Evenly-spaced ring')
+          span.mi-icon ◯
+          span.mi-label Circular
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='relayoutTopology("grid"); closeMenus()',
+          title='Square grid layout — ignores topology, places nodes in row-major order')
+          span.mi-icon ▦
+          span.mi-label Grid
+
+        //- ── Configuration ─────────────────────────────────────────────
+        .menu-item-divider
+        .menu-item-section Configuration
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openProtocolDialog(); closeMenus()')
           span.mi-icon ⚙
           span.mi-label Set Protocol…
           span.mi-shortcut Ctrl+Shift+P
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openServiceDialog(); closeMenus()')
+          span.mi-icon ⬡
+          span.mi-label Apply Service Profile…
+
+        //- ── Auto-assign IP / Loopback ─────────────────────────────────
+        .menu-item-divider
+        .menu-item-section Auto-Assign
+        button.menu-item(type='button', [disabled]='linkCount === 0', (click)='autoAddressTopology(); closeMenus()')
+          span.mi-icon ◌
+          span.mi-label IPv4 Link IPs…
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoGenerateLoopbacks(); closeMenus()')
+          span.mi-icon Lo
+          span.mi-label IPv4 Loopbacks
+        button.menu-item(type='button', [disabled]='linkCount === 0', (click)='autoAddressV6(); closeMenus()')
+          span.mi-icon v6
+          span.mi-label IPv6 /127 Link IPs
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='autoGenerateLoopbacksV6(); closeMenus()')
+          span.mi-icon v6
+          span.mi-label IPv6 Loopbacks
+
+        //- ── Cleanup (destructive, last) ───────────────────────────────
+        .menu-item-divider
+        .menu-item-section Cleanup
+        button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openRemovePatternDialog(); closeMenus()',
+          title='Remove canvas nodes whose label or mgmt IP matches a regex pattern. Inventory is unaffected.')
+          span.mi-icon 🗑
+          span.mi-label Remove Devices by Pattern…
 
     //- ── Inventory ────────────────────────
     .menu-item-wrap
@@ -485,6 +542,18 @@
         button.menu-item(type='button', (click)='showAutomationDashboard = true; closeMenus()')
           span.mi-icon 🤖
           span.mi-label Automation Dashboard
+        button.menu-item(type='button',
+          [disabled]='!selectedNodeId && selectedNodeIds.size !== 1',
+          title='Compare configs for the selected node — generated vs live SSH pull, against a backup, or against pasted text',
+          (click)='openConfigDiff(); closeMenus()')
+          span.mi-icon ⇄
+          span.mi-label Config Diff…
+        button.menu-item(type='button',
+          [disabled]='nodeCount === 0',
+          title='Pull live config from each push-eligible device, diff against intended, and show what WOULD change. Nothing is committed unless you confirm.',
+          (click)='openDryRun([]); closeMenus()')
+          span.mi-icon 👁
+          span.mi-label Dry Run Push…
         .menu-sep
         button.menu-item(type='button', (click)='openEventRulesDialog(); closeMenus()')
           span.mi-icon ⚡
@@ -1011,7 +1080,7 @@
                   [attr.d]='linkPath(link)'
                 )
                 text.link-label(
-                  *ngIf='showInterfaceLabels',
+                  *ngIf='shouldRenderLinkLabel(link)',
                   text-anchor='middle',
                   [attr.x]='linkMidpoint(link).x',
                   [attr.y]='linkMidpoint(link).y'
@@ -1185,8 +1254,9 @@
                     [attr.x]='nodeW(node) / 2',
                     [attr.y]='nodeH(node) / 2 + 12',
                     [style.fill]='meta[node.type].textColor',
-                    [style.font-size]='nodeW(node) < 70 ? "9px" : null'
-                  ) {{ node.label }}
+                    [style.font-size]='nodeW(node) < 70 ? "9px" : null',
+                    [attr.title]='node.label'
+                  ) {{ nodeDisplayLabel(node) }}
                 foreignObject(
                   x='4',
                   height='22',
@@ -1975,6 +2045,11 @@
           ) Diff with Another Node…
           button.ctx-item(
             type='button',
+            title='Compare this device\'s configs across sources: generated vs live SSH pull, against a backup, or against pasted text',
+            (click)='$event.stopPropagation(); openConfigDiff(ctxNodeId!); closeCtxMenu()'
+          ) Config Diff (Generated / Live / Backup)…
+          button.ctx-item(
+            type='button',
             [disabled]='!ctxNodeHasConfig',
             (click)='$event.stopPropagation(); ctxShowTroubleshoot(ctxNodeId!)'
           ) Troubleshoot
@@ -2139,9 +2214,21 @@
           button.port-cancel(type='button', (click)='closePortPicker()') Cancel
 
       //- ── Properties sidebar ─────────────────────────────────────────────
-      .props-sidebar([class.open]='selectedNodeId || selectedLinkId || selectedShapeId', [class.shape-only]='selectedShapeId && !selectedNodeId && !selectedLinkId')
+      //- Thin-column collapse toggle, sibling to the right of the canvas
+      //- and to the left of the sidebar. Mirrors the left palette's toggle.
+      button.props-collapse-handle(
+        *ngIf='selectedNodeId || selectedLinkId || selectedShapeId',
+        type='button',
+        [title]='propsSidebarCollapsed ? "Expand panel" : "Collapse panel"',
+        (click)='togglePropsSidebar()'
+      ) {{ propsSidebarCollapsed ? '◂' : '▸' }}
+      .props-sidebar(
+        [class.open]='selectedNodeId || selectedLinkId || selectedShapeId',
+        [class.collapsed]='propsSidebarCollapsed',
+        [class.shape-only]='selectedShapeId && !selectedNodeId && !selectedLinkId'
+      )
         node-properties(
-          *ngIf='selectedNodeId',
+          *ngIf='selectedNodeId && !propsSidebarCollapsed',
           [nodeId]='selectedNodeId',
           [activeServerId]='clabActiveServerId',
           [clabContainers]='clabContainers',
@@ -2152,13 +2239,13 @@
           (nodeSelected)='selectedNodeId = $event'
         )
         link-properties(
-          *ngIf='selectedLinkId',
+          *ngIf='selectedLinkId && !propsSidebarCollapsed',
           [linkId]='selectedLinkId',
           (closed)='clearSelection()'
         )
 
         //- ── Shape properties ──────────────────────────────────────────
-        .shape-props(*ngIf='selectedShapeId && getSelectedShape()')
+        .shape-props(*ngIf='selectedShapeId && getSelectedShape() && !propsSidebarCollapsed')
           .shape-props-header
             span {{ (getSelectedShape()?.type || 'rectangle') | titlecase }} Properties
             button.shape-props-close(type='button', (click)='selectedShapeId = null') ✕
@@ -3625,6 +3712,46 @@
         ) Push All ({{ activeBulkReplaceCount }})
         button.tb-btn(type='button', (click)='cancelBulkReplace()') Cancel
 
+  //- ── Remove Devices by Pattern dialog ────────────────────────────────
+  .auto-ip-overlay(*ngIf='showRemovePatternDialog', (click)='showRemovePatternDialog = false')
+    .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()', style='max-width:520px')
+      .auto-ip-title Remove Devices by Pattern
+      .bulk-cred-form
+        .bulk-cred-row
+          label Pattern
+          input.bulk-cred-input(
+            type='text',
+            [(ngModel)]='removePattern',
+            (ngModelChange)='cdr.markForCheck()',
+            placeholder='Regex (case-insensitive). e.g. ^geoman- or srv\\d+',
+            autofocus,
+            style='font-family: SF Mono, Menlo, monospace'
+          )
+        .bulk-cred-row
+          label
+          span(style='font-size:11px; color:var(--text-muted); flex:1')
+            | Matches against node label AND mgmt IP. Removes nodes from canvas only — inventory unchanged.
+        //- Live preview: count + first few names
+        .bulk-cred-row(*ngIf='removePattern.trim()')
+          label Matches
+          span(style='font-size:11px; flex:1',
+            [style.color]='removePatternMatches.length ? "#ef4444" : "var(--text-muted)"')
+            ng-container(*ngIf='removePatternMatches.length === 0') No nodes match
+            ng-container(*ngIf='removePatternMatches.length > 0')
+              | {{ removePatternMatches.length }} node(s) will be removed:
+              span(style='display:block; margin-top:4px; font-family: SF Mono, Menlo, monospace; max-height:120px; overflow-y:auto')
+                span(*ngFor='let n of removePatternMatches; let i = index')
+                  ng-container(*ngIf='i < 50')
+                    | {{ n.label }}{{ i < removePatternMatches.length - 1 && i < 49 ? ', ' : '' }}
+                  ng-container(*ngIf='i === 50') {{ ' …and ' + (removePatternMatches.length - 50) + ' more' }}
+      .auto-ip-actions
+        button.btn-tool(type='button', (click)='showRemovePatternDialog = false') Cancel
+        button.btn-tool.btn-danger(
+          type='button',
+          [disabled]='removePatternMatches.length === 0',
+          (click)='confirmRemovePattern()'
+        ) 🗑 Remove {{ removePatternMatches.length || '' }}
+
   //- ── Set Protocol dialog ────────────────────────────────────────────
   .auto-ip-overlay(*ngIf='showProtocolDialog', (click)='showProtocolDialog = false')
     .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()')
@@ -4407,7 +4534,25 @@
     *ngIf='showDeviceMapper',
     [topology]='topology',
     (closed)='showDeviceMapper = false; cdr.markForCheck()',
-    (mappingApplied)='onMappingApplied($event)'
+    (mappingApplied)='onMappingApplied($event)',
+    (buildFromDiscoveryRequested)='onBuildFromDiscovery($event)',
+    (liveDiscoveryDelta)='onLiveDiscoveryDelta($event)',
+    (nodeRoleChanged)='onMapperNodeRoleChanged($event)'
+  )
+
+  //- ── Config Diff dialog ───────────────────────────────────────────────
+  config-diff(
+    *ngIf='showConfigDiff',
+    [nodeId]='configDiffNodeId',
+    (closed)='showConfigDiff = false; cdr.markForCheck()'
+  )
+
+  //- ── Dry Run Push summary ─────────────────────────────────────────────
+  dry-run-summary(
+    *ngIf='showDryRunSummary',
+    [nodeIds]='dryRunNodeIds',
+    (closed)='showDryRunSummary = false; cdr.markForCheck()',
+    (pushRequested)='onDryRunPushRequested($event)'
   )
 
   //- ── Automation Dashboard ────────────────────────────────────────────────
