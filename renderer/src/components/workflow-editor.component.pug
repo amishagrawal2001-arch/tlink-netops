@@ -105,6 +105,30 @@
             .er-row(*ngIf='newStepAction === "webhook"')
               label.er-label Headers
               input.er-input(type='text', placeholder='{"Authorization":"Bearer ..."}', [(ngModel)]='newStepHeaders')
+            //- ── Approval step ────────────────────────────────────────
+            .er-row(*ngIf='newStepAction === "approval"')
+              label.er-label Message
+              input.er-input(
+                type='text',
+                placeholder='What does the operator need to confirm?',
+                [(ngModel)]='newStepMessage'
+              )
+            .er-row(*ngIf='newStepAction === "approval"')
+              label.er-label Gate name
+              input.er-input(
+                type='text',
+                placeholder='e.g. Production change, Reboot, Two-person rule',
+                [(ngModel)]='newStepApprovalGate'
+              )
+            .er-row(*ngIf='newStepAction === "approval"')
+              label.er-label Auto-reject after
+              input.er-input(
+                type='number',
+                placeholder='60',
+                [(ngModel)]='newStepApprovalTimeout',
+                style='max-width:120px'
+              )
+              span(style='font-size:11px; color:var(--text-muted); margin-left:6px') minutes (0 = wait forever)
             .er-row
               label.wf-step-coe
                 input(type='checkbox', [(ngModel)]='newStepContinueOnError')

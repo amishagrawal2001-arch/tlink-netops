@@ -1,0 +1,121 @@
+.cre-overlay((click)='close()')
+  .cre-dialog((click)='$event.stopPropagation()')
+    .cre-header
+      h3.cre-title 📋 Compliance Rules Editor
+      span.cre-count {{ rules.length }} rule{{ rules.length === 1 ? '' : 's' }}
+      button.cre-close(type='button', (click)='close()') ✕
+
+    //- ── List view ────────────────────────────────────────────────────────
+    .cre-list-view(*ngIf='!editing')
+      .cre-toolbar
+        input.cre-search(
+          type='text',
+          placeholder='Search rules…',
+          [(ngModel)]='filter'
+        )
+        select.cre-filter([(ngModel)]='vendorFilter')
+          option(value='') All vendors
+          option(*ngFor='let v of vendorOptions', [value]='v') {{ v }}
+        select.cre-filter([(ngModel)]='severityFilter')
+          option(value='') All severities
+          option(value='critical') Critical
+          option(value='major') Major
+          option(value='minor') Minor
+          option(value='warning') Warning
+        button.cre-btn.cre-btn-primary(type='button', (click)='startNew()') + New Rule
+
+      .cre-empty(*ngIf='!filteredRules.length && rules.length === 0')
+        | No compliance rules defined. Click <strong>+ New Rule</strong> to add one.
+      .cre-empty(*ngIf='!filteredRules.length && rules.length > 0')
+        | No rules match the current filter.
+
+      table.cre-table(*ngIf='filteredRules.length')
+        thead: tr
+          th(style='width: 28px')
+          th Name
+          th Vendor
+          th Role
+          th Severity
+          th Pattern
+          th(style='width: 100px')
+        tbody
+          tr.cre-rule-row(*ngFor='let r of filteredRules', [class.disabled]='!r.enabled')
+            td
+              input(type='checkbox', [checked]='r.enabled', (change)='toggleEnabled(r)', title='Toggle enabled')
+            td.rule-name {{ r.name }}
+              .rule-desc(*ngIf='r.description') {{ r.description }}
+            td {{ r.vendor }}
+            td {{ r.role || '*' }}
+            td
+              span.severity-pill([class]='r.severity') {{ r.severity }}
+            td.rule-pattern
+              code {{ r.pattern.length > 60 ? (r.pattern.slice(0, 60) + '…') : r.pattern }}
+            td.rule-actions
+              button.cre-btn-tiny(type='button', (click)='startEdit(r)') Edit
+              button.cre-btn-tiny.danger(type='button', (click)='deleteRule(r)') ✕
+
+    //- ── Edit / new view ─────────────────────────────────────────────────
+    .cre-edit-view(*ngIf='editing')
+      .cre-edit-header
+        h4 {{ isNew ? 'New Rule' : 'Edit Rule: ' + editing.name }}
+        button.cre-btn-link(type='button', (click)='cancelEdit()') ← Back to list
+
+      .cre-form
+        .cre-field
+          label Name *
+          input.cre-input(type='text', [(ngModel)]='draft.name', placeholder='e.g. NTP server configured')
+        .cre-field
+          label Description
+          input.cre-input(type='text', [(ngModel)]='draft.description', placeholder='What does this rule check?')
+        .cre-field-row
+          .cre-field.flex
+            label Vendor (glob, * for any) *
+            input.cre-input(type='text', [(ngModel)]='draft.vendor', placeholder='juniper, cisco, *')
+          .cre-field.flex
+            label Role (glob, optional)
+            input.cre-input(type='text', [(ngModel)]='draft.role', placeholder='spine*, leaf, * (or leave blank)')
+          .cre-field.severity-field
+            label Severity
+            select.cre-input([(ngModel)]='draft.severity')
+              option(value='critical') Critical
+              option(value='major') Major
+              option(value='minor') Minor
+              option(value='warning') Warning
+        .cre-field
+          label Regex Pattern *
+            span.cre-hint &nbsp; (case-sensitive; multi-line mode enabled)
+          textarea.cre-input.cre-textarea(
+            rows='3',
+            [(ngModel)]='draft.pattern',
+            placeholder='set system ntp server\\s+\\S+',
+            spellcheck='false'
+          )
+        .cre-field
+          label.cre-checkbox
+            input(type='checkbox', [(ngModel)]='draft.enabled')
+            | &nbsp;Enabled
+
+      //- Quick-test
+      .cre-test-section
+        .cre-test-header Test pattern against sample config
+        textarea.cre-input.cre-textarea(
+          rows='4',
+          [(ngModel)]='testText',
+          placeholder='Paste a sample running config to test the regex…',
+          spellcheck='false'
+        )
+        .cre-test-row
+          button.cre-btn(type='button', (click)='runTest()', [disabled]='!draft.pattern || !testText') Run test
+          .cre-test-result(*ngIf='testResult')
+            span.cre-test-pill([class.match]='testResult.matched', [class.no-match]='!testResult.matched')
+              | {{ testResult.matched ? '✓ matched' : '✗ no match' }}
+            code.cre-test-preview(*ngIf='testResult.preview') {{ testResult.preview }}
+
+      //- Errors + actions
+      .cre-form-errors(*ngIf='formErrors.length')
+        .cre-form-error(*ngFor='let e of formErrors') ⚠ {{ e }}
+
+      .cre-form-actions
+        button.cre-btn(type='button', (click)='cancelEdit()') Cancel
+        button.cre-btn.cre-btn-primary(type='button', (click)='save()')
+          | {{ isNew ? 'Add rule' : 'Save changes' }}

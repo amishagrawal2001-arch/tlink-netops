@@ -23,6 +23,10 @@
     button.help-toc-item(type='button', [class.active]='isSectionOpen("monitoring")', (click)='scrollToSection("monitoring")') Monitoring
     button.help-toc-item(type='button', [class.active]='isSectionOpen("snmp")', (click)='scrollToSection("snmp")') SNMP Polling
     button.help-toc-item(type='button', [class.active]='isSectionOpen("syslog")', (click)='scrollToSection("syslog")') Syslog
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("telemetry")', (click)='scrollToSection("telemetry")') Telemetry (gNMI)
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("staging")', (click)='scrollToSection("staging")') Day-0 Staging
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("push-config")', (click)='scrollToSection("push-config")') Pushing Configuration
+    button.help-toc-item(type='button', [class.active]='isSectionOpen("automation")', (click)='scrollToSection("automation")') Automation Suite
     button.help-toc-item(type='button', [class.active]='isSectionOpen("snippets")', (click)='scrollToSection("snippets")') Config Snippets
     button.help-toc-item(type='button', [class.active]='isSectionOpen("workspace")', (click)='scrollToSection("workspace")') Workspace
   .help-view-scroll
@@ -2614,6 +2618,388 @@
             td SONiC
             td 8080
             td gNMI
+
+    //- ── Day-0 Device Staging ────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("staging")')
+        span.help-chevron {{ isSectionOpen('staging') ? '▾' : '▸' }}
+        | Day-0 Device Staging
+      .help-section-body(*ngIf='isSectionOpen("staging")')
+        p
+          strong What it is:
+          |  Foundational config (NTP, SNMP, LLDP, Syslog, DNS, AAA users + TACACS, Banner) that gets prepended to every node's generated startup config — independent of fabric routing/protocols. Ideal for onboarding new switches or rolling out an SNMP/syslog change without touching fabric config.
+
+        p
+          strong Two scopes:
+        ul
+          li
+            span.help-tag Fabric defaults
+            |  — set once in <strong>Devices → Device Staging (Day-0)…</strong>. Applied to every node in the topology.
+          li
+            span.help-tag Per-node overrides
+            |  — set on a node's <strong>Staging</strong> tab. Override any field; leave blank to inherit the fabric default (shown as placeholder).
+
+        p
+          strong Edit / Preview tabs in the Device Staging dialog:
+        ul
+          li
+            strong Edit
+            |  — fill in NTP servers, SNMP community/contact/location/trap targets, LLDP enabled, syslog hosts + severity, DNS servers + search domain, local users + TACACS, banners.
+          li
+            strong Preview &amp; Push
+            |  — shows a per-vendor rendered preview (one panel per unique vendor in the topology). Multi-vendor topologies see e.g. one panel for Junos
+            span.help-code set system ntp server …
+            | , one for Cisco/Arista
+            span.help-code ntp server …
+            | , one for SONiC
+            span.help-code sudo config ntp add …
+            | . Unsupported vendors are flagged with an amber ⚠ chip.
+
+        p
+          strong Three ways to push staging only (without touching fabric config):
+        ol
+          li
+            strong Per-node — node properties Staging tab
+            | : "Push Staging to Device" button, with a Preview button beside it. Auto-backs up running config first.
+          li
+            strong Bulk — Devices → Push Day-0 Staging…
+            | : scope = All / Selected / Unmapped (Day-0 onboarding sweet spot), Push or Preview-only mode, Save-to-startup toggle, sequential toggle. Live log shows
+            span.help-code [Switch-1] ✓ pushed (N cmds)
+            |  per device.
+          li
+            strong Workflow Library — "Apply Staging Only" playbook
+            | : pickable from the Workflow Library; same vendor wrapping as the dialogs but runs as a workflow with audit trail.
+
+        p
+          strong Supported vendors:
+          |  juniper, cisco (IOS / NX-OS / IOS-XR), arista, hpe (Comware), dell (OS10), huawei, nokia, sonic, mikrotik, extreme. Other vendors get an amber ⚠ chip in the Preview pane and are skipped at push time with a clear log line.
+
+        p
+          strong How push wraps per vendor:
+        ul
+          li
+            strong Junos
+            | :
+            span.help-code configure private; set …; commit and-quit
+            |  (atomic via a single
+            span.help-code cli -c
+            | ).
+          li
+            strong Cisco / Arista / Dell OS10
+            | :
+            span.help-code configure terminal
+            |  →
+            span.help-code … set lines …
+            |  →
+            span.help-code end
+            |  →
+            span.help-code write memory
+            | .
+          li
+            strong HPE Comware / Huawei
+            | :
+            span.help-code system-view
+            |  →
+            span.help-code … lines …
+            |  →
+            span.help-code quit
+            |  →
+            span.help-code save force
+            | .
+          li
+            strong Nokia
+            | :
+            span.help-code enter candidate
+            |  →
+            span.help-code …
+            |  →
+            span.help-code commit
+            | .
+          li
+            strong SONiC
+            | : raw
+            span.help-code sudo config …
+            |  shell commands +
+            span.help-code sudo config save -y
+            | .
+          li
+            strong Extreme XOS
+            | : direct commands +
+            span.help-code save configuration
+            | .
+          li
+            strong MikroTik
+            | : direct
+            span.help-code /system …
+            |  commands.
+
+        p
+          strong Persistence:
+          |  Fabric staging is stored on
+          span.help-code topology.staging
+          | ; per-node overrides on
+          span.help-code node.staging
+          | . Both round-trip through the topology JSON. Save & regenerate (in the dialog) writes staging then re-runs config generation so the staging block appears in every node's startup config.
+
+        p
+          strong Pruning rule on save:
+          |  A section is dropped only when EVERY field within it is empty. Setting just NTP timezone (no servers) is preserved; setting just DNS searchDomain (no servers) is preserved; etc. Console log
+          span.help-code [device-staging] save: &#123;…&#125;
+          |  prints the exact object being saved.
+
+    //- ── Pushing Configuration ──────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("push-config")')
+        span.help-chevron {{ isSectionOpen('push-config') ? '▾' : '▸' }}
+        | Pushing Configuration
+      .help-section-body(*ngIf='isSectionOpen("push-config")')
+        p
+          strong The push pipeline:
+          |  Reads
+          span.help-code node.startupConfig
+          | , wraps with vendor-specific preamble/postamble (from
+          span.help-code services/vendor-command-map.ts
+          | ), feeds the command list to the device via SSH, then validates the output for commit-failure markers.
+
+        p
+          strong Three entry points:
+        ul
+          li
+            strong Devices menu → Push Configs to Devices
+            |  — bulk full-config push to every mapped node with credentials.
+          li
+            strong Per-node — Config tab → "Push to Device (SSH)"
+            |  — single-node full-config push.
+          li
+            strong Per-node — Config tab → "Push Config with Edit…"
+            |  — review/edit the staged commands (insert deletes, prune lines) before pushing.
+
+        p
+          strong SSH credential resolution (in this order):
+        ol
+          li
+            strong Node Info-tab fields
+            |
+            span.help-code node.sshUsername
+            |  /
+            span.help-code node.sshPassword
+            |  — if both present, used directly.
+          li
+            strong Device Mapper inventory fallback
+            |  — if either field is empty, the push driver looks up the inventory (saved under user-prefs key
+            span.help-code device-inventory
+            | ) and matches by mgmtIp first, then hostname (case-insensitive vs node label). Per-side fill: a node with a username but no password gets the password from inventory while keeping the per-node username override.
+          li
+            strong Skip with clear error
+            |  — "no SSH credentials (set on node Info tab or in Device Mapper inventory)".
+        p
+          strong Verification:
+          |  When fallback fires, the output annotation reads
+          span.help-code (using credentials from inventory match: &lt;hostname&gt;)
+          | . Console logs
+          span.help-code [push] &lt;label&gt; using credentials from device inventory (matched &lt;hostname&gt;)
+          | .
+
+        p
+          strong Sequential vs parallel push:
+          |  Default is parallel — all devices push concurrently. Toggle "Sequential push" (Devices menu sticky preference, dry-run footer, or push confirmation dialog) to push one device at a time. Use sequential when you have many of the same vendor and hit lock contention (Junos
+          span.help-code configure exclusive
+          | , IOS-XR commit lock) or SSH rate limits.
+
+        p
+          strong Output validation:
+          |  After SSH session closes, the driver scans the device's response for failure markers:
+        ul
+          li
+            strong Hard markers (always fail)
+            | :
+            span.help-code commit failed
+            | ,
+            span.help-code configuration check-out failed
+            | ,
+            span.help-code mgd: error:
+            | ,
+            span.help-code configuration database is open
+            | ,
+            span.help-code syntax error
+            | ,
+            span.help-code unable to commit
+            | .
+          li
+            strong Soft markers (fail only if no positive confirmation in same output)
+            | :
+            span.help-code unknown command
+            | ,
+            span.help-code invalid command
+            | . Treated as transient noise when
+            span.help-code commit complete
+            |  /
+            span.help-code [ok]
+            |  also appears.
+          li
+            strong Junos extra check
+            | : if the command list included
+            span.help-code commit
+            |  but the output didn't echo
+            span.help-code commit complete
+            | , the push is downgraded to ✗.
+
+        p
+          strong Auto-rollback:
+          |  When ≥ 30% of nodes in a batch fail, you're prompted to roll back to the previous backup. The rollback push uses
+          span.help-code suppressRollbackOffer=true
+          |  to prevent recursive prompts if it partially fails.
+
+        p
+          strong Auto-backup before push:
+          |  The driver calls
+          span.help-code invSvc.backupConfig(nodeId, 'running', 'event')
+          |  best-effort before sending the new config. Backup failures don't block the push but are logged.
+
+        p
+          strong Dry-run push:
+          |  Devices menu → Dry Run Push (or workflow option). Renders the per-node command list into a summary dialog without sending. Footer toggle for sequential mode + a "Push to N" button to commit for real.
+
+    //- ── Automation Suite ───────────────────
+    .help-section
+      button.help-section-title(type='button', (click)='toggleHelpSection("automation")')
+        span.help-chevron {{ isSectionOpen('automation') ? '▾' : '▸' }}
+        | Automation Suite
+      .help-section-body(*ngIf='isSectionOpen("automation")')
+        p Automation menu surfaces the orchestration tools. They share a common workflow execution engine (
+          span.help-code services/workflow.service.ts
+          | ) and target nodes selected on the canvas or all mapped nodes.
+
+        p
+          strong Workflow Library — Automation → Workflow Library
+        ul
+          li Pre-built parameterized playbooks: Interface ops (shut/no-shut/MTU/description/clear-counters), VLAN ops (add/remove/trunk), BGP (clear/show), maintenance (commit-save, clear-arp-host, backup-now, approval-gate, notify-webhook, apply-staging-only), diagnostics (ping, show-version, show-interfaces, fortinet-system-status).
+          li Three views: Browse (categorized list) → Configure (parameters + target nodes) → Run (per-node progress + results).
+          li Vendor coverage: juniper, cisco, arista, huawei, hpe, dell, sonic, nokia, mikrotik, extreme, fortinet (where applicable).
+          li Each playbook synthesizes a Workflow with WorkflowSteps (
+            span.help-code run_command
+            | ,
+            span.help-code backup_config
+            | ,
+            span.help-code log
+            | ,
+            span.help-code webhook
+            | ,
+            span.help-code approval
+            | ) which the engine executes per target.
+
+        p
+          strong Approval Gates
+        ul
+          li Any workflow step can be
+            span.help-code action: 'approval'
+            |  — execution pauses; the gate appears in
+            strong Automation → Pending Approvals
+            | .
+          li Each approval has: message, gate name, optional timeout in minutes (auto-rejects on expiry, 0 = wait forever).
+          li Operator clicks Approve or Reject; the workflow resumes (or stops) on the next step.
+          li Approval History — last 50 resolved gates with who-resolved-when, kept in memory per session.
+          li
+            strong Closing the app rejects all pending approvals
+            |  cleanly — no leaked promises.
+
+        p
+          strong Scheduler — Automation → Scheduled Jobs
+        ul
+          li Recurring jobs: backup_all, poll_all, compliance_check, custom_command. Cron-style (minute, hour, day-of-week granularity).
+          li Jitter (5–15 s random gap) avoids same-minute thundering herd when multiple jobs land on the same tick.
+          li Click "Run" on any job row to fire it manually right now (independent of schedule).
+          li Initialised once per app via a static
+            span.help-code _schedulerInitialized
+            |  guard so multiple tabs don't overwrite each other's job dispatcher.
+
+        p
+          strong Bulk Port Operations — Automation → Bulk Port Ops
+          |  Dialog targets multiple ports across multiple nodes in one sweep. Operations: shut / no-shut / MTU / description / clear-counters / VLAN access / VLAN trunk. Vendor-aware command generation; preview before commit.
+
+        p
+          strong Outbound Webhooks
+        ul
+          li Workflow step
+            span.help-code action: 'webhook'
+            |  posts JSON to any URL — Slack, Teams, custom listener.
+          li Default Slack-compatible payload shape:
+            span.help-code &#123;text: "&lt;message&gt;"&#125;
+            |  (extend per playbook).
+          li
+            span.help-code continueOnError: true
+            |  by default — webhook failures don't fail the workflow.
+
+        p
+          strong Set Protocol — Devices → Set Protocol…
+        ul
+          li Bulk-assign a routing protocol across all or selected nodes after dropping a design template. Options: eBGP Clos (unique ASN per role), iBGP-RR (shared ASN), OSPF, OSPFv3, IS-IS, or None (clear).
+          li Protocol-specific fields shown conditionally: ASN start values for eBGP, area for OSPF, level (L1/L2/L1-2) for IS-IS.
+          li Reuses the role-based ASN logic from the topology builder (spine vs leaf vs border-leaf).
+
+        p
+          strong Config Diff Viewer — node Config tab → "Fetch &amp; Compare Running"
+        ul
+          li Pulls the running config off the device via SSH, runs an LCS-based unified diff against the local startup config.
+          li Inline diff shown right in the panel; "⛶ Expand" button opens a full-window stand-alone view.
+          li Stats line:
+            span.help-code + N added · - M removed · = K matching
+            |  in the diff header.
+
+        p
+          strong Compliance — Automation → Compliance
+          |  Run policy checks across mapped nodes (e.g., expected NTP server, banner present, no default community). Failures appear as alarms.
+
+        p
+          strong Change Manager / Pending Approvals / Workflow History
+          |  All three are reachable from the Automation menu. Workflow History keeps last-N runs with per-step output and durations for audit.
+
+        table.help-table(style='margin-top:14px')
+          thead: tr
+            th Feature
+            th Menu path
+            th Per-node entry point
+          tbody
+            tr
+              td Workflow Library
+              td Automation → Workflow Library
+              td Right-click node → Run Playbook (preselects node)
+            tr
+              td Pending Approvals
+              td Automation → Pending Approvals
+              td —
+            tr
+              td Scheduled Jobs
+              td Automation → Scheduled Jobs
+              td —
+            tr
+              td Bulk Port Ops
+              td Automation → Bulk Port Ops
+              td —
+            tr
+              td Compliance
+              td Automation → Compliance
+              td —
+            tr
+              td Set Protocol
+              td Devices → Set Protocol…
+              td —
+            tr
+              td Device Staging
+              td Devices → Device Staging (Day-0)…
+              td Node Staging tab
+            tr
+              td Push Day-0 Staging
+              td Devices → Push Day-0 Staging…
+              td Node Staging tab → Push Staging
+            tr
+              td Config Diff
+              td —
+              td Node Config tab → Fetch &amp; Compare Running
+            tr
+              td Push Edit Dialog
+              td —
+              td Node Config tab → Push Config with Edit…
 
     //- ── Config Snippet Library ─────────────
     .help-section

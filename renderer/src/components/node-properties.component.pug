@@ -24,6 +24,7 @@
       | VLANs
       span.tab-badge(*ngIf='vlanDrafts.length > 0') {{ vlanDrafts.length }}
     button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "config"', (click)='setTab("config")') Config
+    button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "staging"', (click)='setTab("staging")') Staging
     button.props-tab(*ngIf='!isHostNode && !isBridgeNode', type='button', [class.active]='activeTab === "notes"',  (click)='setTab("notes")')  Notes
     button.props-tab(type='button', [class.active]='activeTab === "links"',  (click)='setTab("links")')
       | Links
@@ -917,6 +918,118 @@
             span.diff-add(*ngIf='d.type === "add"') + {{ d.line }}
             span.diff-remove(*ngIf='d.type === "remove"') - {{ d.line }}
             span.diff-same(*ngIf='d.type === "same"')   {{ d.line }}
+
+  //- ── Tab: Staging (per-node Day-0 overrides) ──────────────────────────────
+  .props-body(*ngIf='activeTab === "staging"')
+    .config-hint
+      | Override fabric-wide Day-0 defaults for this node. Leave a field empty
+      | to inherit the fabric default (shown as placeholder). Edit fabric
+      | defaults via <strong>Devices → Device Staging…</strong>.
+
+    .form-row
+      label.form-label NTP Servers
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingNtpServersText',
+        [placeholder]='fabricNtpServersText || "e.g. 10.0.0.1, pool.ntp.org"'
+      )
+
+    .form-divider
+
+    .form-label SNMP
+    .form-row
+      label.form-label Community
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingSnmpCommunity',
+        [placeholder]='fabricSnmpCommunity || "public"'
+      )
+    .form-row
+      label.form-label Contact
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingSnmpContact',
+        [placeholder]='fabricSnmpContact || "noc@example.com"'
+      )
+    .form-row
+      label.form-label Location
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingSnmpLocation',
+        [placeholder]='fabricSnmpLocation || "Rack/Room/DC location"'
+      )
+    .form-row
+      label.form-label Trap Targets
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingSnmpTrapTargetsText',
+        [placeholder]='fabricSnmpTrapTargetsText || "10.10.0.5, 10.10.0.6"'
+      )
+
+    .form-divider
+
+    .form-row
+      label.form-label Syslog Servers
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingSyslogServersText',
+        [placeholder]='fabricSyslogServersText || "10.10.0.10, 10.10.0.11"'
+      )
+
+    .form-row
+      label.form-label DNS Servers
+      input.form-input(
+        type='text',
+        [(ngModel)]='stagingDnsServersText',
+        [placeholder]='fabricDnsServersText || "8.8.8.8, 1.1.1.1"'
+      )
+
+    .form-divider
+
+    .form-row
+      label.form-label Login Banner
+      textarea.form-textarea(
+        rows='3',
+        [(ngModel)]='stagingBannerLogin',
+        [placeholder]='fabricBannerLogin || "Authorized access only..."'
+      )
+
+    .config-actions
+      button.btn-secondary(type='button', (click)='applyStaging()') Apply Override
+      button.btn-ghost(type='button', (click)='clearStagingOverride()') Clear Override
+      span.config-hint(*ngIf='stagingMsg', style='margin-left:auto;color:#22c55e') {{ stagingMsg }}
+
+    .form-divider
+
+    .config-hint
+      | <strong>Push Day-0 Staging</strong> — sends only the merged staging
+      | block (NTP / SNMP / Syslog / DNS / LLDP / AAA / Banner) to this
+      | device. Fabric protocols and interface config are NOT touched.
+    .config-actions
+      label.config-checkbox(style='display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);margin-right:8px')
+        input(type='checkbox', [(ngModel)]='stagingCommitAfter')
+        | Save to startup (commit/wr mem)
+      button.btn-ghost(type='button', (click)='previewPushStaging()') Preview
+      button.btn-push(
+        type='button',
+        [disabled]='!canPushStaging || stagingPushing',
+        [title]='stagingDisabledReason',
+        (click)='executePushStaging()'
+      ) {{ stagingPushing ? 'Pushing…' : 'Push Staging to Device' }}
+    .config-hint(*ngIf='stagingDisabledReason && !stagingPushing', style='color:#f59e0b')
+      | ⚠ {{ stagingDisabledReason }}
+
+    .config-push-output(*ngIf='stagingPushPreview != null')
+      .config-push-output-header
+        span Staging Preview ({{ node?.vendor }})
+        button.config-push-close(type='button', (click)='closeStagingPreview()') ✕
+      pre.config-push-pre {{ stagingPushPreview }}
+
+    .config-push-output(*ngIf='stagingPushOutput != null')
+      .config-push-output-header
+        span Push Output
+        button.config-push-close(type='button', (click)='closeStagingPushOutput()') ✕
+      pre.config-push-pre {{ stagingPushOutput }}
 
   //- ── Tab: Notes ────────────────────────────────────────────────────────────
   .props-body(*ngIf='activeTab === "notes"')

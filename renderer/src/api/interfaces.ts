@@ -149,6 +149,11 @@ export interface TopologyNode {
     mplsLdp?: boolean           // enable MPLS LDP on this node
     telemetryEnabled?: boolean  // gRPC/gNMI telemetry streaming
 
+    /** Per-node overrides for the topology-wide staging defaults. Only the
+     *  fields you want to override need to be set; everything else falls
+     *  through to topology.staging. */
+    staging?: DeviceStagingConfig
+
     // SNMP polling
     pollMethod?: 'ssh' | 'snmp'
     snmpVersion?: '2c' | '3'
@@ -258,6 +263,78 @@ export interface Annotation {
     imageData?: string          // base64 data URL for image annotations (e.g. "data:image/png;base64,...")
 }
 
+// ─── Device Staging (Day-0 onboarding config) ────────────────────────────────
+
+/**
+ * Foundational config applied BEFORE fabric protocols. Set fabric-wide
+ * defaults on Topology.staging; per-node overrides go on TopologyNode.
+ *
+ * Each field is optional — emit nothing if undefined. Vendor-aware rendering
+ * lives in services/vendor-config-builder.ts (renderStagingConfig).
+ */
+export interface DeviceStagingConfig {
+    /** NTP / time sync */
+    ntp?: {
+        servers?: string[]              // ['10.0.0.1', 'pool.ntp.org']
+        prefer?: string                 // hostname/IP to prefer
+        timezone?: string               // 'UTC' / 'America/Los_Angeles' / 'PST8PDT'
+        sourceInterface?: string        // optional source-interface name
+    }
+
+    /** SNMP read/trap config */
+    snmp?: {
+        version?: 'v2c' | 'v3'
+        community?: string              // v2c read-only community
+        contact?: string                // free-text
+        location?: string
+        trapTargets?: string[]          // trap server IPs
+        // v3 user (when version === 'v3')
+        v3User?: string
+        v3AuthProtocol?: 'sha' | 'md5'
+        v3AuthPassword?: string
+        v3PrivProtocol?: 'aes' | 'des'
+        v3PrivPassword?: string
+    }
+
+    /** LLDP enable + scope */
+    lldp?: {
+        enabled?: boolean               // default true on most vendors
+        interfaces?: 'all' | string[]   // 'all' or specific iface list
+    }
+
+    /** Syslog forwarding */
+    syslog?: {
+        servers?: string[]
+        severity?: 'emergencies' | 'alerts' | 'critical' | 'errors' | 'warnings' |
+                   'notifications' | 'informational' | 'debugging'
+    }
+
+    /** DNS resolver */
+    dns?: {
+        servers?: string[]              // ['8.8.8.8', '1.1.1.1']
+        searchDomain?: string           // 'lab.example.com'
+    }
+
+    /** Local users + optional TACACS */
+    aaa?: {
+        localUsers?: Array<{
+            username: string
+            password?: string           // plaintext — vendor-specific hashing in builder
+            role?: 'admin' | 'read-only' | 'operator'
+        }>
+        tacacs?: {
+            servers?: string[]
+            sharedSecret?: string
+        }
+    }
+
+    /** Banners */
+    banner?: {
+        login?: string                  // multi-line MOTD
+        exec?: string
+    }
+}
+
 // ─── Topology ─────────────────────────────────────────────────────────────────
 
 export interface Topology {
@@ -281,6 +358,10 @@ export interface Topology {
     oismEnabled?: boolean        // OISM: IGMP snooping, SMET routes, assisted replication
     telemetryEnabled?: boolean   // gRPC/gNMI telemetry streaming
     telemetryConfig?: TelemetryConfig  // detailed telemetry settings
+
+    /** Day-0 staging defaults applied to every node (NTP, SNMP, LLDP, syslog,
+     *  DNS, AAA users, banner). Per-node overrides live on TopologyNode.staging. */
+    staging?: DeviceStagingConfig
 }
 
 export interface TelemetryConfig {

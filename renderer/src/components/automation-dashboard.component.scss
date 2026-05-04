@@ -89,3 +89,272 @@
 .backup-drift { color: #22c55e; &.drift { color: #ef4444; font-weight: 600; } }
 
 .auto-dash-rule-count { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
+
+// ─── Quick-action button: pending-approvals badge ──────────────────────────
+.auto-dash-action-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &.has-pending {
+    border-color: #f59e0b;
+    color: #f59e0b;
+    &:hover { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  }
+}
+.auto-dash-action-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #1a1a1a;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+// ─── "Open panel →" / "Manage →" tiny inline link buttons ──────────────────
+.auto-dash-tiny-btn {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: none;
+  background: transparent;
+  color: var(--accent, #3b82f6);
+  font-size: 10px;
+  cursor: pointer;
+  &:hover { text-decoration: underline; }
+}
+
+.auto-dash-section-title {
+  display: flex;
+  align-items: center;
+
+  &.urgent { color: #f59e0b; }
+}
+
+// ─── Pending Approvals rows ─────────────────────────────────────────────────
+.auto-dash-pending-row {
+  background: rgba(245, 158, 11, 0.04);
+  td.message-cell {
+    color: var(--text-muted);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  td.action-cell { white-space: nowrap; }
+}
+.auto-dash-small-btn.approve {
+  border-color: #22c55e;
+  color: #22c55e;
+  &:hover { background: #22c55e; color: #fff; }
+}
+.auto-dash-small-btn.reject {
+  border-color: #ef4444;
+  color: #ef4444;
+  &:hover { background: #ef4444; color: #fff; }
+}
+
+// ─── Active runs ────────────────────────────────────────────────────────────
+.run-status {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  font-size: 10px;
+  font-weight: 600;
+
+  &.cancelled { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+}
+
+// ─── Recent runs result pill ────────────────────────────────────────────────
+.run-result {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  &.ok   { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+  &.fail { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+}
+.auto-dash-run-row.failed { background: rgba(239, 68, 68, 0.04); }
+
+// ─── Compliance row pills ───────────────────────────────────────────────────
+.auto-dash-compliance-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 6px;
+}
+.auto-dash-comp-row {
+  &.compliant .score-num { color: #22c55e; font-weight: 600; }
+  &.failing   .score-num { color: #ef4444; font-weight: 600; }
+}
+.compliance-pass { color: #22c55e; font-weight: 600; }
+.compliance-fail { color: #ef4444; font-weight: 600; }
+.score-cell { white-space: nowrap; }
+td.message-cell {
+  color: var(--text-muted);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ─── Approval history decision pill ─────────────────────────────────────────
+.history-decision {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  &.approve   { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+  &.reject,
+  &.timeout,
+  &.cancelled { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+}
+.auto-dash-history-row {
+  &.approved { background: rgba(34, 197, 94, 0.03); }
+  &.rejected { background: rgba(239, 68, 68, 0.03); }
+}
+
+// ─── Summary cards (Day-0 Staging + Inventory Readiness) ────────────────────
+.auto-dash-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.auto-dash-summary-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  background: var(--bg-card, #161b22);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &.muted { opacity: 0.6; }
+  &.warn  { border-color: rgba(245, 158, 11, 0.4); }
+}
+.summary-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+.summary-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text);
+}
+.summary-label  { color: var(--text-muted); }
+.summary-value  { color: var(--text); font-weight: 600; }
+.summary-muted  { color: var(--text-muted); font-style: italic; font-size: 11px; }
+.summary-warn   { color: #f59e0b; font-size: 11px; }
+
+// ─── Expandable rows (workflow + push history) ──────────────────────────────
+.row-clickable {
+  cursor: pointer;
+  &:hover { background: rgba(255, 255, 255, 0.03); }
+}
+.expand-arrow {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 9px;
+  user-select: none;
+}
+
+// ─── Workflow run detail (per-step output) ──────────────────────────────────
+.auto-dash-run-detail {
+  background: rgba(0, 0, 0, 0.25);
+  td { padding: 8px 16px !important; }
+}
+.run-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.run-detail-step {
+  display: grid;
+  grid-template-columns: 22px 110px 18px 60px 1fr;
+  gap: 6px;
+  align-items: start;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 10.5px;
+
+  &:last-child { border-bottom: none; }
+  &.step-fail { background: rgba(239, 68, 68, 0.04); }
+}
+.step-num      { color: var(--text-muted); font-family: 'SF Mono', monospace; }
+.step-action   { color: var(--text); font-weight: 500; }
+.step-status {
+  font-weight: 700;
+  text-align: center;
+  &.ok   { color: #22c55e; }
+  &.fail { color: #ef4444; }
+}
+.step-duration { color: var(--text-muted); font-size: 10px; }
+.step-output {
+  grid-column: 1 / -1;
+  margin: 4px 0 0 22px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+
+// ─── Push history rows ──────────────────────────────────────────────────────
+.auto-dash-push-row.failed { background: rgba(239, 68, 68, 0.04); }
+.push-mode-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  &.staging { background: rgba(59, 130, 246, 0.15);  color: #3b82f6; }
+  &.full    { background: rgba(168, 85, 247, 0.15);  color: #a855f7; }
+}
+.auto-dash-push-detail {
+  background: rgba(0, 0, 0, 0.25);
+  td { padding: 8px 16px !important; }
+}
+.push-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.push-detail-row {
+  display: grid;
+  grid-template-columns: 18px 140px 1fr;
+  gap: 8px;
+  padding: 2px 0;
+
+  &.row-fail { color: #ef4444; }
+}
+.push-detail-icon { text-align: center; font-weight: 700; }
+.push-detail-node { color: var(--text); font-weight: 500; }
+.push-detail-msg  { color: var(--text-muted); font-family: 'SF Mono', monospace; font-size: 10px; }

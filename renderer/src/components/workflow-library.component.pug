@@ -1,0 +1,190 @@
+.wflib-overlay((click)='close()')
+  .wflib-dialog((click)='$event.stopPropagation()')
+
+    //- ── Header (varies by view) ──────────────────────────────────────────
+    .wflib-header
+      h3.wflib-title
+        ng-container(*ngIf='view === "browse"') Workflow Library
+        ng-container(*ngIf='view === "configure" && selected')
+          button.wflib-back(type='button', (click)='backToBrowse()') ← Library
+          | {{ selected.icon }}  {{ selected.name }}
+        ng-container(*ngIf='view === "run" && selected')
+          button.wflib-back(
+            type='button',
+            [disabled]='!runComplete',
+            [title]='runComplete ? "Back to library" : "Wait for run to finish"',
+            (click)='backToBrowse()'
+          ) ← Library
+          | {{ runComplete ? 'Done: ' : 'Running: ' }}{{ selected.name }}
+      span.wflib-subtitle(*ngIf='view === "browse"')
+        | Pre-built playbooks for common ops tasks
+      span.wflib-subtitle(*ngIf='view === "configure" && selected')
+        | {{ selected.description }}
+      button.wflib-close(type='button', (click)='close()') ✕
+
+    //- ────────────────────────────────────────────────────────────────────
+    //- BROWSE VIEW
+    //- ────────────────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "browse"')
+      .wflib-toolbar
+        input.wflib-search(
+          type='text',
+          [(ngModel)]='searchQuery',
+          (ngModelChange)='onSearchChange()',
+          placeholder='Search playbooks…',
+          autofocus
+        )
+
+      .wflib-body
+        .wflib-empty(*ngIf='!grouped.length')
+          | No playbooks match "{{ searchQuery }}".
+        .wflib-category(*ngFor='let cat of grouped')
+          .wflib-category-title {{ cat.category }}
+          .wflib-card-grid
+            .wflib-card(
+              *ngFor='let p of cat.items',
+              [class.destructive]='p.destructive',
+              (click)='pickPlaybook(p)',
+              [title]='p.description'
+            )
+              .wflib-card-icon {{ p.icon }}
+              .wflib-card-name {{ p.name }}
+              .wflib-card-desc {{ p.description }}
+              .wflib-card-meta
+                span.wflib-card-vendor(*ngIf='p.vendors.length')
+                  | {{ p.vendors.join(", ") }}
+                span.wflib-card-vendor(*ngIf='!p.vendors.length') any vendor
+                span.wflib-card-warn(*ngIf='p.destructive', title='Makes config changes') ⚠ writes config
+
+    //- ────────────────────────────────────────────────────────────────────
+    //- CONFIGURE VIEW — params form + target picker
+    //- ────────────────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "configure" && selected')
+      .wflib-config-body
+        //- Parameters form
+        .wflib-section(*ngIf='selected.parameters.length')
+          .wflib-section-title Parameters
+          .wflib-param-row(*ngFor='let p of selected.parameters')
+            label.wflib-param-label
+              | {{ p.label }}
+              span.wflib-param-required(*ngIf='p.required') *
+            //- text / number
+            input.wflib-param-input(
+              *ngIf='p.type === "text" || p.type === "number"',
+              [type]='p.type',
+              [value]='paramValues[p.name] != null ? paramValues[p.name] : ""',
+              [placeholder]='p.placeholder || ""',
+              (input)='onParamChange(p.name, $event.target.value)'
+            )
+            //- textarea
+            textarea.wflib-param-input(
+              *ngIf='p.type === "textarea"',
+              rows='3',
+              [value]='paramValues[p.name] || ""',
+              [placeholder]='p.placeholder || ""',
+              (input)='onParamChange(p.name, $event.target.value)'
+            )
+            //- select
+            select.wflib-param-input(
+              *ngIf='p.type === "select"',
+              [value]='paramValues[p.name] != null ? paramValues[p.name] : ""',
+              (change)='onParamChange(p.name, $event.target.value)'
+            )
+              option(*ngFor='let opt of p.options', [value]='opt.value') {{ opt.label }}
+            .wflib-param-help(*ngIf='p.help') {{ p.help }}
+
+        //- Target picker
+        .wflib-section
+          .wflib-section-title-row
+            .wflib-section-title Targets ({{ targetNodeIds.size }} selected)
+            button.wflib-mini-btn(type='button', (click)='selectAllEligible()') Select all eligible
+            button.wflib-mini-btn(type='button', (click)='clearTargets()') Clear
+          .wflib-target-list
+            .wflib-target-row(
+              *ngFor='let e of eligibleNodes',
+              [class.disabled]='!e.supported',
+              [class.selected]='targetNodeIds.has(e.node.id)',
+              (click)='e.supported && toggleTarget(e.node.id)'
+            )
+              input(
+                type='checkbox',
+                [checked]='targetNodeIds.has(e.node.id)',
+                [disabled]='!e.supported',
+                (click)='$event.stopPropagation(); e.supported && toggleTarget(e.node.id)'
+              )
+              span.wflib-target-name {{ e.node.label }}
+              span.wflib-target-vendor {{ e.node.vendor || '—' }}
+              span.wflib-target-spacer
+              span.wflib-target-reason(*ngIf='!e.supported', [title]='e.reason') ⊘ {{ e.reason }}
+
+        //- Footer with action
+        .wflib-footer
+          .wflib-error(*ngIf='paramError') {{ paramError }}
+          .wflib-footer-spacer
+          button.wflib-btn(type='button', (click)='backToBrowse()') Back
+          button.wflib-btn.wflib-btn-run(
+            type='button',
+            [class.wflib-btn-destructive]='selected.destructive',
+            [disabled]='!targetNodeIds.size',
+            (click)='startRun()'
+          )
+            ng-container(*ngIf='!selected.destructive') ▶ Run on {{ targetNodeIds.size }} target{{ targetNodeIds.size === 1 ? '' : 's' }}
+            ng-container(*ngIf='selected.destructive') ⚠ Apply to {{ targetNodeIds.size }} target{{ targetNodeIds.size === 1 ? '' : 's' }}
+
+    //- ────────────────────────────────────────────────────────────────────
+    //- RUN VIEW — per-node progress and results
+    //- ────────────────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "run"')
+      .wflib-run-summary
+        ng-container(*ngIf='!runComplete')
+          | Running… {{ runStats.ok + runStats.fail }}/{{ runStats.total }} done
+          span.wflib-stat-running(*ngIf='runStats.running')   ({{ runStats.running }} active)
+        ng-container(*ngIf='runComplete')
+          span.wflib-stat-ok ✓ {{ runStats.ok }} ok
+          span.wflib-stat-fail(*ngIf='runStats.fail')   ✕ {{ runStats.fail }} failed
+
+      .wflib-body
+        .wflib-run-row(
+          *ngFor='let r of runs',
+          [class.expanded]='expandedRowId === r.node.id'
+        )
+          .wflib-run-head((click)='toggleRowDetails(r.node.id)')
+            span.wflib-run-dot(
+              [class.dot-pending]='r.status === "pending"',
+              [class.dot-running]='r.status === "running"',
+              [class.dot-ok]='r.status === "ok"',
+              [class.dot-fail]='r.status === "fail"'
+            )
+            span.wflib-run-host {{ r.node.label }}
+            span.wflib-run-vendor {{ r.node.vendor || '—' }}
+            span.wflib-run-spacer
+            span.wflib-run-status(*ngIf='r.status === "pending"') (queued)
+            span.wflib-run-status(*ngIf='r.status === "running"') running…
+            span.wflib-run-status.ok(*ngIf='r.status === "ok"') ✓ {{ r.durationMs }}ms
+            span.wflib-run-status.fail(*ngIf='r.status === "fail"') ✕ failed
+            span.wflib-run-toggle(*ngIf='r.output') {{ expandedRowId === r.node.id ? '▾' : '▸' }}
+          pre.wflib-run-output(*ngIf='expandedRowId === r.node.id && r.output') {{ r.output }}
+
+      //- Footer
+      .wflib-footer
+        .wflib-footer-spacer
+        button.wflib-btn(
+          *ngIf='!runComplete && !runCancelled',
+          type='button',
+          title='Stop processing remaining targets. The currently-running target finishes; no new targets start.',
+          style='border-color:#ef4444; color:#ef4444',
+          (click)='cancelRun()'
+        ) ✕ Cancel run
+        button.wflib-btn(type='button', (click)='close()', [disabled]='!runComplete') Close
+        button.wflib-btn(
+          type='button',
+          [disabled]='!runComplete',
+          title='Return to the library to pick a different playbook',
+          (click)='backToBrowse()'
+        ) ← Pick another playbook
+        button.wflib-btn.wflib-btn-run(
+          type='button',
+          [disabled]='!runComplete',
+          title='Re-run this same playbook with the same parameters',
+          (click)='runAgain()'
+        ) ↻ Run again

@@ -11,6 +11,7 @@ import {
     SERVICE_PROFILES, ServiceProfile, ServicePortRule,
 } from '../api/interfaces'
 import { buildVendorStartupConfig, VendorConfigContext, BgpNeighbor, OspfInterface, IsisInterface } from './vendor-config-builder'
+import { renderStagingConfig, mergeStaging } from './vendor-staging-builder'
 import {
     normIp, ipToInt, intToIp, expandIPv6, formatIPv6WithOffset, parseBaseCidr,
     normText, keepOrIncoming, parseHostCidr,
@@ -2070,6 +2071,13 @@ export class TopologyService {
      *  and can be called externally when BGP-relevant fields (ASN, role) change. */
     regenerateConfigs (force = false): void { this._regenerateConfigs(force) }
 
+    /** Set the topology-wide Day-0 staging defaults (NTP/SNMP/LLDP/etc).
+     *  Per-node overrides go on individual nodes via updateNodeConfig. */
+    setStaging (staging: any /* DeviceStagingConfig */): void {
+        this._patch({ staging })
+        this._regenerateConfigs(true)
+    }
+
     private _regenerateConfigs (force = false): void {
         const topo = this.topology
         const nodeMap = new Map(topo.nodes.map(n => [n.id, n]))
@@ -2296,7 +2304,18 @@ export class TopologyService {
             if (!force && (n.configSource === 'pulled' || n.configSource === 'manual')) {
                 return n
             }
-            return { ...n, startupConfig: buildVendorStartupConfig(n.vendor, n.ports, ctx), configSource: 'generated' as any }
+            // Render Day-0 staging block (NTP/SNMP/LLDP/syslog/DNS/AAA/banner)
+            // — fabric-wide defaults from topology.staging, with per-node
+            // overrides from n.staging applied on top. Empty string when no
+            // staging is configured, so nodes without staging look identical
+            // to before this feature shipped.
+            const merged = mergeStaging(topo.staging, (n as any).staging)
+            const stagingBlock = renderStagingConfig(n.vendor, merged)
+            const fabricBody = buildVendorStartupConfig(n.vendor, n.ports, ctx)
+            const startupConfig = stagingBlock
+                ? `${stagingBlock}\n${fabricBody}`
+                : fabricBody
+            return { ...n, startupConfig, configSource: 'generated' as any }
         })
         this._patch({ nodes })
     }

@@ -1,7 +1,7 @@
 .mapper-overlay((click)='close()')
-  .mapper-dialog((click)='$event.stopPropagation()')
+  .mapper-dialog.sched-dialog((click)='$event.stopPropagation()')
     .mapper-header
-      h3.mapper-title Scheduled Jobs
+      h3.mapper-title ⏱ Scheduled Jobs
       span.mapper-subtitle Automate recurring network operations
       .sched-toggle
         button.mapper-btn(
@@ -9,79 +9,190 @@
           [class.sched-btn-active]='schedulerRunning',
           (click)='toggleScheduler()'
         ) {{ schedulerRunning ? 'Stop Scheduler' : 'Start Scheduler' }}
-      button.mapper-close(type='button', (click)='close()') X
+      button.mapper-close(type='button', (click)='close()') ✕
 
+    //- ── Toolbar: search, filter, bulk actions, summary ──────────────────
     .mapper-actions-bar
       button.mapper-btn.mapper-btn-discover(type='button', (click)='openAddForm()') + Add Job
-      span.mapper-status {{ jobs.length }} job(s) configured
+      input.sched-search(
+        type='text',
+        placeholder='Search jobs…',
+        [(ngModel)]='searchQuery'
+      )
+      select.sched-filter([(ngModel)]='statusFilter')
+        option(value='all') All status
+        option(value='enabled') Enabled
+        option(value='disabled') Disabled
+        option(value='failing') Has failures
+      button.mapper-btn(
+        type='button',
+        title='Disable every job — useful before a maintenance window',
+        (click)='pauseAll()'
+      ) ⏸ Pause all
+      button.mapper-btn(
+        type='button',
+        title='Re-enable every job',
+        (click)='resumeAll()'
+      ) ▶ Resume all
+      .mapper-actions-spacer
+      span.sched-summary
+        span.sched-summary-pill {{ summaryCounts.total }} total
+        span.sched-summary-pill.enabled {{ summaryCounts.enabled }} enabled
+        span.sched-summary-pill.running(*ngIf='summaryCounts.running > 0') {{ summaryCounts.running }} running
+        span.sched-summary-pill.failing(*ngIf='summaryCounts.failing > 0') {{ summaryCounts.failing }} failing
       span.sched-status-badge([class.sched-running]='schedulerRunning')
         | {{ schedulerRunning ? 'RUNNING' : 'STOPPED' }}
 
-    //- Add job form (inline)
-    .mapper-inline-form(*ngIf='showAddForm')
+    //- ── Add / Edit form (inline, mode-aware) ─────────────────────────────
+    .mapper-inline-form(*ngIf='formMode !== "closed"')
+      .sched-form-header {{ formMode === 'edit' ? '✏ Edit job' : '+ New job' }}
       .mapper-form-row
         label.mapper-form-label Name
-        input.mapper-form-input(type='text', [(ngModel)]='newJob.name', placeholder='e.g. Nightly Backup')
+        input.mapper-form-input(type='text', [(ngModel)]='formJob.name', placeholder='e.g. Nightly Backup')
       .mapper-form-row
         label.mapper-form-label Schedule
-        select.mapper-form-input([(ngModel)]='newJob.schedule')
+        select.mapper-form-input([(ngModel)]='formJob.schedule')
           option(*ngFor='let opt of scheduleOptions', [value]='opt.value') {{ opt.label }}
       .mapper-form-row
         label.mapper-form-label Action
-        select.mapper-form-input([(ngModel)]='newJob.action')
+        select.mapper-form-input([(ngModel)]='formJob.action')
           option(*ngFor='let opt of actionOptions', [value]='opt.value') {{ opt.label }}
-      .mapper-form-row(*ngIf='newJob.action === "custom_command"')
+      .mapper-form-row(*ngIf='formJob.action === "custom_command"')
         label.mapper-form-label Command
-        input.mapper-form-input(type='text', [(ngModel)]='newJob.customCommand', placeholder='e.g. show version')
-      .mapper-form-row(*ngIf='newJob.action === "custom_command"')
+        input.mapper-form-input(type='text', [(ngModel)]='formJob.customCommand', placeholder='e.g. show version')
+      .mapper-form-row(*ngIf='formJob.action === "custom_command"')
         label.mapper-form-label Node Filter
-        input.mapper-form-input(type='text', [(ngModel)]='newJob.nodeFilter', placeholder='* for all')
+        input.mapper-form-input(type='text', [(ngModel)]='formJob.nodeFilter', placeholder='* for all')
       .mapper-form-row
         label.mapper-form-label Enabled
-        input(type='checkbox', [(ngModel)]='newJob.enabled')
+        input(type='checkbox', [(ngModel)]='formJob.enabled')
       .mapper-form-row
         span.mapper-form-error(*ngIf='addError') {{ addError }}
-        button.mapper-btn(type='button', (click)='cancelAdd()') Cancel
-        button.mapper-btn.mapper-btn-apply(type='button', (click)='confirmAdd()') Add Job
+        button.mapper-btn(type='button', (click)='cancelForm()') Cancel
+        button.mapper-btn.mapper-btn-apply(type='button', (click)='confirmForm()')
+          | {{ formMode === 'edit' ? 'Save changes' : 'Add job' }}
 
-    //- Jobs table
+    //- ── Jobs table ────────────────────────────────────────────────────────
     .mapper-table-wrap
-      .mapper-empty(*ngIf='!jobs.length')
-        p No scheduled jobs configured. Click "+ Add Job" to create one.
+      .mapper-empty(*ngIf='!filteredJobs.length && !jobs.length')
+        p No scheduled jobs configured. Click <strong>+ Add Job</strong> to create one.
+      .mapper-empty(*ngIf='!filteredJobs.length && jobs.length')
+        p No jobs match the current filter.
 
-      table.mapper-table(*ngIf='jobs.length')
+      table.mapper-table(*ngIf='filteredJobs.length')
         thead
           tr
+            th(style='width:18px')
             th Name
             th Schedule
             th Action
-            th Last Run
-            th Next Run
-            th Status
-            th Actions
+            th Last run
+            th Next run
+            th(style='width: 120px') Stats
+            th(style='width: 220px') Actions
         tbody
-          tr.mapper-row(*ngFor='let job of jobs', [class.sched-disabled]='!job.enabled')
-            td.mapper-cell-name {{ job.name }}
-            td
-              span.sched-schedule-badge {{ scheduleLabel(job.schedule) }}
-            td {{ actionLabel(job.action) }}
-            td {{ formatTime(job.lastRun) }}
-            td {{ formatTime(job.nextRun) }}
-            td
-              span.sched-status-dot([class.enabled]='job.enabled')
-              | {{ job.enabled ? 'Enabled' : 'Disabled' }}
-            td.sched-actions
-              button.mapper-btn(type='button', title='Run Now', (click)='runNow(job)') Run
-              button.mapper-btn(type='button', title='Toggle', (click)='toggleJob(job.id)') {{ job.enabled ? 'Disable' : 'Enable' }}
-              button.mapper-remove-btn(type='button', title='Delete', (click)='removeJob(job.id)') X
+          ng-container(*ngFor='let job of filteredJobs')
+            tr.mapper-row(
+              [class.sched-disabled]='!job.enabled',
+              [class.sched-row-running]='isJobRunning(job.id)',
+              [class.sched-row-expanded]='isExpanded(job.id)'
+            )
+              td.expand-arrow(
+                (click)='toggleHistory(job.id)',
+                title='Show run history',
+                style='cursor:pointer'
+              ) {{ isExpanded(job.id) ? '▾' : '▸' }}
+              td.mapper-cell-name
+                | {{ job.name }}
+                span.sched-running-pill(*ngIf='isJobRunning(job.id)', title='Currently executing') ● running
+              td
+                span.sched-schedule-badge {{ scheduleLabel(job.schedule) }}
+              td {{ actionLabel(job.action) }}
+              td
+                span(*ngIf='job.lastRun', [title]='formatTime(job.lastRun)') {{ formatRelative(job.lastRun, 'past') }}
+                span.sched-muted(*ngIf='!job.lastRun') never
+              td
+                span(*ngIf='job.enabled && job.nextRun', [title]='formatTime(job.nextRun)')
+                  | {{ formatRelative(job.nextRun, 'next') }}
+                span.sched-muted(*ngIf='!job.enabled') paused
+              td.sched-stats
+                span.sched-stat(title='Total runs') {{ job.runCount || 0 }}
+                | &nbsp;
+                span.sched-stat-ok(*ngIf='(job.successCount || 0) > 0', title='Successful runs') ✓{{ job.successCount }}
+                | &nbsp;
+                span.sched-stat-fail(*ngIf='(job.failCount || 0) > 0', title='Failed runs') ✗{{ job.failCount }}
+              td.sched-actions
+                button.mapper-btn(
+                  type='button',
+                  title='Run now (independent of schedule)',
+                  [disabled]='isJobRunning(job.id)',
+                  (click)='runNow(job)'
+                ) {{ isJobRunning(job.id) ? '…' : '▶ Run' }}
+                button.mapper-btn(
+                  type='button',
+                  [title]='job.enabled ? "Disable this job" : "Enable this job"',
+                  (click)='toggleJob(job.id)'
+                ) {{ job.enabled ? '⏸' : '▶' }}
+                button.mapper-btn(
+                  type='button',
+                  title='Skip the next scheduled run',
+                  [disabled]='!job.enabled',
+                  (click)='skipNext(job.id)'
+                ) ⤼ Skip
+                button.mapper-btn(
+                  type='button',
+                  title='Edit job',
+                  (click)='openEditForm(job)'
+                ) ✏
+                button.mapper-btn(
+                  type='button',
+                  title='Duplicate job',
+                  (click)='cloneJob(job.id)'
+                ) ⎘
+                button.mapper-remove-btn(
+                  type='button',
+                  title='Delete',
+                  (click)='removeJob(job.id)'
+                ) ✕
 
-    //- Recent results log
+            //- Expanded history row
+            tr.sched-history-row(*ngIf='isExpanded(job.id)')
+              td(colspan='8')
+                .sched-history-header
+                  | Last {{ historyFor(job.id).length }} run(s)
+                  span.sched-muted(style='margin-left: 8px')
+                    | · Created {{ formatTime(job.createdAt) }}
+                .sched-history-empty(*ngIf='!historyFor(job.id).length') No runs recorded yet.
+                .sched-history-list(*ngIf='historyFor(job.id).length')
+                  .sched-history-item(
+                    *ngFor='let r of historyFor(job.id)',
+                    [class.ok]='r.ok',
+                    [class.fail]='!r.ok'
+                  )
+                    span.sched-history-icon {{ r.ok ? '✓' : '✗' }}
+                    span.sched-history-time {{ formatTime(r.timestamp) }}
+                    span.sched-history-duration(*ngIf='r.durationMs') ({{ formatDuration(r.durationMs) }})
+                    span.sched-history-msg {{ r.message }}
+
+    //- ── Recent global executions log ──────────────────────────────────────
     .sched-results(*ngIf='results.length')
-      .sched-results-header Recent Executions (last 10)
+      .sched-results-header
+        | All Recent Executions ({{ results.length }})
+        button.mapper-btn(
+          type='button',
+          title='Clear all execution history',
+          style='margin-left: auto',
+          (click)='clearAllResults()'
+        ) Clear history
       .sched-results-list
-        .sched-result-row(*ngFor='let r of results.slice(0, 10)', [class.sched-result-ok]='r.ok', [class.sched-result-fail]='!r.ok')
+        .sched-result-row(
+          *ngFor='let r of results.slice(0, 20)',
+          [class.sched-result-ok]='r.ok',
+          [class.sched-result-fail]='!r.ok'
+        )
           span.sched-result-time {{ formatTime(r.timestamp) }}
           span.sched-result-status {{ r.ok ? 'OK' : 'FAIL' }}
+          span.sched-result-duration(*ngIf='r.durationMs') {{ formatDuration(r.durationMs) }}
           span.sched-result-msg {{ r.message }}
 
     .mapper-footer

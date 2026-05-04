@@ -17,6 +17,7 @@ import { BackupHistoryComponent }   from './components/backup-history.component'
 import { TopologyBuilderComponent } from './components/topology-builder.component'
 import { HelpViewComponent }        from './components/help-view.component'
 import { CompliancePanelComponent } from './components/compliance-panel.component'
+import { ComplianceRulesEditorComponent } from './components/compliance-rules-editor.component'
 import { EventRulesComponent }      from './components/event-rules.component'
 import { AutomationDashboardComponent } from './components/automation-dashboard.component'
 import { SchedulerPanelComponent }      from './components/scheduler-panel.component'
@@ -24,6 +25,10 @@ import { WorkflowEditorComponent }  from './components/workflow-editor.component
 import { ChangeManagerComponent }   from './components/change-manager.component'
 import { ConfigDiffComponent }      from './components/config-diff.component'
 import { DryRunSummaryComponent }   from './components/dry-run-summary.component'
+import { WorkflowLibraryComponent } from './components/workflow-library.component'
+import { PendingApprovalsComponent } from './components/pending-approvals.component'
+import { BulkPortOpsComponent }     from './components/bulk-port-ops.component'
+import { DeviceStagingComponent }   from './components/device-staging.component'
 import { SafeHtmlPipe }             from './pipes/safe-html.pipe'
 import { TabManagerService }       from './services/tab-manager.service'
 import { LicenseService }          from './services/license.service'
@@ -50,6 +55,7 @@ import { TAB_MANAGER }             from './api/tokens'
         TopologyBuilderComponent,
         HelpViewComponent,
         CompliancePanelComponent,
+        ComplianceRulesEditorComponent,
         EventRulesComponent,
         AutomationDashboardComponent,
         SchedulerPanelComponent,
@@ -57,6 +63,10 @@ import { TAB_MANAGER }             from './api/tokens'
         ChangeManagerComponent,
         ConfigDiffComponent,
         DryRunSummaryComponent,
+        WorkflowLibraryComponent,
+        PendingApprovalsComponent,
+        BulkPortOpsComponent,
+        DeviceStagingComponent,
         SafeHtmlPipe,
     ],
     providers: [

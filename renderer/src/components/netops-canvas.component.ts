@@ -21,12 +21,18 @@ import {
 import { asnToAsdot, is4ByteAsn, generateTelemetryPipeline } from '../services/vendor-config-builder'
 import { TopologyGraphService } from '../services/topology-graph.service'
 import { getVendorCommands } from '../services/vendor-command-map'
+import { mergeStaging, renderStagingConfig, buildStagingPushCommands, isSupportedStagingVendor } from '../services/vendor-staging-builder'
+import { loadDeviceInventory, resolveSshCredentials, InventoryRecord } from '../services/inventory-creds'
 import { deriveDeletesFromConfig, detectMgmtInterfaces } from '../services/delete-heuristic'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
 import { LayoutAlgorithm, forceDirectedLayout, hierarchicalLayout, radialLayout, gridLayout } from '../services/layout-helpers'
 import { Netops3dCanvasComponent } from './netops-3d-canvas.component'
 import { LicenseService } from '../services/license.service'
 import { TopologyExportService } from '../services/topology-export.service'
+import { SchedulerService } from '../services/scheduler.service'
+import { ComplianceService } from '../services/compliance.service'
+import { WorkflowService } from '../services/workflow.service'
+import { PushHistoryService } from '../services/push-history.service'
 
 interface PendingLink { sourceNodeId: string; sourcePortId: string; sourceAnnotationId?: string; anchorX?: number; anchorY?: number }
 interface PortPickerOption { port: NodePort; available: boolean; displayLabel?: string }
@@ -442,6 +448,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     showEventRulesDialog = false
     showUpgradesDialog = false
     showCompliancePanel = false
+    /** Compliance Rules Editor (CRUD for golden config rules). */
+    showComplianceRulesEditor = false
     showEventRulesPanel = false
     showAutomationDashboard = false
     showWorkflowEditor = false
@@ -465,6 +473,38 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck()
     }
 
+    /** Pending Approvals panel. */
+    showPendingApprovals = false
+    /** Bulk Port Operations dialog. */
+    showBulkPortOps = false
+    /** Device Staging (Day-0 onboarding config) dialog. */
+    showDeviceStaging = false
+
+    /** Push Day-0 Staging dialog — pushes only the merged staging block
+     *  (NTP/SNMP/Syslog/etc.) to target nodes, leaving fabric protocol
+     *  config untouched. Independent of pushAllConfigs. */
+    showPushStagingDialog = false
+    pushStagingScope: 'all' | 'selected' | 'unmapped' = 'all'
+    pushStagingMode:  'real' | 'preview' = 'preview'
+    pushStagingCommitAfter = true
+    pushStagingSequential  = true       // default sequential — staging push is fast, lock contention isn't worth it
+    pushStagingBusy = false
+    pushStagingLog  = ''
+
+    /** Workflow Library state. Browse / configure / run pre-built playbooks. */
+    showWorkflowLibrary = false
+    workflowLibraryPrefilledNodeIds: string[] = []
+    /** Open the Workflow Library, optionally pre-selecting target node(s). */
+    openWorkflowLibrary (nodeIds: string[] = []): void {
+        this.workflowLibraryPrefilledNodeIds = nodeIds.length
+            ? nodeIds
+            : (this.selectedNodeIds.size
+                ? [...this.selectedNodeIds]
+                : (this.selectedNodeId ? [this.selectedNodeId] : []))
+        this.showWorkflowLibrary = true
+        this.cdr.markForCheck()
+    }
+
     /** Dry-run summary state. Pulls live config + diffs against intended
      *  for every pushable node. Operator can then commit or cancel. */
     showDryRunSummary = false
@@ -478,9 +518,35 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     }
     /** Called by DryRunSummaryComponent when user confirms push. Forwards
      *  to the existing pushAllConfigs path with skipConfirm=true (the
-     *  dry-run UI is the confirmation). */
-    onDryRunPushRequested (evt: { nodeIds: string[] }): void {
-        this.pushAllConfigs({ skipConfirm: true, nodeIds: evt.nodeIds })
+     *  dry-run UI is the confirmation).
+     *
+     *  CRITICAL: this MUST await + surface errors. The dry-run dialog
+     *  closes immediately after emitting pushRequested, so any silent
+     *  failure in pushAllConfigs (vendor mismatch, no creds, SSH timeout)
+     *  leaves the user with zero feedback — they think the push happened
+     *  but nothing landed on the device. */
+    async onDryRunPushRequested (evt: { nodeIds: string[]; sequential?: boolean }): Promise<void> {
+        if (!evt.nodeIds?.length) {
+            this.statusMsg = 'Dry-run: nothing to push (no devices with diffs)'
+            this.cdr.markForCheck()
+            return
+        }
+        const seq = !!evt.sequential
+        this.statusMsg = `Dry-run confirmed → pushing to ${evt.nodeIds.length} device(s)${seq ? ' (sequential)' : ''}…`
+        this.cdr.markForCheck()
+        try {
+            await this.pushAllConfigs({
+                skipConfirm: true,
+                nodeIds: evt.nodeIds,
+                fromDryRun: true,    // tells pushAllConfigs to use alerts for silent-exit paths
+                sequential: seq,
+            })
+        } catch (e) {
+            const msg = (e as Error).message ?? String(e)
+            this.statusMsg = `Dry-run push failed: ${msg}`
+            this.cdr.markForCheck()
+            window.alert(`Dry-run push failed: ${msg}`)
+        }
     }
     backendUrl = 'http://localhost:4000'
     backendConnecting = false
@@ -1924,7 +1990,20 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         private graphSvc: TopologyGraphService,
         public licenseSvc: LicenseService,
         private topoExportSvc: TopologyExportService,
-    ) {}
+        private schedSvc: SchedulerService,
+        private compSvc: ComplianceService,
+        public workflowSvc: WorkflowService,
+        private pushHistorySvc: PushHistoryService,
+    ) {
+        // Lazy-load the push history once at canvas construction so the
+        // Automation Dashboard sees previous-session entries on first open.
+        this.pushHistorySvc.ensureLoaded()
+    }
+
+    /** Live count of pending approvals — used for the menu badge. */
+    get pendingApprovalCount (): number {
+        return this.workflowSvc?.pendingApprovals?.length ?? 0
+    }
 
     ngOnInit (): void {
         // ── Splash screen: only on first app launch, not on new tabs ──
@@ -1950,6 +2029,18 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
             this.currentTheme = 'light'
         }
         document.documentElement.setAttribute('data-theme', this.currentTheme)
+
+        // ── Scheduler bootstrap ──────────────────────────────────────────
+        // Wire the action dispatcher so scheduled jobs actually do work.
+        // Without this, runJob() falls into a fallback path that just
+        // returns a "no handler attached" message and marks ok=true.
+        this._initScheduler()
+
+        // ── Approval-count reactivity ────────────────────────────────────
+        // Refresh the menu badge whenever pending approvals change so the
+        // operator sees the queue grow/shrink without re-opening the menu.
+        const unsubAppr = this.workflowSvc.onApprovalsChange(() => this.cdr.markForCheck())
+        this._subs.push({ unsubscribe: unsubAppr } as any)
 
         this._subs.push(
             this._isActive$.subscribe(v => { this._isActiveTab = v }),
@@ -2001,6 +2092,11 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
         this.stopLivePolling()
         this._stopHeartbeat()
         this._stopServerResourcePolling()
+        // Stop the scheduler tick when this tab unmounts so timers don't leak.
+        this.schedSvc?.stopScheduler()
+        // Resolve any in-flight approval promises so paused workflows return
+        // (with a reject) instead of stranding their async stack frames.
+        this.workflowSvc?.rejectAllApprovals('canvas unmounted')
         const api = (window as any).netopsAPI
         if (api?.offDockerProgress) { api.offDockerProgress() }
     }
@@ -14083,18 +14179,270 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         }
     }
 
-    async pushAllConfigs (opts?: { skipConfirm?: boolean; nodeIds?: string[]; withAutoDeletes?: boolean }): Promise<void> {
+    /** Set during _offerAutoRollback so we don't recurse if the rollback
+     *  push itself partially fails (would otherwise prompt rollback-of-rollback). */
+    private _rollbackInProgress = false
+
+    /** Sticky preference: when true, pushes run one device at a time
+     *  instead of in parallel. Slower, but avoids exclusive-lock contention
+     *  on Junos / NX-OS, and reduces SSH-rate-limit errors on big batches.
+     *  Toggled from the dry-run footer or push confirmation dialog. */
+    sequentialPush = false
+
+    // ── Day-0 Staging push (independent of fabric config push) ───────────────
+
+    openPushStagingDialog (): void {
+        this.showPushStagingDialog = true
+        this.pushStagingLog = ''
+        this.pushStagingBusy = false
+        // Pre-select 'selected' scope if user has nodes selected, else 'all'.
+        if (this.selectedNodeIds.size > 0) {
+            this.pushStagingScope = 'selected'
+        } else if (this.pushStagingScope === 'selected') {
+            this.pushStagingScope = 'all'
+        }
+        this.cdr.markForCheck()
+    }
+
+    /** Resolve the candidate node list based on the dialog scope.
+     *  Unsupported-vendor nodes are kept in the list (with `supported=false`)
+     *  so the push log can show "[label] ✗ unsupported vendor 'X' — skipped"
+     *  rather than silently dropping them. */
+    private _stagingPushTargets (): Array<{ id: string; label: string; vendor: string; supported: boolean; hasStaging: boolean }> {
+        const fabric = (this.topology as any).staging
+        const wantsAll = this.pushStagingScope === 'all'
+        const wantsSel = this.pushStagingScope === 'selected'
+        const wantsUnm = this.pushStagingScope === 'unmapped'
+
+        return this.topology.nodes
+            .filter(n => {
+                if (wantsSel && !this.selectedNodeIds.has(n.id)) { return false }
+                if (wantsUnm && (n as any).mapped) { return false }
+                if (!wantsAll && !wantsSel && !wantsUnm) { return false }
+                if (!n.vendor) { return false }
+                // Skip hosts/bridges — staging only applies to network devices.
+                if (n.type === 'host' || n.type === 'bridge') { return false }
+                return true
+            })
+            .map(n => {
+                const supported = isSupportedStagingVendor(n.vendor || '')
+                let hasStaging = false
+                if (supported) {
+                    const merged = mergeStaging(fabric, (n as any).staging)
+                    hasStaging = renderStagingConfig(n.vendor || '', merged).trim().length > 0
+                }
+                return { id: n.id, label: n.label, vendor: n.vendor || '', supported, hasStaging }
+            })
+    }
+
+    async runPushStaging (): Promise<void> {
+        const fabric = (this.topology as any).staging
+        const allTargets = this._stagingPushTargets()
+        if (!allTargets.length) {
+            this.pushStagingLog = '✗ No eligible nodes — set fabric staging via Devices → Device Staging…, or add per-node overrides.'
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Partition for clearer logging: pushable / unsupported-vendor / no-staging.
+        const pushable     = allTargets.filter(t => t.supported && t.hasStaging)
+        const unsupported  = allTargets.filter(t => !t.supported)
+        const noStaging    = allTargets.filter(t => t.supported && !t.hasStaging)
+
+        this.pushStagingBusy = true
+        const stagingBatchStartedAt = Date.now()
+        // Per-target results captured during the push for the audit log.
+        const stagingPushResults: Array<{
+            nodeId: string; nodeLabel: string; ok: boolean; message?: string
+        }> = []
+        let log = `[push-staging] mode=${this.pushStagingMode} scope=${this.pushStagingScope} `
+            + `eligible=${allTargets.length} pushable=${pushable.length} `
+            + `unsupported=${unsupported.length} no-staging=${noStaging.length} `
+            + `sequential=${this.pushStagingSequential}\n`
+        // Surface the skipped buckets up-front so the user can fix them.
+        for (const t of unsupported) {
+            log += `[${t.label}] ✗ unsupported vendor '${t.vendor}' — skipped (not yet supported by staging builder)\n`
+        }
+        for (const t of noStaging) {
+            log += `[${t.label}] — no staging block (vendor=${t.vendor}), skipped\n`
+        }
+        this.pushStagingLog = log
+        this.cdr.markForCheck()
+
+        if (!pushable.length) {
+            this.pushStagingLog += `\n[push-staging] nothing to push.\n`
+            this.pushStagingBusy = false
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Load device inventory once for credential fallback (matches by mgmtIp / hostname).
+        const inventory: InventoryRecord[] = this.pushStagingMode === 'real'
+            ? await loadDeviceInventory()
+            : []
+
+        const api = (window as any).netopsAPI
+
+        const pushOne = async (t: { id: string; label: string; vendor: string }): Promise<void> => {
+            const node = this.topology.nodes.find(n => n.id === t.id)
+            if (!node) { return }
+            const merged = mergeStaging(fabric, (node as any).staging)
+            const cmds   = buildStagingPushCommands(t.vendor, merged, {
+                commitAfter: this.pushStagingCommitAfter,
+            })
+            if (!cmds.length) {
+                // Defensive: shouldn't happen because we pre-partitioned, but guard anyway.
+                this.pushStagingLog += `[${t.label}] — no staging block, skipped\n`
+                this.cdr.markForCheck()
+                return
+            }
+
+            // Preview mode: just dump what would be pushed.
+            if (this.pushStagingMode === 'preview') {
+                this.pushStagingLog += `\n── ${t.label} (${t.vendor}) ──\n${cmds.join('\n')}\n`
+                this.cdr.markForCheck()
+                return
+            }
+
+            // Real push.
+            try {
+                const host = (node.mgmtIp ?? '').split('/')[0].trim()
+                if (!host) {
+                    this.pushStagingLog += `[${t.label}] ✗ missing mgmtIp\n`
+                    stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: false, message: 'missing mgmtIp' })
+                    this.cdr.markForCheck()
+                    return
+                }
+                const creds = resolveSshCredentials(node, inventory)
+                if (creds.source === 'none') {
+                    this.pushStagingLog += `[${t.label}] ✗ missing SSH creds (set on node Info tab or in Device Mapper inventory)\n`
+                    stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: false, message: 'missing SSH credentials' })
+                    this.cdr.markForCheck()
+                    return
+                }
+                if (creds.source === 'inventory') {
+                    this.pushStagingLog += `[${t.label}] using credentials from inventory (${creds.matchedHostname ?? '?'})\n`
+                }
+                const username = creds.username
+                const password = creds.password
+
+                // Junos commits via a single `cli -c` invocation; everything else
+                // streams the wrapped command list into the device CLI.
+                let commands: string[]
+                if (/^juniper/i.test(t.vendor)) {
+                    const body = cmds
+                        .filter(c => c !== 'configure private' && c !== 'commit and-quit')
+                        .join('; ')
+                    commands = [`cli -c "configure private; ${body}; commit and-quit"`]
+                } else {
+                    commands = cmds
+                }
+
+                const backend = this._getBackendSvc()
+                let result: any
+                if (backend?.isConnected) {
+                    result = await backend.loadConfig(host, node.sshPort ?? 22, username, password, commands, 300)
+                } else if (api?.sshShellSession) {
+                    result = await api.sshShellSession({
+                        host,
+                        port: node.sshPort ?? 22,
+                        username,
+                        password,
+                        timeoutMs: 60000,
+                        commands,
+                        delayMs: 300,
+                    })
+                } else {
+                    this.pushStagingLog += `[${t.label}] ✗ no SSH backend available\n`
+                    stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: false, message: 'no SSH backend available' })
+                    this.cdr.markForCheck()
+                    return
+                }
+                if (result.ok) {
+                    this.pushStagingLog += `[${t.label}] ✓ pushed (${commands.length} cmds)\n`
+                    stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: true, message: '' })
+                } else {
+                    this.pushStagingLog += `[${t.label}] ✗ ${result.message || 'push failed'}\n`
+                    stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: false, message: String(result.message ?? 'push failed').slice(0, 200) })
+                }
+            } catch (err) {
+                this.pushStagingLog += `[${t.label}] ✗ ${(err as Error).message}\n`
+                stagingPushResults.push({ nodeId: t.id, nodeLabel: t.label, ok: false, message: String((err as Error).message ?? '').slice(0, 200) })
+            }
+            this.cdr.markForCheck()
+        }
+
+        if (this.pushStagingSequential) {
+            for (const t of pushable) { await pushOne(t) }
+        } else {
+            await Promise.all(pushable.map(pushOne))
+        }
+
+        this.pushStagingBusy = false
+        const stagingSucceeded = stagingPushResults.filter(r => r.ok).length
+        const stagingFailed    = stagingPushResults.filter(r => !r.ok).length
+        this.pushStagingLog += `\n[push-staging] done — `
+            + `${pushable.length} pushed, ${unsupported.length} unsupported, ${noStaging.length} no-staging.\n`
+
+        // Record this batch in the persistent push history (real push only).
+        if (this.pushStagingMode === 'real' && stagingPushResults.length > 0) {
+            this.pushHistorySvc.record({
+                timestamp:       new Date(stagingBatchStartedAt).toISOString(),
+                mode:            'staging',
+                source:          'canvas',
+                scope:           `${this.pushStagingScope} (${pushable.length} pushable, ${unsupported.length} unsupported, ${noStaging.length} no-staging)`,
+                sequential:      this.pushStagingSequential,
+                dryRun:          false,
+                results:         stagingPushResults,
+                succeeded:       stagingSucceeded,
+                failed:          stagingFailed,
+                totalDurationMs: Date.now() - stagingBatchStartedAt,
+            })
+        }
+        this.cdr.markForCheck()
+    }
+
+
+    async pushAllConfigs (opts?: {
+        skipConfirm?: boolean;
+        nodeIds?: string[];
+        withAutoDeletes?: boolean;
+        suppressRollbackOffer?: boolean;
+        /** When true (set by dry-run path), silent-exit branches escalate
+         *  from a status-bar message to a window.alert so the user can't
+         *  miss the failure. */
+        fromDryRun?: boolean;
+        /** Override the sticky `sequentialPush` flag for this single call. */
+        sequential?: boolean;
+    }): Promise<void> {
         const scopeSet = opts?.nodeIds?.length ? new Set(opts.nodeIds) : null
         const autoDeletes = !!opts?.withAutoDeletes
+        // Diagnostic log — helps trace dry-run-push failures in DevTools.
+        console.log(
+            `[push] start scope=${scopeSet ? `${scopeSet.size} ids` : 'all'}` +
+            ` skipConfirm=${!!opts?.skipConfirm} fromDryRun=${!!opts?.fromDryRun}` +
+            ` withAutoDeletes=${autoDeletes}`,
+        )
         const nodes = this.topology.nodes.filter(n => {
             if (scopeSet && !scopeSet.has(n.id)) { return false }
             return n.startupConfig?.trim() && n.vendor
         })
         if (!nodes.length) {
-            this.statusMsg = scopeSet
-                ? 'Selected node has no config, or its vendor isn\'t set'
+            // Diagnose WHICH filter dropped the nodes (especially helpful from dry-run path)
+            let diag = ''
+            if (scopeSet) {
+                const scoped = this.topology.nodes.filter(n => scopeSet.has(n.id))
+                const noConfig = scoped.filter(n => !n.startupConfig?.trim()).map(n => n.label)
+                const noVendor = scoped.filter(n => n.startupConfig?.trim() && !n.vendor).map(n => n.label)
+                if (noConfig.length) diag += ` · ${noConfig.length} without startupConfig: ${noConfig.slice(0, 3).join(', ')}`
+                if (noVendor.length) diag += ` · ${noVendor.length} without vendor set: ${noVendor.slice(0, 3).join(', ')}`
+            }
+            const msg = scopeSet
+                ? `Push aborted — selected nodes have no pushable config${diag}`
                 : 'No configs to push'
+            this.statusMsg = msg
             this.cdr.markForCheck()
+            if (opts?.fromDryRun) { window.alert(msg) }
             return
         }
 
@@ -14118,8 +14466,12 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
         const pushableCount = containerNodes.length + sshNodes.length
         if (!pushableCount) {
-            this.statusMsg = `${nodes.length} nodes have configs but none are reachable. Options: deploy containerlab, set management IPs, or configure SSH credentials on nodes.`
+            const msg = `${nodes.length} node(s) have configs but none are reachable. ` +
+                `Each node needs a running container (clab) OR a management IP + SSH credentials. ` +
+                `Set credentials via Device Mapper / Bulk Credentials / node properties.`
+            this.statusMsg = msg
             this.cdr.markForCheck()
+            if (opts?.fromDryRun) { window.alert(msg) }
             return
         }
 
@@ -14129,10 +14481,15 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                   `   config (delete interfaces, delete protocols …, delete system …)\n` +
                   `   before applying set statements. Clean slate per node.\n`
                 : ''
+            // Default to the sticky pref; user can change mid-confirm.
+            const initSeq = opts?.sequential ?? this.sequentialPush
+            const seqHint = initSeq
+                ? '\n⏱  Sequential mode: one device at a time (slower but avoids Junos lock contention).'
+                : '\n⚡ Parallel mode: all devices simultaneously. Toggle "Sequential push" in Devices menu to change.'
             const confirmed = window.confirm(
                 `Push configs to ${pushableCount} node(s)?\n\n` +
                 `• ${containerNodes.length} via container (docker exec)\n` +
-                `• ${sshNodes.length} via SSH${deleteBlurb}\n\n` +
+                `• ${sshNodes.length} via SSH${deleteBlurb}${seqHint}\n\n` +
                 `This will apply startup configs to running devices.`
             )
             if (!confirmed) { return }
@@ -14146,6 +14503,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         let success = 0
         let failed = 0
         const errors: string[] = []
+        // Per-node results for the push-history audit trail. Captured here so
+        // we can record both the per-node outcome and aggregate counts in one
+        // place at the end of the batch.
+        const pushHistoryResults: Array<{
+            nodeId: string; nodeLabel: string; ok: boolean; message?: string; durationMs?: number
+        }> = []
+        const pushBatchStartedAt = Date.now()
+        // Track per-node outcome so we can offer auto-rollback for the
+        // successful ones if a meaningful fraction of the batch failed.
+        const succeededNodeIds: string[] = []
+        const failedNodeIds: string[] = []
 
         const inFlight = new Set<string>()
         const updateProgress = (): void => {
@@ -14162,22 +14530,26 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             ])
         }
 
-        // Resolve SSH credentials — skip nodes missing creds (window.prompt is blocked in Electron).
-        // User should set creds via Device Mapper inline form, Bulk Credentials, or node properties.
+        // Resolve SSH credentials — node-fields first, then fall back to the
+        // saved Device Inventory (matched by mgmtIp or hostname). Loading the
+        // inventory once up-front avoids re-reading prefs per node.
+        const inventory = await loadDeviceInventory()
         const sshReady: { node: typeof sshNodes[0]; host: string; username: string; password: string }[] = []
         for (const node of sshNodes) {
             const host = (node.mgmtIp ?? '').split('/')[0]
             if (!host || !api?.sshShellSession) { continue }
 
-            const username = (node.sshUsername ?? '').trim()
-            const password = node.sshPassword ?? ''
-            if (!username || !password) {
+            const creds = resolveSshCredentials(node, inventory)
+            if (creds.source === 'none') {
                 failed++
-                errors.push(`${node.label}: no SSH credentials (set via Device Mapper or node properties)`)
+                errors.push(`${node.label}: no SSH credentials (set via node properties Info tab or Device Mapper inventory)`)
                 updateProgress()
                 continue
             }
-            sshReady.push({ node, host, username, password })
+            if (creds.source === 'inventory') {
+                console.log(`[push] ${node.label} using credentials from device inventory (matched ${creds.matchedHostname ?? '?'})`)
+            }
+            sshReady.push({ node, host, username: creds.username, password: creds.password })
         }
 
         // Push to container node
@@ -14202,11 +14574,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     }),
                     90_000, node.label,
                 )
-                if (result.ok) { success++ }
-                else { failed++; errors.push(`${node.label}: ${result.message}`) }
+                if (result.ok) {
+                    success++; succeededNodeIds.push(node.id)
+                    pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: true, message: '' })
+                } else {
+                    failed++; failedNodeIds.push(node.id); errors.push(`${node.label}: ${result.message}`)
+                    pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: String(result.message ?? '').slice(0, 200) })
+                }
             } catch (err) {
                 failed++
+                failedNodeIds.push(node.id)
                 errors.push(`${node.label}: ${(err as Error).message}`)
+                pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: String((err as Error).message ?? '').slice(0, 200) })
             }
             inFlight.delete(node.label)
             updateProgress()
@@ -14229,6 +14608,23 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     .filter(l => !/^Building configuration/i.test(l))
                     .filter(l => !/^Current configuration\s*:/i.test(l))
                     .filter(l => !/^Last configuration change/i.test(l))
+
+                // Defensive: strip trailing commit/exit/quit lines so they
+                // don't land inside `load set terminal` (Junos) or `configure
+                // terminal` (Cisco-likes) — the postamble already commits
+                // and exits. Older topology JSONs may have these baked in
+                // from earlier versions of the config builder.
+                while (configLines.length) {
+                    const last = configLines[configLines.length - 1].trim().toLowerCase()
+                    if (/^(commit($|\s)|exit($|\s)|quit($|\s)|end$|write\s+memory$|save\s+force$)/.test(last) ||
+                        last === 'commit and-quit' ||
+                        last === 'commit confirmed' ||
+                        last === 'exit all') {
+                        configLines.pop()
+                    } else {
+                        break
+                    }
+                }
 
                 // When auto-delete is enabled, derive top-of-hierarchy deletes
                 // from the set lines and insert them BEFORE the body. This gives
@@ -14274,10 +14670,87 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                     )
                 }
                 if (result.ok) {
-                    success++
-                    console.log(`[push] ${node.label} ✓ ${result.message ?? ''}`)
+                    // ── Output validation ─────────────────────────────
+                    // The backend reports ok=true after the SSH session
+                    // completes, but Junos / Cisco / Arista may reject
+                    // the commit with an error message *in the output*
+                    // while the session itself succeeds. Scan for known
+                    // commit-failure markers and downgrade ok→fail when
+                    // we see them. Without this check, a partial-commit
+                    // failure shows ✓ but no config landed on the device.
+                    const out = String(result.output ?? '').toLowerCase()
+                    const isJunos = /^juniper/i.test(vendorKey || '')
+
+                    // Hard-failure markers — config definitely didn't land.
+                    const commitFailMarkers = [
+                        'commit failed',                     // Junos
+                        'configuration check-out failed',    // Junos
+                        'error: commit',                     // Junos lock contention
+                        'mgd: error:',                       // Junos generic
+                        'configuration database is open',    // Junos lock
+                        'syntax error',                      // generic
+                        'unable to commit',                  // various
+                    ]
+                    // "Soft" markers that can appear during a successful push
+                    // (e.g. an extra `commit and-quit` line landing inside
+                    // `load set terminal` produces "unknown command: commit"
+                    // even though the postamble's commit succeeds). Treat
+                    // these as failures ONLY when there's no successful
+                    // commit confirmation in the same output.
+                    const softFailMarkers = [
+                        'unknown command',                   // Junos load-mode unknowns, Cisco
+                        'invalid command',                   // Cisco/Arista
+                    ]
+
+                    // Positive confirmations — presence of any of these
+                    // means the device DID accept the config.
+                    const positiveMarkers = [
+                        'commit complete',                   // Junos commit succeeded
+                        '[ok]',                              // Cisco/Arista write memory
+                    ]
+                    const hasPositive = positiveMarkers.some(m => out.includes(m))
+
+                    let hit = commitFailMarkers.find(m => out.includes(m))
+                    if (!hit && !hasPositive) {
+                        // No positive confirmation — promote any soft marker
+                        // to a hard failure so the user sees the issue.
+                        hit = softFailMarkers.find(m => out.includes(m))
+                    }
+                    // Junos extra check: a successful commit prints "commit complete".
+                    // If we sent commit but didn't see that string, treat as failed.
+                    const sentCommit = commands.some(c => /\bcommit\b/.test(c))
+                    const noCommitConfirmation = isJunos && sentCommit
+                        && !out.includes('commit complete')
+
+                    if (hit) {
+                        failed++
+                        failedNodeIds.push(node.id)
+                        const tail = String(result.output).trim().slice(-300)
+                        errors.push(`${node.label}: device output contained "${hit}" — config likely NOT applied · device said: …${tail}`)
+                        console.warn(`[push] ${node.label} ✗ commit-fail marker "${hit}" detected`, result.output)
+                        pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: `commit-fail marker: ${hit}`.slice(0, 200) })
+                    } else if (noCommitConfirmation) {
+                        failed++
+                        failedNodeIds.push(node.id)
+                        const tail = String(result.output).trim().slice(-300)
+                        errors.push(`${node.label}: Junos sent commit but no "commit complete" confirmation — config likely NOT applied · device said: …${tail}`)
+                        console.warn(`[push] ${node.label} ✗ no commit-complete confirmation`, result.output)
+                        pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: 'Junos: no "commit complete" confirmation' })
+                    } else {
+                        success++
+                        succeededNodeIds.push(node.id)
+                        // Log a short preview of the device transcript so
+                        // the user can confirm what actually ran.
+                        const preview = String(result.output ?? '').trim().slice(-200)
+                        console.log(
+                            `[push] ${node.label} ✓ ${result.message ?? ''}` +
+                            (preview ? ` · last output: …${preview}` : ''),
+                        )
+                        pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: true, message: '' })
+                    }
                 } else {
                     failed++
+                    failedNodeIds.push(node.id)
                     // Prefer the device-error message (it already carries tail context);
                     // otherwise append the first 200 chars of output so the user can see why.
                     const msg = result.message ?? 'unknown error'
@@ -14286,20 +14759,36 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         : ''
                     errors.push(`${node.label}: ${msg}${tail}`)
                     console.warn(`[push] ${node.label} ✗ ${msg}`, result.output)
+                    pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: String(msg).slice(0, 200) })
                 }
             } catch (err) {
                 failed++
+                failedNodeIds.push(node.id)
                 errors.push(`${node.label}: ${(err as Error).message}`)
+                pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: String((err as Error).message ?? '').slice(0, 200) })
             }
             inFlight.delete(node.label)
             updateProgress()
         }
 
-        // Run all pushes in parallel
-        await Promise.all([
-            ...containerNodes.map(n => pushContainer(n)),
-            ...sshReady.map(e => pushSsh(e)),
-        ])
+        // Dispatch — parallel by default, or one-at-a-time when sequential
+        // is enabled. Sequential is slower but avoids:
+        //   • Junos exclusive-lock contention (one device holds the lock)
+        //   • SSH-rate-limit lockouts on shared bastions
+        //   • Watching N devices commit in interleaved log lines
+        const useSequential = opts?.sequential ?? this.sequentialPush
+        if (useSequential) {
+            console.log('[push] sequential mode — one device at a time')
+            // Containers first (they're typically faster), then SSH.
+            for (const n of containerNodes) { await pushContainer(n) }
+            for (const e of sshReady)        { await pushSsh(e) }
+        } else {
+            // Parallel — original behavior.
+            await Promise.all([
+                ...containerNodes.map(n => pushContainer(n)),
+                ...sshReady.map(e => pushSsh(e)),
+            ])
+        }
 
         // Show final progress before clearing the banner
         this.operationProgress = `Push complete: ${success} ✓, ${failed} ✗`
@@ -14310,6 +14799,27 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.configPushAllRunning = false
         this.operationProgress = ''
 
+        // ── Record this batch in the persistent push history ──────────────
+        // Skip the recording if nothing actually ran (e.g., no eligible nodes).
+        if (pushHistoryResults.length > 0) {
+            const useSeq = opts?.sequential ?? this.sequentialPush
+            const scopeStr = opts?.nodeIds && opts.nodeIds.length
+                ? `Selected (${opts.nodeIds.length})`
+                : `All nodes (${pushHistoryResults.length})`
+            this.pushHistorySvc.record({
+                timestamp:       new Date(pushBatchStartedAt).toISOString(),
+                mode:            'full',
+                source:          opts?.suppressRollbackOffer ? 'rollback' : (opts?.fromDryRun ? 'dashboard' : 'canvas'),
+                scope:           scopeStr,
+                sequential:      !!useSeq,
+                dryRun:          false,
+                results:         pushHistoryResults,
+                succeeded:       success,
+                failed:          failed,
+                totalDurationMs: Date.now() - pushBatchStartedAt,
+            })
+        }
+
         if (failed > 0) {
             const summary = `Config push: ${success} succeeded, ${failed} failed\n\n` +
                 errors.map(e => `  ✗ ${e}`).join('\n\n') +
@@ -14318,12 +14828,113 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             this.statusMsg = `Config push: ${success}✓ ${failed}✗ · ${errors[0] ?? ''}`
             this.cdr.detectChanges()
             window.alert(summary)
+
+            // ── Auto-rollback offer ─────────────────────────────────────
+            // If a meaningful fraction of the batch failed BUT some did succeed,
+            // a partial commit may have left the fabric inconsistent. Offer to
+            // restore the successful nodes from their most recent backup so
+            // either everything has the new state or everything has the old.
+            //
+            // GUARDS:
+            //   - opts.suppressRollbackOffer: caller asked us not to (used by
+            //     the rollback path itself to prevent rollback-of-rollback)
+            //   - _rollbackInProgress: belt-and-braces flag in case a caller
+            //     forgets to set suppressRollbackOffer
+            const total = success + failed
+            const failureFrac = total ? failed / total : 0
+            const offerRollback = success > 0
+                && failureFrac >= 0.30
+                && !opts?.suppressRollbackOffer
+                && !this._rollbackInProgress
+            if (offerRollback) {
+                await this._offerAutoRollback(succeededNodeIds, success, failed)
+            }
         } else {
             this.statusMsg = `Config push complete: ${success} config(s) pushed successfully`
             this.cdr.detectChanges()
             window.alert(`Config push complete: ${success} config(s) pushed successfully`)
         }
         this.cdr.detectChanges()
+    }
+
+    /**
+     * Offer to restore the just-succeeded nodes to their previous backup
+     * after a partial-failure push. Fires when ≥30% of the batch failed —
+     * a partial commit leaves the fabric in a mixed state where the new
+     * change is on some boxes and not others. Two paths:
+     *   - Roll forward: ignore the offer, retry just the failed nodes
+     *   - Roll back:    restore the succeeded nodes from their latest backup
+     *
+     * Implementation: for each succeeded node, find the most recent
+     * pre-push backup (configType=startup or running, NOT type=event from
+     * the push that just ran), then re-push that backup as the startup.
+     */
+    private async _offerAutoRollback (
+        succeededNodeIds: string[],
+        success: number, failed: number,
+    ): Promise<void> {
+        const candidates: Array<{ nodeId: string; label: string; backup: ConfigBackupEntry }> = []
+        for (const id of succeededNodeIds) {
+            const node = this.topology.nodes.find(n => n.id === id)
+            if (!node) { continue }
+            const backups = this.invSvc.getBackupsForNode?.(id) ?? []
+            // Skip the backup we just (probably) implicitly created from this push;
+            // pick the most recent one with trigger != 'event' (or just second-most-recent).
+            const pre = backups.find(b => (b as any).trigger !== 'event') ?? backups[1] ?? backups[0]
+            if (pre) { candidates.push({ nodeId: id, label: node.label, backup: pre }) }
+        }
+        if (!candidates.length) {
+            console.log('[auto-rollback] no eligible backups to restore from — skipping offer')
+            return
+        }
+
+        const message =
+            `⚠ Partial-failure push detected (${success} ok, ${failed} failed)\n\n` +
+            `Roll back the ${success} succeeded device(s) to their previous backup ` +
+            `so the fabric returns to a consistent pre-push state?\n\n` +
+            `Devices that would be rolled back:\n` +
+            candidates.slice(0, 8).map(c =>
+                `  • ${c.label}  (${(c.backup.timestamp ?? '').slice(0, 19)})`,
+            ).join('\n') +
+            (candidates.length > 8 ? `\n  …and ${candidates.length - 8} more` : '') +
+            `\n\nRoll back now?`
+
+        if (!window.confirm(message)) {
+            this.statusMsg = `Rollback declined — fabric in mixed state. Retry failed nodes from the push menu.`
+            return
+        }
+
+        // Apply each backup as the new startupConfig and re-push to that node.
+        this.statusMsg = `Rolling back ${candidates.length} device(s)…`
+        this.cdr.detectChanges()
+
+        // Recursion guard — the rollback push itself uses pushAllConfigs and
+        // could trigger another rollback offer if it partially fails. Skip
+        // that for both the explicit suppressRollbackOffer flag and the
+        // belt-and-braces _rollbackInProgress class field.
+        this._rollbackInProgress = true
+        let rbOk = 0, rbFail = 0
+        try {
+            for (const c of candidates) {
+                try {
+                    this.svc.updateNodeConfig(c.nodeId, { startupConfig: c.backup.content })
+                    await this.pushAllConfigs({
+                        skipConfirm: true,
+                        nodeIds: [c.nodeId],
+                        suppressRollbackOffer: true,
+                    })
+                    rbOk++
+                } catch (e) {
+                    rbFail++
+                    console.error(`[auto-rollback] ${c.label}:`, e)
+                }
+            }
+        } finally {
+            this._rollbackInProgress = false
+        }
+        this.statusMsg = `Rollback complete: ${rbOk}✓ ${rbFail}✗`
+        this.cdr.detectChanges()
+        window.alert(`Rollback ${rbFail ? 'partially ' : ''}complete: ${rbOk} restored, ${rbFail} failed.`)
     }
 
     // ── Topology description ─────────────────────────────────────────────────
@@ -14526,6 +15137,118 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             this.statusMsg = `Auto-poll interval changed to ${minutes} min`
         }
         this.cdr.markForCheck()
+    }
+
+    /** Class-level guard so only the FIRST canvas to mount wires the
+     *  scheduler. SchedulerService is a singleton across tabs (providedIn:
+     *  root), so without this, every newly-opened tab would overwrite
+     *  onRunAction with handlers bound to its own topology — meaning jobs
+     *  would silently run against the wrong tab's data. */
+    private static _schedulerInitialized = false
+
+    /**
+     * Wire up the scheduler so jobs actually do work when they fire.
+     * Without this, SchedulerService.runJob() falls into a fallback path
+     * that just returns "no handler attached" and marks ok=true — jobs
+     * APPEAR to succeed but never actually execute their action.
+     *
+     * Maps each ScheduledJob.action to a real implementation here on the
+     * canvas component, where TopologyService / InventoryService /
+     * ComplianceService / WorkflowService are all in scope.
+     *
+     * Idempotent: only runs once per app lifetime via the class-level
+     * _schedulerInitialized flag.
+     */
+    private async _initScheduler (): Promise<void> {
+        if (NetopsCanvasComponent._schedulerInitialized) {
+            console.log('[scheduler] already initialized in another tab — skipping')
+            return
+        }
+        NetopsCanvasComponent._schedulerInitialized = true
+        // Action dispatcher — called by SchedulerService.runJob() for every
+        // due job. Returns a status string that the scheduler logs as the
+        // run result. Throwing here marks the run as failed.
+        this.schedSvc.onRunAction = async (action: string, config: Record<string, any>): Promise<string> => {
+            switch (action) {
+
+                case 'backup_all': {
+                    const count = await this.invSvc.backupAllConfigs('scheduled')
+                    return `Backed up ${count} device(s)`
+                }
+
+                case 'poll_all': {
+                    await this.invSvc.pollAllDevices()
+                    return `Polled ${this.invSvc.pollAllTotal} device(s) ` +
+                           `(${this.invSvc.pollAllDone} succeeded)`
+                }
+
+                case 'compliance_check': {
+                    await this.compSvc.loadRules()
+                    const nodes = this.topology.nodes
+                        .filter(n => n.vendor)
+                        .map(n => ({ id: n.id, label: n.label, vendor: n.vendor!, role: n.role ?? '' }))
+                    const results = await this.compSvc.checkAllCompliance(
+                        nodes,
+                        async (nodeId) => {
+                            const node = this.topology.nodes.find(n => n.id === nodeId)
+                            return node?.startupConfig ?? ''
+                        },
+                    )
+                    const avg = results.length
+                        ? Math.round(results.reduce((s, r) => s + r.score, 0) / results.length)
+                        : 100
+                    const failed = results.filter(r => r.score < 100).length
+                    return `Checked ${results.length} device(s) — avg score ${avg}% — ${failed} non-compliant`
+                }
+
+                case 'custom_command': {
+                    // Run the configured command against every node with SSH creds.
+                    const command = String(config['command'] ?? '').trim()
+                    if (!command) { throw new Error('Job config missing "command"') }
+                    const api = (window as any).netopsAPI
+                    if (!api?.sshRunCommand) { throw new Error('SSH API not available') }
+                    const nodes = this.topology.nodes.filter(n => {
+                        const host = (n.mgmtIp ?? '').split('/')[0]
+                        return host && n.sshUsername && n.sshPassword
+                    })
+                    let ok = 0, fail = 0
+                    for (const n of nodes) {
+                        try {
+                            const r = await api.sshRunCommand({
+                                host: (n.mgmtIp ?? '').split('/')[0],
+                                port: n.sshPort ?? 22,
+                                username: n.sshUsername,
+                                password: n.sshPassword,
+                                timeoutMs: 30000,
+                                command,
+                            })
+                            if (r?.ok) { ok++ } else { fail++ }
+                        } catch { fail++ }
+                    }
+                    return `Ran "${command}" on ${nodes.length} device(s) — ${ok} ok, ${fail} failed`
+                }
+
+                default:
+                    throw new Error(`Unknown scheduled action: ${action}`)
+            }
+        }
+
+        // Load persisted jobs (the panel does this lazily, but starting
+        // the scheduler before the panel opens needs them in memory).
+        try {
+            await (this.schedSvc as any).loadJobs?.()
+        } catch { /* tolerable if no persistence yet */ }
+
+        // Auto-start the scheduler loop UNCONDITIONALLY. The previous
+        // gate (only-start-if-jobs-enabled) meant adding a job from the
+        // panel after launch left the scheduler in STOPPED state, which
+        // is exactly what the user hit. A running scheduler with no jobs
+        // is a 60-sec idle tick — cost is essentially zero.
+        this.schedSvc.startScheduler()
+        const enabledCount = this.schedSvc.jobs.filter(j => j.enabled).length
+        console.log(
+            `[scheduler] started (${this.schedSvc.jobs.length} job(s), ${enabledCount} enabled)`,
+        )
     }
 
     async pollAllDevices (): Promise<void> {

@@ -365,6 +365,17 @@
         //- ── Configuration ─────────────────────────────────────────────
         .menu-item-divider
         .menu-item-section Configuration
+        button.menu-item(type='button',
+          title='Day-0 onboarding settings (NTP, SNMP, LLDP, Syslog, DNS, AAA users, banner) prepended to every generated config.',
+          (click)='showDeviceStaging = true; closeMenus()')
+          span.mi-icon 🛠
+          span.mi-label Device Staging (Day-0)…
+        button.menu-item(type='button',
+          [disabled]='nodeCount === 0',
+          title='Push only the Day-0 staging block (NTP / SNMP / Syslog / DNS / LLDP / AAA / Banner) — fabric protocols are NOT touched.',
+          (click)='openPushStagingDialog(); closeMenus()')
+          span.mi-icon ⏵
+          span.mi-label Push Day-0 Staging…
         button.menu-item(type='button', [disabled]='nodeCount === 0', (click)='openProtocolDialog(); closeMenus()')
           span.mi-icon ⚙
           span.mi-label Set Protocol…
@@ -396,6 +407,12 @@
           title='Remove canvas nodes whose label or mgmt IP matches a regex pattern. Inventory is unaffected.')
           span.mi-icon 🗑
           span.mi-label Remove Devices by Pattern…
+        button.menu-item(type='button',
+          [class.menu-item-checked]='sequentialPush',
+          title='When checked, config pushes go to one device at a time instead of in parallel. Slower but avoids Junos exclusive-lock contention and SSH rate-limit errors.',
+          (click)='sequentialPush = !sequentialPush; closeMenus()')
+          span.mi-check {{ sequentialPush ? '✓' : '' }}
+          span.mi-label Push sequentially (one device at a time)
 
     //- ── Inventory ────────────────────────
     .menu-item-wrap
@@ -561,6 +578,23 @@
         button.menu-item(type='button', (click)='openEventRulesPanel(); closeMenus()')
           span.mi-icon ⚙
           span.mi-label Event Rules (Full)…
+        button.menu-item(type='button',
+          title='Pre-built playbooks for common ops tasks (shut interface, add VLAN, reset BGP, ping, backup, …) — pick, fill in parameters, run on N target nodes.',
+          (click)='openWorkflowLibrary(); closeMenus()')
+          span.mi-icon 📚
+          span.mi-label Workflow Library…
+        button.menu-item(type='button',
+          title='Multi-node multi-port action: shut/no-shut/MTU/description across many ports in one shot.',
+          [disabled]='nodeCount === 0',
+          (click)='showBulkPortOps = true; closeMenus()')
+          span.mi-icon ⊞
+          span.mi-label Bulk Port Operations…
+        button.menu-item(type='button',
+          title='Workflows paused at approval gates. Click Approve or Reject to resume.',
+          (click)='showPendingApprovals = true; closeMenus()')
+          span.mi-icon ⏸
+          span.mi-label Pending Approvals…
+          span.menu-badge-warn(*ngIf='pendingApprovalCount > 0') {{ pendingApprovalCount }}
         button.menu-item(type='button', (click)='showWorkflowEditor = true; closeMenus()')
           span.mi-icon 🔗
           span.mi-label Workflow Editor…
@@ -568,6 +602,9 @@
         button.menu-item(type='button', (click)='openCompliancePanel(); closeMenus()')
           span.mi-icon ✓
           span.mi-label Compliance Check
+        button.menu-item(type='button', (click)='showComplianceRulesEditor = true; closeMenus()')
+          span.mi-icon 📋
+          span.mi-label Compliance Rules…
         button.menu-item(type='button', (click)='showBackupHistory = true; closeMenus()')
           span.mi-icon 🗄
           span.mi-label Backup History
@@ -2050,6 +2087,11 @@
           ) Config Diff (Generated / Live / Backup)…
           button.ctx-item(
             type='button',
+            title='Run a pre-built playbook against this device (shut/no-shut, VLAN ops, BGP reset, diagnostics, …)',
+            (click)='$event.stopPropagation(); openWorkflowLibrary([ctxNodeId!]); closeCtxMenu()'
+          ) Run Playbook…
+          button.ctx-item(
+            type='button',
             [disabled]='!ctxNodeHasConfig',
             (click)='$event.stopPropagation(); ctxShowTroubleshoot(ctxNodeId!)'
           ) Troubleshoot
@@ -2745,6 +2787,12 @@
 
   //- ── Compliance Panel ──────────────────────────────────────────────────
   compliance-panel(*ngIf='showCompliancePanel', (closed)='closeCompliancePanel()')
+
+  //- ── Compliance Rules Editor ─────────────────────────────────────────
+  compliance-rules-editor(
+    *ngIf='showComplianceRulesEditor',
+    (closed)='showComplianceRulesEditor = false; cdr.markForCheck()'
+  )
 
   //- ── Event Rules Panel (standalone component) ─────────────────────────
   event-rules(*ngIf='showEventRulesPanel', (closed)='closeEventRulesPanel()')
@@ -4555,10 +4603,86 @@
     (pushRequested)='onDryRunPushRequested($event)'
   )
 
+  //- ── Workflow Library ────────────────────────────────────────────────
+  workflow-library(
+    *ngIf='showWorkflowLibrary',
+    [prefilledNodeIds]='workflowLibraryPrefilledNodeIds',
+    (closed)='showWorkflowLibrary = false; cdr.markForCheck()'
+  )
+
+  //- ── Pending Approvals ───────────────────────────────────────────────
+  pending-approvals(
+    *ngIf='showPendingApprovals',
+    (closed)='showPendingApprovals = false; cdr.markForCheck()'
+  )
+
+  //- ── Bulk Port Operations ────────────────────────────────────────────
+  bulk-port-ops(
+    *ngIf='showBulkPortOps',
+    (closed)='showBulkPortOps = false; cdr.markForCheck()'
+  )
+
+  //- ── Device Staging (Day-0) ──────────────────────────────────────────
+  device-staging(
+    *ngIf='showDeviceStaging',
+    (closed)='showDeviceStaging = false; cdr.markForCheck()',
+    (pushRequested)='openPushStagingDialog()'
+  )
+
+  //- ── Push Day-0 Staging dialog ───────────────────────────────────────
+  //- Bulk-pushes only the merged staging block (NTP/SNMP/Syslog/etc) to
+  //- target nodes — fabric protocols are NOT touched.
+  .auto-ip-overlay(*ngIf='showPushStagingDialog', (click)='showPushStagingDialog = false')
+    .auto-ip-dialog.push-staging-dialog((click)='$event.stopPropagation()')
+      .auto-ip-title Push Day-0 Staging
+      .auto-ip-subtitle
+        | Sends only the merged staging block (NTP / SNMP / Syslog / DNS / LLDP / AAA / Banner) —
+        | fabric routing/interface config is NOT touched.
+      .bulk-cred-form
+        .bulk-cred-row
+          span.bulk-cred-label Scope
+          select.bulk-cred-input([(ngModel)]='pushStagingScope')
+            option(value='all') All nodes ({{ nodeCount }})
+            option(value='selected') Selected nodes ({{ selectedNodeIds.size }})
+            option(value='unmapped') Unmapped only (Day-0 onboarding)
+        .bulk-cred-row
+          span.bulk-cred-label Mode
+          select.bulk-cred-input([(ngModel)]='pushStagingMode')
+            option(value='real') Push (apply to device)
+            option(value='preview') Preview only (dry-run)
+        .bulk-cred-row
+          span.bulk-cred-label Save to startup
+          label.config-checkbox
+            input(type='checkbox', [(ngModel)]='pushStagingCommitAfter')
+            | Persist to startup config (commit / wr mem)
+        .bulk-cred-row
+          span.bulk-cred-label Sequential
+          label.config-checkbox
+            input(type='checkbox', [(ngModel)]='pushStagingSequential')
+            | One device at a time (slower but avoids vendor lock contention)
+
+      //- Log surface — shown after a Push/Preview run; sits above the actions
+      //- so the user sees the result and can re-run / dismiss without leaving.
+      .push-staging-log(*ngIf='pushStagingLog')
+        .push-staging-log-header
+          span.push-staging-log-title Push Log
+          button.push-staging-log-close(type='button',
+            (click)='pushStagingLog = ""',
+            title='Clear log') ✕
+        pre.push-staging-log-pre {{ pushStagingLog }}
+
+      .auto-ip-actions
+        button.btn-tool(type='button', (click)='showPushStagingDialog = false', [disabled]='pushStagingBusy') Cancel
+        button.btn-tool.btn-primary(type='button', [disabled]='pushStagingBusy', (click)='runPushStaging()')
+          | {{ pushStagingBusy ? 'Pushing…' : (pushStagingMode === "preview" ? "Preview" : "Push") }}
+
   //- ── Automation Dashboard ────────────────────────────────────────────────
   automation-dashboard(
     *ngIf='showAutomationDashboard',
-    (closed)='showAutomationDashboard = false; cdr.markForCheck()'
+    (closed)='showAutomationDashboard = false; cdr.markForCheck()',
+    (openApprovals)='showAutomationDashboard = false; showPendingApprovals = true; cdr.markForCheck()',
+    (openWorkflowLibrary)='showAutomationDashboard = false; openWorkflowLibrary(); cdr.markForCheck()',
+    (openScheduledJobs)='showAutomationDashboard = false; showSchedulerPanel = true; cdr.markForCheck()'
   )
 
   //- ── Backend Server Settings ──────────────────────────────────────────────

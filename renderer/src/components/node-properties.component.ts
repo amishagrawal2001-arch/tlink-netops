@@ -21,8 +21,10 @@ import {
 import { NetopsSshRequest } from '../api/netops-api'
 import { buildVendorStartupConfig, VendorConfigContext, asnToAsdot, is4ByteAsn } from '../services/vendor-config-builder'
 import { getVendorCommands } from '../services/vendor-command-map'
+import { mergeStaging, renderStagingConfig, buildStagingPushCommands, isSupportedStagingVendor } from '../services/vendor-staging-builder'
+import { loadDeviceInventory, resolveSshCredentials } from '../services/inventory-creds'
 
-type PanelTab = 'info' | 'ports' | 'vlans' | 'config' | 'notes' | 'links' | 'inv'
+type PanelTab = 'info' | 'ports' | 'vlans' | 'config' | 'staging' | 'notes' | 'links' | 'inv'
 type JuniperPortGroup = { count: number; suffix: 'ge' | 'xe' | 'et'; speeds: PortSpeed[] }
 
 interface QfxModelProfile {
@@ -377,6 +379,21 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     activeTab: PanelTab = 'info'
 
     private _backendSvc: any = null
+
+    /** Cached device inventory used as a credential fallback when the node's
+     *  Info-tab SSH fields are empty. Loaded lazily on first need and refreshed
+     *  on each node change. Stored as `[]` if unavailable. */
+    private _inventoryCache: import('../services/inventory-creds').InventoryRecord[] | null = null
+    private async _ensureInventoryLoaded (): Promise<void> {
+        if (this._inventoryCache != null) { return }
+        this._inventoryCache = await loadDeviceInventory()
+        this.cdr.markForCheck()
+    }
+    /** Resolve SSH creds for the current node — node fields, then inventory. */
+    private _resolveCreds (): { username: string; password: string; source: 'node'|'inventory'|'none'; matchedHostname?: string } {
+        if (!this.node) { return { username: '', password: '', source: 'none' } }
+        return resolveSshCredentials(this.node, this._inventoryCache ?? [])
+    }
     private _getBackendSvc (): any {
         if (!this._backendSvc) {
             try { this._backendSvc = new (require('../services/backend-client.service').BackendClientService)() } catch {}
@@ -388,6 +405,19 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     draft: Partial<TopologyNode> = {}
     portDrafts: Record<string, Partial<NodePort>> = {}
     portChannelDrafts: Record<string, number> = {}
+
+    // ── Staging tab buffers (per-node Day-0 overrides) ──
+    // Comma-separated text inputs that get parsed to string[] on apply.
+    stagingNtpServersText = ''
+    stagingSyslogServersText = ''
+    stagingDnsServersText = ''
+    stagingSnmpTrapTargetsText = ''
+    // Single-field overrides bound directly via ngModel
+    stagingSnmpCommunity = ''
+    stagingSnmpContact = ''
+    stagingSnmpLocation = ''
+    stagingBannerLogin = ''
+    stagingMsg = ''
 
     // VLAN table draft state
     vlanDrafts: VlanDefinition[] = []
@@ -532,6 +562,7 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             sshUsername:   this.node.sshUsername ?? '',
             sshPassword:   this.node.sshPassword ?? '',
             startupConfig: this.node.startupConfig ?? '',
+            staging:       (this.node as any).staging ?? undefined,
             notes:         this.node.notes ?? '',
             serialNumber:  this.node.serialNumber ?? '',
             sourceId:      this.node.sourceId ?? '',
@@ -548,6 +579,19 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             bridgeType: this.node.bridgeType ?? 'linux',
             serverId: this.node.serverId,
         }
+
+        // Sync staging override buffers from node (per-node staging)
+        const ns: any = (this.node as any).staging ?? {}
+        this.stagingNtpServersText      = (ns.ntp?.servers ?? []).join(', ')
+        this.stagingSyslogServersText   = (ns.syslog?.servers ?? []).join(', ')
+        this.stagingDnsServersText      = (ns.dns?.servers ?? []).join(', ')
+        this.stagingSnmpTrapTargetsText = (ns.snmp?.trapTargets ?? []).join(', ')
+        this.stagingSnmpCommunity       = ns.snmp?.community ?? ''
+        this.stagingSnmpContact         = ns.snmp?.contact ?? ''
+        this.stagingSnmpLocation        = ns.snmp?.location ?? ''
+        this.stagingBannerLogin         = ns.banner?.login ?? ''
+        this.stagingMsg                 = ''
+
         // Auto-fetch host interfaces when selecting a host port node
         if (this.node.type === 'host' && !this.hostInterfaces.length) {
             // Auto-populate ports if the node has a serverId and no real interface names yet
@@ -564,6 +608,10 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         this.sshOutput = ''
         this.sshPassword = this.node.sshPassword ?? ''
         this.portGenMsg = ''
+
+        // Lazy-load the device inventory so push buttons can fall back to
+        // inventory credentials when the Info-tab fields are empty.
+        this._ensureInventoryLoaded()
 
         // Sync per-port drafts
         this.portDrafts = {}
@@ -3274,14 +3322,17 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         return this.clabContainers.find(c => c.name.toLowerCase().endsWith('-' + safeName))
     }
 
-    /** Whether this node can push config via SSH (physical device) */
+    /** Whether this node can push config via SSH (physical device).
+     *  Falls back to the device inventory when the Info-tab SSH fields are
+     *  empty — so the button enables as long as we can resolve creds from
+     *  *somewhere* (node fields OR inventory match). */
     get canPushSsh (): boolean {
         if (!this.node) { return false }
         const host = (this.node.mgmtIp ?? '').split('/')[0].trim()
-        const user = (this.node.sshUsername ?? '').trim()
-        const pwd  = (this.node.sshPassword ?? '').trim()
         const vendor = (this.node.vendor ?? '').trim()
-        return !!(host && user && pwd && vendor && this.draft.startupConfig?.trim())
+        if (!host || !vendor || !this.draft.startupConfig?.trim()) { return false }
+        const creds = this._resolveCreds()
+        return creds.source !== 'none'
     }
 
     /** Whether this node can push config to a running container */
@@ -3343,8 +3394,20 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             } else if (this.canPushSsh && api?.sshShellSession) {
                 // ── SSH push to physical device ──
                 const host = (this.node.mgmtIp ?? '').split('/')[0].trim()
-                const username = (this.node.sshUsername ?? '').trim()
-                const password = this.node.sshPassword ?? ''
+                // Resolve creds: node Info-tab fields → device inventory fallback.
+                await this._ensureInventoryLoaded()
+                const creds = this._resolveCreds()
+                if (creds.source === 'none') {
+                    this.configPushOutput = '✗ No SSH credentials — set on Info tab or in Device Mapper inventory.'
+                    this.configPushing = false
+                    this.cdr.markForCheck()
+                    return
+                }
+                const credSourceNote = creds.source === 'inventory'
+                    ? ` (using credentials from inventory match: ${creds.matchedHostname ?? '?'})`
+                    : ''
+                const username = creds.username
+                const password = creds.password
                 const vendorKey = (this.node.vendor ?? '').trim().toLowerCase()
                 const cmds = getVendorCommands(vendorKey)
                 const preamble = cmds.loadConfigPreamble ?? ['configure terminal']
@@ -3374,8 +3437,8 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
                     })
                 }
                 this.configPushOutput = result.ok
-                    ? `✓ Config pushed via SSH to ${host}\n\n${result.output || ''}`
-                    : `✗ SSH push failed: ${result.message || result.output || 'Unknown error'}`
+                    ? `✓ Config pushed via SSH to ${host}${credSourceNote}\n\n${result.output || ''}`
+                    : `✗ SSH push failed: ${result.message || result.output || 'Unknown error'}${credSourceNote}`
             } else {
                 this.configPushOutput = '✗ Cannot push: no running container or SSH credentials available'
             }
@@ -3553,6 +3616,265 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
 </body></html>`)
         win.document.close()
         win.document.title = `Config Diff: ${this.node.label}`
+    }
+
+    // ── Staging tab (per-node Day-0 overrides) ──────────────────────────────
+
+    /** Fabric-wide defaults — displayed as placeholders so the user can see
+     *  what they would inherit if they leave a field blank. */
+    get fabricStaging (): any {
+        return (this.svc.topology as any).staging ?? {}
+    }
+    get fabricNtpServersText (): string {
+        return (this.fabricStaging.ntp?.servers ?? []).join(', ')
+    }
+    get fabricSyslogServersText (): string {
+        return (this.fabricStaging.syslog?.servers ?? []).join(', ')
+    }
+    get fabricDnsServersText (): string {
+        return (this.fabricStaging.dns?.servers ?? []).join(', ')
+    }
+    get fabricSnmpTrapTargetsText (): string {
+        return (this.fabricStaging.snmp?.trapTargets ?? []).join(', ')
+    }
+    get fabricSnmpCommunity (): string { return this.fabricStaging.snmp?.community ?? '' }
+    get fabricSnmpContact   (): string { return this.fabricStaging.snmp?.contact   ?? '' }
+    get fabricSnmpLocation  (): string { return this.fabricStaging.snmp?.location  ?? '' }
+    get fabricBannerLogin   (): string { return this.fabricStaging.banner?.login   ?? '' }
+
+    /** Parse comma/newline-separated input to a clean string[]. */
+    private _parseStagingList (s: string): string[] {
+        return (s || '').split(/[,\n]+/).map(x => x.trim()).filter(Boolean)
+    }
+
+    /** Build a per-node staging override object from the buffer fields.
+     *  Returns undefined if every override is empty (i.e. fully inherit). */
+    private _buildStagingOverride (): any | undefined {
+        const ntpServers    = this._parseStagingList(this.stagingNtpServersText)
+        const sysServers    = this._parseStagingList(this.stagingSyslogServersText)
+        const dnsServers    = this._parseStagingList(this.stagingDnsServersText)
+        const trapTargets   = this._parseStagingList(this.stagingSnmpTrapTargetsText)
+        const snmpComm      = (this.stagingSnmpCommunity || '').trim()
+        const snmpContact   = (this.stagingSnmpContact   || '').trim()
+        const snmpLocation  = (this.stagingSnmpLocation  || '').trim()
+        const bannerLogin   = (this.stagingBannerLogin   || '').trim()
+
+        const out: any = {}
+        if (ntpServers.length)   out.ntp    = { servers: ntpServers }
+        if (sysServers.length)   out.syslog = { servers: sysServers }
+        if (dnsServers.length)   out.dns    = { servers: dnsServers }
+
+        const snmp: any = {}
+        if (snmpComm)            snmp.community   = snmpComm
+        if (snmpContact)         snmp.contact     = snmpContact
+        if (snmpLocation)        snmp.location    = snmpLocation
+        if (trapTargets.length)  snmp.trapTargets = trapTargets
+        if (Object.keys(snmp).length) out.snmp = snmp
+
+        if (bannerLogin)         out.banner = { login: bannerLogin }
+
+        return Object.keys(out).length ? out : undefined
+    }
+
+    applyStaging (): void {
+        if (!this.nodeId) { return }
+        const override = this._buildStagingOverride()
+        // Cast — staging field is typed on TopologyNode but Partial may not pick it up cleanly.
+        this.svc.updateNodeConfig(this.nodeId, { staging: override } as any)
+        // Force regenerate so the merged staging block reaches the startup config.
+        this.svc.regenerateConfigs(true)
+        this.stagingMsg = override ? '✓ Per-node staging applied' : '✓ Cleared — node now inherits fabric staging'
+        this.cdr.markForCheck()
+        setTimeout(() => { this.stagingMsg = ''; this.cdr.markForCheck() }, 2500)
+    }
+
+    clearStagingOverride (): void {
+        this.stagingNtpServersText = ''
+        this.stagingSyslogServersText = ''
+        this.stagingDnsServersText = ''
+        this.stagingSnmpTrapTargetsText = ''
+        this.stagingSnmpCommunity = ''
+        this.stagingSnmpContact = ''
+        this.stagingSnmpLocation = ''
+        this.stagingBannerLogin = ''
+        if (this.nodeId) {
+            this.svc.updateNodeConfig(this.nodeId, { staging: undefined } as any)
+            this.svc.regenerateConfigs(true)
+        }
+        this.stagingMsg = '✓ Cleared — node now inherits fabric staging'
+        this.cdr.markForCheck()
+        setTimeout(() => { this.stagingMsg = ''; this.cdr.markForCheck() }, 2500)
+    }
+
+    // ── Push Staging Only (Day-0 push, independent of fabric config) ──────────
+    stagingPushing = false
+    stagingPushOutput: string | null = null
+    stagingPushPreview: string | null = null
+    stagingCommitAfter = true
+
+    /** Build the merged staging block (fabric defaults + per-node override). */
+    private _buildMergedStaging (): any {
+        const fabric  = (this.svc.topology as any).staging
+        const perNode = this._buildStagingOverride()
+        return mergeStaging(fabric, perNode)
+    }
+
+    /** Whether this node can push staging via SSH (physical) or container. */
+    get canPushStaging (): boolean {
+        if (!this.node || !this.node.vendor) { return false }
+        if (!isSupportedStagingVendor(this.node.vendor)) { return false }
+        const merged = this._buildMergedStaging()
+        const block  = renderStagingConfig(this.node.vendor, merged)
+        if (!block.trim()) { return false }
+        return this.canPushSsh || this.canPushContainer
+    }
+
+    /** Human-readable reason the Push Staging button is disabled — surfaced
+     *  in the UI as an inline hint so users know what to fix. Returns ''
+     *  when the button is enabled. */
+    get stagingDisabledReason (): string {
+        if (!this.node) { return '' }
+        if (!this.node.vendor) { return 'Set vendor on the Info tab first' }
+        if (!isSupportedStagingVendor(this.node.vendor)) {
+            return `Vendor '${this.node.vendor}' not yet supported by the staging builder`
+        }
+        const merged = this._buildMergedStaging()
+        const block  = renderStagingConfig(this.node.vendor, merged)
+        if (!block.trim()) { return 'No staging configured — set fabric defaults via Devices → Device Staging…, or add per-node overrides above' }
+        if (!(this.canPushSsh || this.canPushContainer)) {
+            return 'No SSH credentials and no running container — add Mgmt IP / username / password on the Info tab'
+        }
+        return ''
+    }
+
+    /** Show a non-destructive preview of the staging block that would be pushed. */
+    previewPushStaging (): void {
+        if (!this.node || !this.node.vendor) { return }
+        const merged = this._buildMergedStaging()
+        const block  = renderStagingConfig(this.node.vendor, merged)
+        this.stagingPushPreview = block.trim()
+            ? block
+            : '(no staging configured — set fabric defaults via Devices → Device Staging…, or add per-node overrides above)'
+        this.cdr.markForCheck()
+    }
+
+    closeStagingPreview (): void {
+        this.stagingPushPreview = null
+        this.cdr.markForCheck()
+    }
+
+    closeStagingPushOutput (): void {
+        this.stagingPushOutput = null
+        this.cdr.markForCheck()
+    }
+
+    /** Push only the merged Day-0 staging block to this device, independent
+     *  of the full startup config. Auto-backs up running config first. */
+    async executePushStaging (): Promise<void> {
+        if (!this.node || !this.nodeId || !this.node.vendor) { return }
+
+        // Defense-in-depth: refuse unsupported vendors with a clear message.
+        if (!isSupportedStagingVendor(this.node.vendor)) {
+            this.stagingPushOutput = `✗ Vendor '${this.node.vendor}' is not yet supported by the staging builder. `
+                + `Supported: juniper, cisco, arista, hpe, dell, huawei, nokia, sonic, mikrotik, extreme.`
+            this.cdr.markForCheck()
+            return
+        }
+
+        const merged = this._buildMergedStaging()
+        const cmds   = buildStagingPushCommands(this.node.vendor, merged, {
+            commitAfter: this.stagingCommitAfter,
+        })
+        if (!cmds.length) {
+            this.stagingPushOutput = '✗ Nothing to push — staging block is empty.'
+            this.cdr.markForCheck()
+            return
+        }
+
+        const confirmMsg = `Push Day-0 staging to "${this.node.label}"? `
+            + `${cmds.length} command(s)${this.stagingCommitAfter ? ', will save to startup' : ', running config only'}.`
+        if (!confirm(confirmMsg)) { return }
+
+        // Auto-backup current running config first (best-effort).
+        if (this.canPushSsh && this.invSvc) {
+            try { await this.invSvc.backupConfig(this.nodeId, 'running', 'event') }
+            catch { /* backup failure should not block push */ }
+        }
+
+        this.stagingPushing = true
+        this.stagingPushOutput = null
+        this.cdr.markForCheck()
+
+        const api = (window as any).netopsAPI
+        try {
+            const ctn = this._findContainerForNode()
+            if (ctn && ctn.state === 'running' && api?.clabPushConfig) {
+                // Container path — feed each line to the container CLI.
+                const result = await api.clabPushConfig({
+                    containerName: ctn.name,
+                    kind: ctn.kind,
+                    configLines: cmds,
+                })
+                this.stagingPushOutput = result.ok
+                    ? `✓ Staging pushed to container ${ctn.name}\n\n${result.output || ''}`
+                    : `✗ Container push failed: ${result.message}\n\n${result.output || ''}`
+            } else if (this.canPushSsh && api?.sshShellSession) {
+                const host = (this.node.mgmtIp ?? '').split('/')[0].trim()
+                // Make sure inventory is loaded before resolving — handles the
+                // edge case where push is invoked before the lazy-load completes.
+                await this._ensureInventoryLoaded()
+                const creds = this._resolveCreds()
+                if (creds.source === 'none') {
+                    this.stagingPushOutput = '✗ No SSH credentials — set on Info tab or in Device Mapper inventory.'
+                    this.stagingPushing = false
+                    this.cdr.markForCheck()
+                    return
+                }
+                const credSourceNote = creds.source === 'inventory'
+                    ? ` (using credentials from inventory match: ${creds.matchedHostname ?? '?'})`
+                    : ''
+                const username = creds.username
+                const password = creds.password
+
+                // For Junos, buildStagingPushCommands returns the multi-line list;
+                // wrap into a single `cli -c` invocation so the commit is atomic.
+                let commands: string[]
+                if (/^juniper/i.test(this.node.vendor)) {
+                    const body = cmds
+                        .filter(c => c !== 'configure private' && c !== 'commit and-quit')
+                        .join('; ')
+                    commands = [`cli -c "configure private; ${body}; commit and-quit"`]
+                } else {
+                    commands = cmds
+                }
+
+                const backend = this._getBackendSvc()
+                let result: any
+                if (backend?.isConnected) {
+                    result = await backend.loadConfig(host, this.node.sshPort ?? 22, username, password, commands, 300)
+                } else {
+                    result = await api.sshShellSession({
+                        host,
+                        port: this.node.sshPort ?? 22,
+                        username,
+                        password,
+                        timeoutMs: 60000,
+                        commands,
+                        delayMs: 300,
+                    })
+                }
+                this.stagingPushOutput = result.ok
+                    ? `✓ Staging pushed via SSH to ${host}${credSourceNote}\n\n${result.output || ''}`
+                    : `✗ SSH push failed: ${result.message || result.output || 'Unknown error'}${credSourceNote}`
+            } else {
+                this.stagingPushOutput = '✗ Cannot push: no running container or SSH credentials available'
+            }
+        } catch (err) {
+            this.stagingPushOutput = `✗ Error: ${(err as Error).message}`
+        }
+
+        this.stagingPushing = false
+        this.cdr.markForCheck()
     }
 
     // ── Notes tab ───────────────────────────────────────────────────────────

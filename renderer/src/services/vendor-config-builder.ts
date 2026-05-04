@@ -2372,7 +2372,13 @@ export function buildVendorStartupConfig (
         lines.push(...emitSrv6('juniper', ctx))
         lines.push(...emitMplsLdp('juniper', ctx))
         lines.push(...emitTelemetry('juniper', ctx))
-        lines.push('commit and-quit')
+        // NOTE: do NOT append `commit and-quit` here. The push pipeline wraps
+        // this body with `configure` + `load set terminal` preamble and
+        // `\x04` + `commit` + `exit` + `exit` postamble. A trailing
+        // `commit and-quit` inside the body would land inside `load set
+        // terminal`, where Junos rejects it as "unknown command: commit"
+        // (commit isn't a config-input keyword). The actual commit happens
+        // via the postamble.
         return lines.join('\n')
     }
 

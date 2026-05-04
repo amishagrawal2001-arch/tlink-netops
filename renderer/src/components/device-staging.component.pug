@@ -1,0 +1,218 @@
+.stage-overlay((click)='close()')
+  .stage-dialog((click)='$event.stopPropagation()')
+
+    .stage-header
+      h3.stage-title Device Staging (Day-0 Config)
+      span.stage-subtitle Foundational config applied to every node before fabric protocols
+      button.stage-close(type='button', (click)='close()') ✕
+
+    //- ── Tabs: Edit / Preview ────────────────────────────────────────────
+    .stage-tabs
+      button.stage-tab(type='button',
+        [class.active]='view === "edit"',
+        (click)='setView("edit")') ✏  Edit
+      button.stage-tab(type='button',
+        [class.active]='view === "preview"',
+        (click)='setView("preview")') 👁  Preview &amp; Push
+
+    .stage-body(*ngIf='view === "edit"')
+      //- ── NTP ──────────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title ⏰ NTP / Time
+        .stage-row
+          label NTP servers
+          input.stage-input(
+            type='text',
+            [(ngModel)]='ntpServersText',
+            placeholder='10.0.0.1, pool.ntp.org'
+          )
+          span.stage-hint comma-separated
+        .stage-row
+          label Prefer
+          input.stage-input(
+            type='text',
+            [(ngModel)]='staging.ntp.prefer',
+            placeholder='one of the servers above (optional)'
+          )
+        .stage-row
+          label Time zone
+          input.stage-input(
+            type='text',
+            [(ngModel)]='staging.ntp.timezone',
+            placeholder='UTC, America/Los_Angeles, PST8PDT'
+          )
+
+      //- ── SNMP ─────────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 📡 SNMP
+        .stage-row
+          label Version
+          select.stage-input([(ngModel)]='staging.snmp.version')
+            option(value='v2c') v2c (community)
+            option(value='v3') v3 (user-based)
+        .stage-row(*ngIf='staging.snmp.version === "v2c"')
+          label Community
+          input.stage-input(type='text', [(ngModel)]='staging.snmp.community', placeholder='public')
+        ng-container(*ngIf='staging.snmp.version === "v3"')
+          .stage-row
+            label v3 username
+            input.stage-input(type='text', [(ngModel)]='staging.snmp.v3User')
+          .stage-row
+            label Auth password
+            input.stage-input(type='password', [(ngModel)]='staging.snmp.v3AuthPassword')
+          .stage-row
+            label Auth proto
+            select.stage-input([(ngModel)]='staging.snmp.v3AuthProtocol')
+              option(value='sha') SHA
+              option(value='md5') MD5
+          .stage-row
+            label Priv password
+            input.stage-input(type='password', [(ngModel)]='staging.snmp.v3PrivPassword')
+          .stage-row
+            label Priv proto
+            select.stage-input([(ngModel)]='staging.snmp.v3PrivProtocol')
+              option(value='aes') AES
+              option(value='des') DES
+        .stage-row
+          label Contact
+          input.stage-input(type='text', [(ngModel)]='staging.snmp.contact', placeholder='netops@example.com')
+        .stage-row
+          label Location
+          input.stage-input(type='text', [(ngModel)]='staging.snmp.location', placeholder='DC1 Rack 5')
+        .stage-row
+          label Trap targets
+          input.stage-input(
+            type='text',
+            [(ngModel)]='snmpTrapTargetsText',
+            placeholder='10.0.0.50, 10.0.0.51'
+          )
+          span.stage-hint comma-separated
+
+      //- ── LLDP ─────────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 🔗 LLDP
+        .stage-row
+          label Enabled
+          label.stage-checkbox
+            input(type='checkbox', [(ngModel)]='staging.lldp.enabled')
+            | Enable LLDP on all interfaces
+
+      //- ── Syslog ───────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 📜 Syslog
+        .stage-row
+          label Servers
+          input.stage-input(
+            type='text',
+            [(ngModel)]='syslogServersText',
+            placeholder='10.0.0.10, 10.0.0.11'
+          )
+          span.stage-hint comma-separated
+        .stage-row
+          label Severity
+          select.stage-input([(ngModel)]='staging.syslog.severity')
+            option(value='emergencies') emergencies
+            option(value='alerts') alerts
+            option(value='critical') critical
+            option(value='errors') errors
+            option(value='warnings') warnings
+            option(value='notifications') notifications
+            option(value='informational') informational
+            option(value='debugging') debugging
+
+      //- ── DNS ──────────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 🌐 DNS
+        .stage-row
+          label Servers
+          input.stage-input(
+            type='text',
+            [(ngModel)]='dnsServersText',
+            placeholder='8.8.8.8, 1.1.1.1'
+          )
+          span.stage-hint comma-separated
+        .stage-row
+          label Search domain
+          input.stage-input(type='text', [(ngModel)]='staging.dns.searchDomain', placeholder='lab.example.com')
+
+      //- ── AAA ──────────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 👤 AAA / Local Users
+        .stage-user-row(*ngFor='let u of localUsers; let i = index')
+          input.stage-input(type='text', [(ngModel)]='u.username', placeholder='username')
+          input.stage-input(type='password', [(ngModel)]='u.password', placeholder='password')
+          select.stage-input([(ngModel)]='u.role', style='max-width:130px')
+            option(value='admin') admin
+            option(value='operator') operator
+            option(value='read-only') read-only
+          button.stage-mini-btn(type='button', (click)='removeUser(i)', title='Remove') ✕
+        button.stage-mini-btn(type='button', (click)='addUser()', style='margin-top:6px') + Add user
+        .stage-row(style='margin-top:10px')
+          label TACACS+ servers
+          input.stage-input(type='text', [(ngModel)]='tacacsServersText', placeholder='10.0.0.20, 10.0.0.21')
+          span.stage-hint comma-separated
+        .stage-row(*ngIf='tacacsServersText')
+          label TACACS+ secret
+          input.stage-input(type='password', [(ngModel)]='staging.aaa.tacacs.sharedSecret')
+
+      //- ── Banner ───────────────────────────────────────────────────────────
+      .stage-section
+        .stage-section-title 📢 Banner
+        .stage-row(style='align-items:flex-start')
+          label(style='padding-top:4px') Login banner
+          textarea.stage-input(
+            rows='3',
+            [(ngModel)]='staging.banner.login',
+            placeholder='Authorized access only — all activity is logged.'
+          )
+        .stage-row(style='align-items:flex-start')
+          label(style='padding-top:4px') Exec banner
+          textarea.stage-input(
+            rows='2',
+            [(ngModel)]='staging.banner.exec',
+            placeholder='Welcome to ${HOSTNAME}'
+          )
+
+    //- ── Preview pane ────────────────────────────────────────────────────
+    .stage-body(*ngIf='view === "preview"')
+      .stage-section
+        .stage-section-title 🧭 Topology Vendors
+        .preview-empty(*ngIf='vendorBreakdown.length === 0')
+          | No network nodes in topology yet.
+        .vendor-chip-row(*ngIf='vendorBreakdown.length > 0')
+          .vendor-chip(*ngFor='let v of vendorBreakdown',
+            [class.vendor-chip-unsupported]='!v.supported',
+            [title]='v.sampleLabels.join(", ")')
+            span.vendor-chip-name {{ v.vendor }}
+            span.vendor-chip-count {{ v.nodeCount }}
+            span.vendor-chip-warn(*ngIf='!v.supported', title='Staging not supported for this vendor') ⚠
+
+      .stage-section(*ngIf='!hasAnyStaging() && vendorBreakdown.length > 0')
+        .preview-empty
+          | No staging configured yet. Switch to the <strong>Edit</strong> tab and fill in NTP, SNMP, syslog, etc.
+
+      .stage-section(*ngFor='let v of vendorBreakdown')
+        .stage-section-title
+          | {{ v.vendor }}
+          span.vendor-section-count ({{ v.nodeCount }} node{{ v.nodeCount === 1 ? '' : 's' }})
+          span.vendor-section-warn(*ngIf='!v.supported') &nbsp;— unsupported
+        pre.preview-pre {{ renderForVendor(v.vendor) }}
+
+      .stage-section
+        .preview-help
+          | This preview shows the <strong>fabric-wide</strong> Day-0 block as it
+          | will be rendered for each vendor in the topology. Per-node overrides
+          | (set on a node's Staging tab) are applied on top of this at push time.
+
+    .stage-footer
+      span.stage-footer-note(*ngIf='view === "edit"')
+        | Saved staging is applied to every node's generated config (not pulled/manual ones).
+        |  Per-node overrides: edit a node's Staging tab.
+      span.stage-footer-note(*ngIf='view === "preview"')
+        | Push sends only this Day-0 block — fabric routing/interface config is NOT touched.
+      .stage-footer-spacer
+      button.stage-btn(type='button', (click)='close()') Cancel
+      button.stage-btn.stage-btn-save(type='button', (click)='save()') Save & regenerate
+      button.stage-btn.stage-btn-push(type='button', (click)='saveAndPush()',
+        [disabled]='!hasAnyStaging()',
+        title='Save staging, then open Push Day-0 Staging dialog') Save & Push…

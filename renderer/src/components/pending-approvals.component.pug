@@ -1,0 +1,57 @@
+.appr-overlay((click)='close()')
+  .appr-dialog((click)='$event.stopPropagation()')
+    .appr-header
+      h3.appr-title
+        | Pending Approvals
+        span.appr-count(*ngIf='pending.length') {{ pending.length }}
+      span.appr-subtitle Workflows paused at approval gates
+      button.appr-btn.appr-btn-reject(
+        *ngIf='pending.length > 1',
+        type='button',
+        title='Resolve every pending approval with Reject — useful for clearing stale queues',
+        style='font-size:11px; padding:4px 10px',
+        (click)='rejectAll()'
+      ) ✕ Reject all
+      button.appr-close(type='button', (click)='close()') ✕
+
+    .appr-body
+      .appr-empty(*ngIf='!pending.length && !showHistory')
+        | No approvals pending. Workflows that hit an `approval` step will queue here.
+
+      .appr-row(*ngFor='let p of pending')
+        .appr-row-meta
+          span.appr-row-gate(*ngIf='p.gate') {{ p.gate }}
+          span.appr-row-workflow {{ p.workflowName }}
+          span.appr-row-time {{ relativeTime(p.requestedAt) }}
+        .appr-row-message {{ p.message }}
+        .appr-row-context
+          span.appr-row-context-item Target: {{ p.nodeLabel }}
+          span.appr-row-context-item Trigger: {{ p.trigger }}
+        .appr-row-actions
+          button.appr-btn.appr-btn-reject(type='button', (click)='reject(p.id)') ✕ Reject
+          button.appr-btn.appr-btn-approve(type='button', (click)='approve(p.id)') ✓ Approve
+
+      //- ── History toggle ────────────────────────────────────────────
+      .appr-history-toggle
+        button.appr-toggle-btn(type='button', (click)='toggleHistory()')
+          | {{ showHistory ? '▾' : '▸' }} Approval history ({{ history.length }})
+
+      .appr-history(*ngIf='showHistory && history.length')
+        .appr-history-row(*ngFor='let h of history')
+          span.appr-history-decision(
+            [class.decision-approve]='h.decision === "approve"',
+            [class.decision-reject]='h.decision === "reject"',
+            [class.decision-timeout]='h.decision === "timeout"',
+            [class.decision-cancelled]='h.decision === "cancelled"'
+          )
+            ng-container(*ngIf='h.decision === "approve"') ✓ Approved
+            ng-container(*ngIf='h.decision === "reject"') ✕ Rejected
+            ng-container(*ngIf='h.decision === "timeout"') ⏰ Timed out
+            ng-container(*ngIf='h.decision === "cancelled"') ⏏ Cancelled
+          span.appr-history-gate(*ngIf='h.gate') {{ h.gate }}
+          span.appr-history-msg {{ h.message }}
+          span.appr-history-target → {{ h.nodeLabel }}
+          span.appr-history-time {{ relativeTime(h.resolvedAt) }}
+
+      .appr-empty(*ngIf='showHistory && !history.length')
+        | No resolved approvals yet — history is empty.

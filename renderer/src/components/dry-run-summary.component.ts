@@ -46,12 +46,16 @@ export class DryRunSummaryComponent implements OnInit {
     @Input() nodeIds: string[] = []
     @Output() closed = new EventEmitter<void>()
     /** User clicked Push. Owner re-runs the push with skipConfirm + same scope. */
-    @Output() pushRequested = new EventEmitter<{ nodeIds: string[] }>()
+    @Output() pushRequested = new EventEmitter<{ nodeIds: string[]; sequential: boolean }>()
 
     rows: DryRunRow[] = []
     overallLoading = true
     /** When false, fold unchanged lines in expanded diff views. */
     foldUnchangedLines = true
+    /** Sticky-ish: starts false but checked when the user toggles, persists
+     *  for this dialog's lifetime. The canvas component also has its own
+     *  `sequentialPush` field for app-wide stickiness. */
+    sequentialMode = false
 
     constructor (
         private cdr: ChangeDetectorRef,
@@ -75,7 +79,7 @@ export class DryRunSummaryComponent implements OnInit {
             this.close()
             return
         }
-        this.pushRequested.emit({ nodeIds: ids })
+        this.pushRequested.emit({ nodeIds: ids, sequential: this.sequentialMode })
         this.close()
     }
 
@@ -116,6 +120,11 @@ export class DryRunSummaryComponent implements OnInit {
         const candidates = all.filter(n => {
             if (scope && !scope.has(n.id)) { return false }
             if (!n.startupConfig?.trim()) { return false }   // nothing to push
+            // pushAllConfigs requires vendor to know which command syntax to
+            // use. If we surfaced vendor-less nodes here, they'd diff fine
+            // and then SILENTLY fail at push because the push pipeline
+            // filters them out. Match the push filter exactly.
+            if (!n.vendor)                { return false }
             const host = (n.mgmtIp ?? '').split('/')[0]
             if (!host) { return false }
             // Need creds — direct on node OR mapped (creds resolved at push time)

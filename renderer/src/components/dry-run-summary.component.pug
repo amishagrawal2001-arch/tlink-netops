@@ -77,10 +77,15 @@
       span.dryrun-footer-note(*ngIf='!overallLoading && totals.withChanges > 0')
         | {{ totals.withChanges }} device(s) will receive changes if you push now.
       .dryrun-footer-spacer
+      label.dryrun-toolbar-toggle(
+        title='Push devices one at a time instead of in parallel. Slower, but avoids Junos exclusive-lock contention and SSH rate-limit errors on big batches.'
+      )
+        input(type='checkbox', [(ngModel)]='sequentialMode')
+        | Sequential
       button.dryrun-btn(type='button', (click)='close()') Cancel
       button.dryrun-btn.dryrun-btn-push(
         type='button',
         [disabled]='overallLoading || totals.withChanges === 0',
         (click)='confirmPush()',
-        title='Apply only to nodes with diffs'
-      ) Push to {{ totals.withChanges }} device{{ totals.withChanges === 1 ? '' : 's' }}
+        [title]='sequentialMode ? "Push one device at a time (sequential mode)" : "Push all devices in parallel"'
+      ) Push to {{ totals.withChanges }} device{{ totals.withChanges === 1 ? '' : 's' }}{{ sequentialMode ? ' (seq)' : '' }}

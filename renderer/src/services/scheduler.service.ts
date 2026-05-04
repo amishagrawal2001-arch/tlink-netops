@@ -12,6 +12,9 @@ export interface ScheduledJob {
     lastRun?: string
     nextRun?: string
     runCount: number
+    /** Aggregate stats — incremented on each run. */
+    successCount?: number
+    failCount?: number
     createdAt: string
 }
 
@@ -20,6 +23,8 @@ export interface JobResult {
     ok: boolean
     message: string
     timestamp: string
+    /** Wall-clock duration of the run in ms. */
+    durationMs?: number
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -28,6 +33,10 @@ let _nextId = 0
 function uid (): string { return `job-${Date.now()}-${++_nextId}` }
 
 function nowIso (): string { return new Date().toISOString() }
+
+const RESULT_PREFS_KEY = 'scheduled-job-results'
+const MAX_GLOBAL_RESULTS = 200       // cap memory; per-job views slice locally
+const MAX_PER_JOB_DISPLAY = 20
 
 // ── Service ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +47,9 @@ export class SchedulerService {
     private _timer: ReturnType<typeof setInterval> | null = null
     private _api = (window as any).netopsAPI
     private _results: JobResult[] = []
+    /** IDs of jobs currently executing — used by the UI to show a spinner. */
+    private _runningJobIds = new Set<string>()
+    private _resultsLoaded = false
 
     /** Callback set by the host component to actually execute actions. */
     onRunAction: ((action: string, config: Record<string, any>) => Promise<string>) | null = null
@@ -45,6 +57,16 @@ export class SchedulerService {
     get jobs (): ScheduledJob[] { return this._jobs }
     get results (): JobResult[] { return this._results }
     get isRunning (): boolean { return !!this._timer }
+
+    /** Whether a specific job is currently executing. */
+    isJobRunning (id: string): boolean { return this._runningJobIds.has(id) }
+
+    /** Filter the global results array down to a single job's recent runs. */
+    resultsForJob (id: string, limit = MAX_PER_JOB_DISPLAY): JobResult[] {
+        return this._results
+            .filter(r => r.jobId === id)
+            .slice(0, limit)
+    }
 
     // ── Persistence ─────────────────────────────────────────────────────────
 
@@ -54,14 +76,29 @@ export class SchedulerService {
             if (Array.isArray(saved) && saved.length > 0) {
                 this._jobs = saved
                 this._jobs.forEach(j => { j.nextRun = this.computeNextRun(j) })
-                return
+            } else if (this._jobs.length === 0) {
+                this.initDefaultJobs()
             }
         } catch { /* ignore read errors */ }
-        if (this._jobs.length === 0) { this.initDefaultJobs() }
+
+        // Lazy-load results history once.
+        if (!this._resultsLoaded) {
+            this._resultsLoaded = true
+            try {
+                const savedResults = await this._api?.prefGet?.(RESULT_PREFS_KEY)
+                if (Array.isArray(savedResults)) {
+                    this._results = savedResults.slice(0, MAX_GLOBAL_RESULTS)
+                }
+            } catch { /* ignore */ }
+        }
     }
 
     saveJobs (): void {
         this._api?.prefSet?.('scheduled-jobs', this._jobs)
+    }
+
+    private _saveResults (): void {
+        try { this._api?.prefSet?.(RESULT_PREFS_KEY, this._results) } catch { /* ignore */ }
     }
 
     // ── CRUD ────────────────────────────────────────────────────────────────
@@ -72,6 +109,8 @@ export class SchedulerService {
             id: uid(),
             createdAt: nowIso(),
             runCount: 0,
+            successCount: 0,
+            failCount: 0,
         }
         full.nextRun = this.computeNextRun(full)
         this._jobs = [...this._jobs, full]
@@ -91,12 +130,80 @@ export class SchedulerService {
 
     removeJob (id: string): void {
         this._jobs = this._jobs.filter(j => j.id !== id)
+        // Drop this job's results from the global list to avoid dangling rows.
+        const before = this._results.length
+        this._results = this._results.filter(r => r.jobId !== id)
+        if (this._results.length !== before) { this._saveResults() }
         this.saveJobs()
     }
 
     toggleJob (id: string): void {
         this._jobs = this._jobs.map(j => j.id === id ? { ...j, enabled: !j.enabled } : j)
         this.saveJobs()
+    }
+
+    /** Duplicate a job so the user can build variants. The copy starts disabled
+     *  to avoid two identical jobs firing simultaneously, gets a fresh id, and
+     *  appends "(copy)" to the name. */
+    cloneJob (id: string): ScheduledJob | null {
+        const src = this._jobs.find(j => j.id === id)
+        if (!src) { return null }
+        const copy: ScheduledJob = {
+            ...src,
+            id: uid(),
+            name: `${src.name} (copy)`,
+            enabled: false,
+            createdAt: nowIso(),
+            lastRun: undefined,
+            runCount: 0,
+            successCount: 0,
+            failCount: 0,
+        }
+        copy.nextRun = this.computeNextRun(copy)
+        this._jobs = [...this._jobs, copy]
+        this.saveJobs()
+        return copy
+    }
+
+    /** Skip the next scheduled fire of a job by faking lastRun=now. The job's
+     *  `runCount` is not incremented and no JobResult is appended — the user's
+     *  intent is "treat the next slot as already done". */
+    skipNext (id: string): void {
+        this._jobs = this._jobs.map(j => {
+            if (j.id !== id) { return j }
+            const updated = { ...j, lastRun: nowIso() }
+            updated.nextRun = this.computeNextRun(updated)
+            return updated
+        })
+        this.saveJobs()
+    }
+
+    /** Bulk: disable every job. Useful before a maintenance window. */
+    pauseAll (): number {
+        let changed = 0
+        this._jobs = this._jobs.map(j => {
+            if (j.enabled) { changed++; return { ...j, enabled: false } }
+            return j
+        })
+        if (changed) { this.saveJobs() }
+        return changed
+    }
+
+    /** Bulk: enable every job. */
+    resumeAll (): number {
+        let changed = 0
+        this._jobs = this._jobs.map(j => {
+            if (!j.enabled) { changed++; return { ...j, enabled: true } }
+            return j
+        })
+        if (changed) { this.saveJobs() }
+        return changed
+    }
+
+    /** Wipe results history (per-job aggregates on the job itself are kept). */
+    clearResults (): void {
+        this._results = []
+        this._saveResults()
     }
 
     // ── Scheduler Loop ──────────────────────────────────────────────────────
@@ -116,15 +223,37 @@ export class SchedulerService {
     }
 
     private async _tick (): Promise<void> {
-        for (const job of this._jobs) {
-            if (!job.enabled) { continue }
-            if (this.isDue(job)) {
-                await this.runJob(job)
+        // Collect all due jobs first, then dispatch with jitter — prevents
+        // a "thundering herd" when 5 jobs all fire at the top of the hour
+        // and try to SSH to the same fabric simultaneously (rate limits,
+        // auth lockouts, transient failures).
+        const due = this._jobs.filter(j => j.enabled && this.isDue(j))
+        if (!due.length) { return }
+        for (let i = 0; i < due.length; i++) {
+            // Jitter: 0s for the first, then 5–15s gap between subsequent
+            // jobs. Keeps perceived latency low for single jobs while
+            // staggering large batches so SSH doesn't get hammered.
+            if (i > 0) {
+                const jitterMs = 5_000 + Math.random() * 10_000
+                await new Promise(r => setTimeout(r, jitterMs))
             }
+            await this.runJob(due[i])
         }
     }
 
     async runJob (job: ScheduledJob): Promise<JobResult> {
+        // Don't allow concurrent runs of the same job — a long-running backup
+        // shouldn't be re-fired by an impatient user clicking "Run now" twice.
+        if (this._runningJobIds.has(job.id)) {
+            return {
+                jobId: job.id, ok: false,
+                message: 'Already running — wait for current run to finish.',
+                timestamp: nowIso(),
+            }
+        }
+        this._runningJobIds.add(job.id)
+
+        const startedAt = Date.now()
         const result: JobResult = {
             jobId: job.id,
             ok: false,
@@ -141,16 +270,29 @@ export class SchedulerService {
             result.ok = true
         } catch (err: any) {
             result.message = `Error: ${err?.message ?? err}`
+        } finally {
+            this._runningJobIds.delete(job.id)
         }
 
-        // Update job state
-        job.lastRun = result.timestamp
-        job.runCount++
-        job.nextRun = this.computeNextRun(job)
+        result.durationMs = Date.now() - startedAt
+
+        // Update job state — find the live record (the original `job` object
+        // may be a stale reference from before an update).
+        this._jobs = this._jobs.map(j => {
+            if (j.id !== job.id) { return j }
+            const updated = { ...j }
+            updated.lastRun = result.timestamp
+            updated.runCount = (updated.runCount ?? 0) + 1
+            if (result.ok) { updated.successCount = (updated.successCount ?? 0) + 1 }
+            else           { updated.failCount    = (updated.failCount    ?? 0) + 1 }
+            updated.nextRun = this.computeNextRun(updated)
+            return updated
+        })
         this.saveJobs()
 
-        // Keep last 50 results
-        this._results = [result, ...this._results].slice(0, 50)
+        // Prepend so newest is at index 0; cap at the global max.
+        this._results = [result, ...this._results].slice(0, MAX_GLOBAL_RESULTS)
+        this._saveResults()
 
         return result
     }
@@ -254,17 +396,17 @@ export class SchedulerService {
             {
                 id: uid(), name: 'Backup All Configs', schedule: '6h',
                 action: 'backup_all', config: {}, enabled: true,
-                runCount: 0, createdAt: nowIso(),
+                runCount: 0, successCount: 0, failCount: 0, createdAt: nowIso(),
             },
             {
                 id: uid(), name: 'Compliance Check', schedule: 'daily@02:00',
                 action: 'compliance_check', config: {}, enabled: true,
-                runCount: 0, createdAt: nowIso(),
+                runCount: 0, successCount: 0, failCount: 0, createdAt: nowIso(),
             },
             {
                 id: uid(), name: 'Poll All Devices', schedule: '5m',
                 action: 'poll_all', config: {}, enabled: false,
-                runCount: 0, createdAt: nowIso(),
+                runCount: 0, successCount: 0, failCount: 0, createdAt: nowIso(),
             },
         ]
         this._jobs.forEach(j => { j.nextRun = this.computeNextRun(j) })

@@ -36,6 +36,8 @@ export class WorkflowEditorComponent implements OnInit {
     newStepUrl = ''
     newStepMethod = 'POST'
     newStepHeaders = ''
+    newStepApprovalGate = ''
+    newStepApprovalTimeout = 60
 
     readonly triggerOptions: { value: EventTrigger; label: string }[] = [
         { value: 'command_check',  label: 'Command Check' },
@@ -52,7 +54,8 @@ export class WorkflowEditorComponent implements OnInit {
         { value: 'notify',        label: 'Notify' },
         { value: 'backup_config', label: 'Backup Config' },
         { value: 'run_command',   label: 'Run Command' },
-        { value: 'webhook',       label: 'Webhook' },
+        { value: 'approval',      label: 'Approval Gate (pause for operator)' },
+        { value: 'webhook',       label: 'Webhook (Slack/Teams/HTTP POST)' },
         { value: 'log',           label: 'Log' },
     ]
 
@@ -147,6 +150,11 @@ export class WorkflowEditorComponent implements OnInit {
                 if (this.newStepHeaders.trim()) {
                     try { config['headers'] = JSON.parse(this.newStepHeaders) } catch { /* ignore */ }
                 }
+                break
+            case 'approval':
+                config['message'] = this.newStepMessage || 'Please approve this change before it proceeds.'
+                if (this.newStepApprovalGate.trim()) { config['gate'] = this.newStepApprovalGate.trim() }
+                config['timeoutMinutes'] = Number(this.newStepApprovalTimeout) || 0
                 break
         }
 
@@ -259,5 +267,7 @@ export class WorkflowEditorComponent implements OnInit {
         this.newStepUrl = ''
         this.newStepMethod = 'POST'
         this.newStepHeaders = ''
+        this.newStepApprovalGate = ''
+        this.newStepApprovalTimeout = 60
     }
 }

@@ -10,9 +10,47 @@ import { EventTrigger } from '../api/interfaces'
 // ── Interfaces ───────────────────────────────────────────────────────────────
 
 export interface WorkflowStep {
-    action: 'notify' | 'backup_config' | 'run_command' | 'webhook' | 'log'
+    /**
+     * approval — pauses the workflow until a designated user clicks Approve
+     *            or Reject in the Pending Approvals panel. Use to gate
+     *            destructive ops (commit, reboot) behind a two-person rule.
+     */
+    action: 'notify' | 'backup_config' | 'run_command' | 'webhook' | 'log' | 'approval'
     config: Record<string, any>
     continueOnError: boolean
+}
+
+/**
+ * A workflow paused at an approval step. The Pending Approvals panel
+ * subscribes to pendingApprovals$ to render these and call resolveApproval.
+ */
+export interface PendingApproval {
+    id: string
+    workflowName: string
+    /** Human-readable description (from approval step's config.message). */
+    message: string
+    /** Optional gate-name for display ("Production change", "Reboot…"). */
+    gate?: string
+    /** Context the workflow is running against. */
+    nodeId: string
+    nodeLabel: string
+    trigger: string
+    /** Promise resolution that the workflow loop is awaiting. */
+    resolve: (decision: 'approve' | 'reject') => void
+    requestedAt: string
+}
+
+/** Resolved approval — moved into history after the operator decides
+ *  (or it auto-rejects). Displayed below the active queue for an audit
+ *  trail of who approved what, when. */
+export interface ResolvedApproval {
+    workflowName: string
+    message: string
+    gate?: string
+    nodeLabel: string
+    decision: 'approve' | 'reject' | 'timeout' | 'cancelled'
+    requestedAt: string
+    resolvedAt: string
 }
 
 export interface Workflow {
@@ -68,11 +106,121 @@ export class WorkflowService {
     private _history: WorkflowResult[] = []
     private _api = (window as any).netopsAPI
 
+    /** Pending approval gates — the UI panel reads from here and resolves
+     *  decisions back via resolveApproval(). */
+    private _pendingApprovals: PendingApproval[] = []
+    private _approvalListeners: Array<(list: PendingApproval[]) => void> = []
+    private _nextApprovalId = 1
+    /** Resolved approvals — last 50 kept for audit. */
+    private _approvalHistory: ResolvedApproval[] = []
+    get approvalHistory (): ResolvedApproval[] { return this._approvalHistory }
+
+    /** Active workflow runs that callers may want to cancel.
+     *  Each entry: runId → { cancel(): void; cancelled: boolean }. */
+    private _activeRuns = new Map<string, { cancelled: boolean; description: string }>()
+    private _nextRunId = 1
+    /** Snapshot of active runs (read-only). */
+    get activeRuns (): Array<{ runId: string; description: string; cancelled: boolean }> {
+        return [...this._activeRuns.entries()].map(([runId, v]) => ({ runId, ...v }))
+    }
+    /** Mark an in-flight workflow run as cancelled. The executor checks the
+     *  flag between steps and bails with a "cancelled" result. Already-
+     *  in-flight SSH commands aren't aborted — they finish their current
+     *  step, then the loop exits. */
+    cancelWorkflow (runId: string): void {
+        const e = this._activeRuns.get(runId)
+        if (e) {
+            e.cancelled = true
+            // If a workflow is paused at an approval gate, resolve it as
+            // reject so the runner can see the cancellation immediately
+            // instead of waiting for the operator.
+            for (const p of [...this._pendingApprovals]) {
+                // Best-effort match by description prefix; pending approvals
+                // don't carry the runId directly (they belong to a single
+                // execute call). For simplicity, resolve all of THIS run's
+                // approvals via the workflow-name match.
+                if (e.description.includes(p.workflowName)) {
+                    this.resolveApproval(p.id, 'reject')
+                }
+            }
+        }
+    }
+
     /** All currently loaded workflows (read-only snapshot). */
     get workflows (): Workflow[] { return this._workflows }
 
     /** Execution history — last 50 runs. */
     get history (): WorkflowResult[] { return this._history }
+
+    /** Snapshot of pending approval gates. */
+    get pendingApprovals (): PendingApproval[] { return this._pendingApprovals }
+
+    /** Subscribe to changes in the pending-approvals list. Returns an
+     *  unsubscribe function. */
+    onApprovalsChange (cb: (list: PendingApproval[]) => void): () => void {
+        this._approvalListeners.push(cb)
+        cb(this._pendingApprovals)
+        return () => {
+            const i = this._approvalListeners.indexOf(cb)
+            if (i >= 0) { this._approvalListeners.splice(i, 1) }
+        }
+    }
+
+    private _emitApprovals (): void {
+        const snap = [...this._pendingApprovals]
+        for (const l of this._approvalListeners) {
+            try { l(snap) } catch { /* ignore */ }
+        }
+    }
+
+    /** UI calls this when the operator clicks Approve or Reject. */
+    resolveApproval (id: string, decision: 'approve' | 'reject'): void {
+        const idx = this._pendingApprovals.findIndex(p => p.id === id)
+        if (idx < 0) { return }
+        const [pending] = this._pendingApprovals.splice(idx, 1)
+        try { pending.resolve(decision) } catch { /* ignore */ }
+        this._archiveApproval(pending, decision)
+        this._emitApprovals()
+    }
+
+    private _archiveApproval (
+        pending: PendingApproval,
+        decision: ResolvedApproval['decision'],
+    ): void {
+        this._approvalHistory = [
+            {
+                workflowName: pending.workflowName,
+                message:      pending.message,
+                gate:         pending.gate,
+                nodeLabel:    pending.nodeLabel,
+                decision,
+                requestedAt:  pending.requestedAt,
+                resolvedAt:   new Date().toISOString(),
+            },
+            ...this._approvalHistory,
+        ].slice(0, 50)
+    }
+
+    /**
+     * Reject EVERY pending approval at once. Used by the canvas's
+     * ngOnDestroy and by an explicit "Reject all" UI affordance to stop
+     * waiting workflows from leaking forever (their resolve promise stays
+     * pending and the Workflow execution is paused on `await`).
+     */
+    rejectAllApprovals (reason = 'app shutdown'): void {
+        const list = [...this._pendingApprovals]
+        this._pendingApprovals.length = 0
+        const archiveDecision: ResolvedApproval['decision'] =
+            reason.includes('shutdown') || reason.includes('unmounted') ? 'cancelled' : 'reject'
+        for (const p of list) {
+            try { p.resolve('reject') } catch { /* ignore */ }
+            this._archiveApproval(p, archiveDecision)
+        }
+        if (list.length) {
+            console.warn(`[workflow] auto-rejected ${list.length} pending approval(s): ${reason}`)
+        }
+        this._emitApprovals()
+    }
 
     // ── Persistence ─────────────────────────────────────────────────────────
 
@@ -145,7 +293,25 @@ export class WorkflowService {
         const stepResults: WorkflowStepResult[] = []
         let allOk = true
 
-        for (const step of workflow.steps) {
+        // Register this run as cancellable. The runner checks runState.cancelled
+        // between steps; if set, exits early and reports "cancelled".
+        const runId = `run-${Date.now()}-${++this._nextRunId}`
+        const runState = { cancelled: false, description: workflow.name }
+        this._activeRuns.set(runId, runState)
+
+        stepLoop: for (const step of workflow.steps) {
+            // Cancellation check before each step. Already-in-flight SSH
+            // commands can't be interrupted, but we won't START another one.
+            if (runState.cancelled) {
+                stepResults.push({
+                    action: step.action,
+                    ok: false,
+                    output: 'Workflow cancelled by user',
+                    durationMs: 0,
+                })
+                allOk = false
+                break stepLoop
+            }
             const stepStart = Date.now()
             let ok = true
             let output = ''
@@ -226,6 +392,65 @@ export class WorkflowService {
                         break
                     }
 
+                    case 'approval': {
+                        // Pause execution until the operator clicks Approve or
+                        // Reject in the Pending Approvals panel.
+                        // Optional timeoutMinutes: auto-rejects after that
+                        // many minutes so a stale approval can't pause a
+                        // workflow forever.
+                        const message = String(step.config['message'] ?? `Approval needed for ${workflow.name}`)
+                        const gate = step.config['gate'] ? String(step.config['gate']) : undefined
+                        const timeoutMin = Number(step.config['timeoutMinutes']) || 0
+                        let approvalId = ''
+                        let timedOut = false
+                        const decision = await new Promise<'approve' | 'reject'>(resolve => {
+                            approvalId = `appr-${Date.now()}-${++this._nextApprovalId}`
+                            const pending: PendingApproval = {
+                                id: approvalId,
+                                workflowName: workflow.name,
+                                message, gate,
+                                nodeId: event.nodeId,
+                                nodeLabel: event.nodeLabel,
+                                trigger: event.trigger,
+                                resolve,
+                                requestedAt: new Date().toISOString(),
+                            }
+                            this._pendingApprovals.push(pending)
+                            this._emitApprovals()
+                            // Auto-reject after timeout if configured.
+                            if (timeoutMin > 0) {
+                                setTimeout(() => {
+                                    // Only fire if still pending (didn't already resolve)
+                                    const idx = this._pendingApprovals.findIndex(p => p.id === approvalId)
+                                    if (idx >= 0) {
+                                        const [removed] = this._pendingApprovals.splice(idx, 1)
+                                        timedOut = true
+                                        try { resolve('reject') } catch { /* ignore */ }
+                                        this._archiveApproval(removed, 'timeout')
+                                        this._emitApprovals()
+                                    }
+                                }, timeoutMin * 60_000)
+                            }
+                        })
+                        if (decision === 'approve') {
+                            output = `Approved by operator: ${message}`
+                        } else if (timedOut) {
+                            output = `Auto-rejected after ${timeoutMin} min timeout: ${message}`
+                            ok = false
+                        } else {
+                            output = `Rejected by operator: ${message}`
+                            ok = false
+                            // Stop the rest of the workflow on rejection
+                            // unless this step is configured to continue.
+                            if (!step.continueOnError) {
+                                stepResults.push({ action: step.action, ok, output, durationMs: Date.now() - stepStart })
+                                allOk = false
+                                break stepLoop  // exit the for-loop, not just the switch
+                            }
+                        }
+                        break
+                    }
+
                     default:
                         output = `Unknown action: ${step.action}`
                         ok = false
@@ -243,6 +468,9 @@ export class WorkflowService {
                 if (!step.continueOnError) { break }
             }
         }
+
+        // De-register this run so it stops appearing in activeRuns.
+        this._activeRuns.delete(runId)
 
         const result: WorkflowResult = {
             workflowId: workflow.id,

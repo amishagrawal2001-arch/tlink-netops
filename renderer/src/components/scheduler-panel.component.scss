@@ -1,4 +1,219 @@
-// Scheduler panel — reuses .mapper-* base from device-mapper, adds scheduler-specific styles
+// Scheduler panel — defines its own copy of .mapper-* base styles so it
+// renders correctly regardless of which other components are mounted.
+// (Originally we relied on device-mapper's globalized styles, but Angular
+//  ViewEncapsulation can leave gaps when the device-mapper component
+//  isn't mounted at the same time as this panel.)
+
+.mapper-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mapper-dialog {
+  background: var(--bg-app, #0d1117);
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+  width: 980px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+}
+
+.mapper-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #333);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mapper-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #e0e0e0);
+  margin: 0;
+}
+
+.mapper-subtitle {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  flex: 1;
+}
+
+.mapper-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  &:hover { color: var(--text); background: var(--bg-hover); }
+}
+
+.mapper-actions-bar {
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border, #333);
+}
+
+.mapper-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 12px;
+  p { margin-bottom: 12px; }
+}
+
+.mapper-inline-form {
+  padding: 10px 20px;
+  background: var(--bg-card, #161b22);
+  border-bottom: 1px solid var(--border, #333);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mapper-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mapper-form-label {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  min-width: 70px;
+  text-align: right;
+}
+
+.mapper-form-input {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-input, #0a1120);
+  color: var(--text, #e0e0e0);
+  font-size: 11px;
+  &:focus { border-color: var(--accent); outline: none; }
+}
+
+.mapper-form-error {
+  color: #ef4444;
+  font-size: 10px;
+  flex: 1;
+}
+
+.mapper-remove-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  &:hover { background: rgba(239, 68, 68, 0.15); }
+}
+
+.mapper-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--text-muted, #888);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  &:hover:not(:disabled) { background: var(--bg-hover, #2a2a3e); color: var(--text); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.mapper-btn-discover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  &:hover:not(:disabled) { background: rgba(59, 130, 246, 0.15); }
+}
+
+.mapper-btn-apply {
+  border-color: #22c55e;
+  color: #22c55e;
+  &:hover:not(:disabled) { background: #22c55e; color: #fff; }
+}
+
+.mapper-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.mapper-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+}
+
+.mapper-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+
+  th {
+    text-align: left;
+    padding: 6px 8px;
+    color: var(--text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border, #333);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 6px 8px;
+    color: var(--text, #e0e0e0);
+    vertical-align: middle;
+  }
+}
+
+.mapper-row {
+  transition: background 0.1s;
+  &:hover { background: var(--bg-hover, #1a1a2e); }
+}
+
+.mapper-cell-name { font-weight: 600; }
+
+.mapper-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border, #333);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mapper-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.mapper-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// ── Scheduler-specific additions ─────────────────────────────────────────
 
 .sched-toggle {
   margin-left: auto;
@@ -117,4 +332,192 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.sched-result-duration {
+  color: var(--text-muted, #888);
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 10px;
+  min-width: 50px;
+}
+
+// ─── Toolbar additions: search + filter + summary pills ─────────────────────
+.sched-search {
+  flex: 1;
+  min-width: 140px;
+  max-width: 280px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-input, #0a1120);
+  color: var(--text, #e0e0e0);
+  font-size: 12px;
+  &:focus { border-color: var(--accent, #3b82f6); outline: none; }
+}
+
+.sched-filter {
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-input, #0a1120);
+  color: var(--text, #e0e0e0);
+  font-size: 11px;
+  min-width: 130px;
+}
+
+.mapper-actions-spacer { flex: 1; }
+
+.sched-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sched-summary-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+
+  &.enabled  { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+  &.running  { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+  &.failing  { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+}
+
+// ─── Form header (mode label) ──────────────────────────────────────────────
+.sched-form-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+// ─── Rows: running indicator, expanded state ───────────────────────────────
+.expand-arrow {
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 9px;
+  user-select: none;
+  &:hover { color: var(--text); }
+}
+
+.sched-row-running {
+  background: rgba(59, 130, 246, 0.04);
+}
+.sched-row-expanded td {
+  border-bottom-color: transparent !important;
+}
+.sched-running-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.sched-muted { color: var(--text-muted, #888); font-style: italic; }
+
+// ─── Stats column (run / success / fail badges) ────────────────────────────
+.sched-stats {
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+}
+.sched-stat      { color: var(--text-muted); }
+.sched-stat-ok   { color: #22c55e; font-weight: 600; }
+.sched-stat-fail { color: #ef4444; font-weight: 600; }
+
+// ─── Per-job history (expanded row) ────────────────────────────────────────
+.sched-history-row {
+  background: rgba(0, 0, 0, 0.25);
+  td { padding: 8px 16px !important; }
+}
+.sched-history-header {
+  font-size: 10.5px;
+  color: var(--text-muted, #888);
+  margin-bottom: 6px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sched-history-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.sched-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sched-history-item {
+  display: grid;
+  grid-template-columns: 18px 130px 60px 1fr;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+
+  &.ok   { color: var(--text); }
+  &.fail { background: rgba(239, 68, 68, 0.05); color: var(--text); }
+
+  &:hover { background: rgba(255, 255, 255, 0.03); }
+}
+.sched-history-icon {
+  text-align: center;
+  font-weight: 700;
+  .ok &   { color: #22c55e; }
+  .fail & { color: #ef4444; }
+}
+.sched-history-item.ok   .sched-history-icon { color: #22c55e; }
+.sched-history-item.fail .sched-history-icon { color: #ef4444; }
+.sched-history-time {
+  font-family: 'SF Mono', monospace;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.sched-history-duration {
+  color: var(--text-muted);
+  font-family: 'SF Mono', monospace;
+  font-size: 10px;
+}
+.sched-history-msg {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ─── Compact per-row buttons (more buttons fit when smaller) ───────────────
+.sched-actions {
+  white-space: nowrap;
+  .mapper-btn {
+    padding: 2px 8px !important;
+    font-size: 10px !important;
+    margin-right: 2px;
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+  .mapper-remove-btn {
+    padding: 2px 8px !important;
+    font-size: 10px !important;
+  }
+}
+
+// Wider dialog so all the new columns + buttons fit comfortably.
+.sched-dialog {
+  width: 1100px !important;
 }

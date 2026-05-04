@@ -1,0 +1,145 @@
+.bp-overlay((click)='close()')
+  .bp-dialog((click)='$event.stopPropagation()')
+
+    .bp-header
+      h3.bp-title
+        | Bulk Port Operations
+        span.bp-subtitle Apply one action to many (node, port) pairs in one shot
+      button.bp-close(type='button', (click)='close()') ✕
+
+    //- ── Configure ─────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "configure"')
+      .bp-section
+        .bp-section-title Action
+        .bp-action-row
+          button.bp-action-btn(
+            type='button',
+            [class.active]='action === "shut"',
+            (click)='setAction("shut")'
+          ) ⏼ Shut
+          button.bp-action-btn(
+            type='button',
+            [class.active]='action === "no-shut"',
+            (click)='setAction("no-shut")'
+          ) ▶ No-Shut
+          button.bp-action-btn(
+            type='button',
+            [class.active]='action === "mtu"',
+            (click)='setAction("mtu")'
+          ) ↔ Set MTU
+          button.bp-action-btn(
+            type='button',
+            [class.active]='action === "description"',
+            (click)='setAction("description")'
+          ) ✎ Set Description
+          button.bp-action-btn(
+            type='button',
+            [class.active]='action === "clear-counters"',
+            (click)='setAction("clear-counters")'
+          ) ⟲ Clear Counters
+
+      //- Action-specific param row
+      .bp-section(*ngIf='action === "mtu"')
+        .bp-section-title Parameters
+        .bp-param-row
+          label MTU bytes
+          input(type='number', [(ngModel)]='mtuValue', placeholder='9216', min='64', max='16384')
+          span.bp-param-help Common values: 1500 (default), 9000, 9216 (jumbo)
+
+      .bp-section(*ngIf='action === "description"')
+        .bp-section-title Parameters
+        .bp-param-row
+          label Description
+          input(type='text', [(ngModel)]='descriptionValue', placeholder='e.g. Uplink to spine-1')
+
+      //- Targets
+      .bp-section
+        .bp-section-title-row
+          .bp-section-title Targets ({{ selectedCount }} selected)
+          input.bp-filter(
+            type='text',
+            [(ngModel)]='filterText',
+            placeholder='Filter by node or port…'
+          )
+          button.bp-mini(type='button', (click)='toggleAllVisible()') Toggle visible
+          button.bp-mini(type='button', (click)='clearSelection()') Clear
+
+        .bp-target-list
+          .bp-target-row(
+            *ngFor='let p of filteredPairs',
+            [class.selected]='p.selected',
+            (click)='p.selected = !p.selected'
+          )
+            input(
+              type='checkbox',
+              [checked]='p.selected',
+              (click)='$event.stopPropagation(); p.selected = !p.selected'
+            )
+            span.bp-target-label {{ p.label }}
+            span.bp-target-vendor {{ p.node.vendor || '—' }}
+
+      .bp-footer
+        .bp-error(*ngIf='error') {{ error }}
+        .bp-footer-spacer
+        button.bp-btn(type='button', (click)='close()') Cancel
+        button.bp-btn(
+          type='button',
+          [disabled]='!selectedCount',
+          title='Preview the exact vendor-specific commands before applying',
+          (click)='showPreview()'
+        ) 👁 Preview commands
+        button.bp-btn.bp-btn-run(
+          type='button',
+          [disabled]='!selectedCount',
+          (click)='startRun()'
+        ) ⚠ Apply to {{ selectedCount }} port{{ selectedCount === 1 ? '' : 's' }}
+
+    //- ── Preview ───────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "preview"')
+      .bp-section
+        .bp-section-title Preview — commands that will run on each device
+      .bp-preview-list
+        .bp-preview-block(*ngFor='let p of preview')
+          .bp-preview-head
+            span.bp-preview-host {{ p.nodeLabel }}
+            span.bp-preview-vendor {{ p.vendor }}
+            span.bp-preview-count {{ p.portCount }} port{{ p.portCount === 1 ? '' : 's' }}
+          pre.bp-preview-cmd {{ p.command }}
+      .bp-footer
+        .bp-footer-spacer
+        button.bp-btn(type='button', (click)='backToConfigure()') ← Back
+        button.bp-btn.bp-btn-run(type='button', (click)='startRun()') ⚠ Looks good — Apply
+
+    //- ── Run ───────────────────────────────────────────────────────────────
+    ng-container(*ngIf='view === "run"')
+      .bp-run-summary
+        ng-container(*ngIf='!runComplete')
+          | Running… {{ stats.ok + stats.fail }}/{{ stats.total }} done
+          span.bp-stat-running(*ngIf='stats.running')   ({{ stats.running }} active)
+        ng-container(*ngIf='runComplete')
+          span.bp-stat-ok ✓ {{ stats.ok }} ok
+          span.bp-stat-fail(*ngIf='stats.fail')   ✕ {{ stats.fail }} failed
+
+      .bp-section
+        .bp-run-row(*ngFor='let r of runs')
+          span.bp-run-dot(
+            [class.dot-pending]='r.status === "pending"',
+            [class.dot-running]='r.status === "running"',
+            [class.dot-ok]='r.status === "ok"',
+            [class.dot-fail]='r.status === "fail"'
+          )
+          span.bp-run-label {{ r.label }} / {{ r.port }}
+          span.bp-run-status(*ngIf='r.status === "ok"') ✓
+          span.bp-run-status(*ngIf='r.status === "fail"', [title]='r.output') ✕ {{ r.output ? r.output.slice(0, 80) : 'failed' }}
+
+      .bp-footer
+        .bp-footer-spacer
+        button.bp-btn(
+          *ngIf='!runComplete && !runCancelled',
+          type='button',
+          title='Stop dispatching remaining waves. The currently-running wave finishes.',
+          style='border-color:#ef4444; color:#ef4444',
+          (click)='cancelRun()'
+        ) ✕ Cancel run
+        button.bp-btn(type='button', (click)='close()', [disabled]='!runComplete') Close
+        button.bp-btn.bp-btn-run(type='button', [disabled]='!runComplete', (click)='runAgain()') Run again

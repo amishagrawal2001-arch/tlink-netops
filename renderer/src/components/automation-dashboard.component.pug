@@ -11,9 +11,120 @@
       .auto-dash-actions
         button.auto-dash-action-btn(type='button', (click)='backupAllNow()') 🗄 Backup All
         button.auto-dash-action-btn(type='button', (click)='pollAllNow()') 📡 Poll All
-        button.auto-dash-action-btn(type='button', (click)='runComplianceCheck()') ✓ Compliance Check
+        button.auto-dash-action-btn(
+          type='button',
+          [disabled]='complianceRunning',
+          (click)='runComplianceCheck()'
+        ) ✓ {{ complianceRunning ? 'Running…' : 'Compliance Check' }}
+        button.auto-dash-action-btn(type='button', (click)='requestWorkflowLibrary()') 📚 Workflow Library
+        button.auto-dash-action-btn(
+          type='button',
+          [class.has-pending]='pendingApprovals.length > 0',
+          (click)='requestApprovalsPanel()'
+        )
+          | ⏸ Approvals
+          span.auto-dash-action-badge(*ngIf='pendingApprovals.length > 0') {{ pendingApprovals.length }}
+        button.auto-dash-action-btn(type='button', (click)='requestScheduledJobsPanel()') ⏱ Schedules
         .auto-dash-spacer
         span.auto-dash-score Health: {{ healthScore }}%
+
+      //- ── Summary cards (Staging + Inventory Readiness) ───────────────────
+      .auto-dash-summary-row
+        //- Day-0 Staging card
+        .auto-dash-summary-card(
+          [class.muted]='!staging.configured',
+          [class.warn]='staging.unsupportedVendorCount > 0'
+        )
+          .summary-card-title 🛠 Day-0 Staging
+          .summary-card-body(*ngIf='staging.configured')
+            div
+              span.summary-label Sections:
+              | &nbsp;
+              span.summary-value {{ staging.sectionList }}
+            div
+              span.summary-label Per-node overrides:
+              | &nbsp;
+              span.summary-value {{ staging.nodesWithOverrides }}
+              |  / {{ staging.eligibleNodes }} eligible
+            div(*ngIf='staging.unsupportedVendorCount > 0')
+              span.summary-warn ⚠ {{ staging.unsupportedVendorCount }} node(s) on unsupported vendor
+            div(*ngIf='staging.lastPushIso')
+              span.summary-label Last push:
+              | &nbsp;
+              span.summary-value {{ formatAge(staging.lastPushIso) }}
+            div(*ngIf='!staging.lastPushIso')
+              span.summary-muted (never pushed yet)
+          .summary-card-body(*ngIf='!staging.configured')
+            span.summary-muted No fabric staging configured.
+        //- Inventory readiness card
+        .auto-dash-summary-card(
+          [class.muted]='readiness.totalDevices === 0',
+          [class.warn]='readiness.missingCreds + readiness.missingMgmtIp + readiness.missingVendor > 0'
+        )
+          .summary-card-title 🧭 Inventory Readiness
+          .summary-card-body(*ngIf='readiness.totalDevices > 0')
+            div
+              span.summary-label Mapped:
+              | &nbsp;
+              span.summary-value {{ readiness.mapped }}
+              |  / {{ readiness.totalDevices }}
+            div
+              span.summary-label Can push:
+              | &nbsp;
+              span.summary-value.compliance-pass {{ readiness.canPush }}
+              |  / {{ readiness.totalDevices }}
+            div(*ngIf='readiness.missingCreds > 0')
+              span.summary-warn ⚠ {{ readiness.missingCreds }} missing SSH creds (Info tab or Mapper)
+            div(*ngIf='readiness.missingMgmtIp > 0')
+              span.summary-warn ⚠ {{ readiness.missingMgmtIp }} missing mgmtIp
+            div(*ngIf='readiness.missingVendor > 0')
+              span.summary-warn ⚠ {{ readiness.missingVendor }} missing vendor
+          .summary-card-body(*ngIf='readiness.totalDevices === 0')
+            span.summary-muted No network nodes in topology.
+
+      //- ── Pending Approvals (high-priority widget) ───────────────────────
+      .auto-dash-section(*ngIf='pendingApprovals.length > 0')
+        h4.auto-dash-section-title.urgent
+          | ⏸ Pending Approvals ({{ pendingApprovals.length }})
+          button.auto-dash-tiny-btn(type='button', (click)='requestApprovalsPanel()') Open panel →
+        table.auto-dash-table
+          thead: tr
+            th Workflow
+            th Gate
+            th Node
+            th Message
+            th Requested
+            th(style='width: 130px')
+          tbody
+            tr.auto-dash-pending-row(*ngFor='let p of pendingApprovals')
+              td {{ p.workflowName }}
+              td {{ p.gate }}
+              td {{ p.nodeLabel }}
+              td.message-cell {{ p.message }}
+              td {{ formatTime(p.requestedAt) }}
+              td.action-cell
+                button.auto-dash-small-btn.approve(type='button', (click)='decideApproval(p.id, "approve")') ✓ Approve
+                button.auto-dash-small-btn.reject(type='button', (click)='decideApproval(p.id, "reject")') ✕ Reject
+
+      //- ── Active Workflow Runs ──────────────────────────────────────────
+      .auto-dash-section(*ngIf='activeRuns.length > 0')
+        h4.auto-dash-section-title 🔄 Running Workflows ({{ activeRuns.length }})
+        table.auto-dash-table
+          thead: tr
+            th Workflow / Target
+            th Status
+            th(style='width: 110px')
+          tbody
+            tr(*ngFor='let r of activeRuns')
+              td.message-cell {{ r.description }}
+              td
+                span.run-status([class.cancelled]='r.cancelled') {{ r.cancelled ? 'cancelling…' : 'running…' }}
+              td
+                button.auto-dash-small-btn.reject(
+                  type='button',
+                  [disabled]='r.cancelled',
+                  (click)='cancelRun(r.runId)'
+                ) Cancel
 
       //- Alarms section
       .auto-dash-section
@@ -45,24 +156,195 @@
                 button.auto-dash-small-btn(type='button', (click)='acknowledgeAlarm(alarm.id)') Ack
                 button.auto-dash-small-btn(type='button', (click)='clearAlarm(alarm.id)') Clear
 
+      //- ── Recent Workflow Runs (expandable) ─────────────────────────────
+      .auto-dash-section
+        h4.auto-dash-section-title Recent Workflow Runs ({{ recentRuns.length }})
+        .auto-dash-empty(*ngIf='!recentRuns.length') No workflow runs yet — try the Workflow Library to fire a playbook.
+        table.auto-dash-table(*ngIf='recentRuns.length')
+          thead: tr
+            th(style='width: 18px')
+            th Workflow
+            th Trigger
+            th Steps
+            th Duration
+            th Status
+            th Time
+          tbody
+            ng-container(*ngFor='let r of recentRuns')
+              tr.auto-dash-run-row.row-clickable(
+                [class.failed]='!r.success',
+                (click)='toggleRunExpand(r)',
+                [title]='isRunExpanded(r) ? "Click to collapse" : "Click to see step output"'
+              )
+                td.expand-arrow {{ isRunExpanded(r) ? '▾' : '▸' }}
+                td {{ r.workflowName }}
+                td {{ r.trigger }}
+                td {{ r.steps.length }}
+                td {{ formatDuration(r.totalDurationMs) }}
+                td
+                  span.run-result([class.ok]='r.success', [class.fail]='!r.success')
+                    | {{ r.success ? '✓ ok' : '✗ fail' }}
+                td {{ formatTime(r.timestamp) }}
+              tr.auto-dash-run-detail(*ngIf='isRunExpanded(r)')
+                td(colspan='7')
+                  .run-detail-list
+                    .run-detail-step(
+                      *ngFor='let s of r.steps; let i = index',
+                      [class.step-fail]='!s.ok'
+                    )
+                      span.step-num [{{ i + 1 }}]
+                      span.step-action {{ s.action }}
+                      span.step-status([class.ok]='s.ok', [class.fail]='!s.ok')
+                        | {{ s.ok ? '✓' : '✗' }}
+                      span.step-duration {{ formatDuration(s.durationMs) }}
+                      pre.step-output(*ngIf='s.output') {{ s.output }}
+
+      //- ── Recent Pushes (audit trail) ───────────────────────────────────
+      .auto-dash-section
+        h4.auto-dash-section-title
+          | 📦 Recent Pushes ({{ recentPushes.length }})
+          button.auto-dash-tiny-btn(
+            *ngIf='recentPushes.length',
+            type='button',
+            (click)='clearPushHistory()',
+            title='Clear all push history',
+            style='margin-left: auto'
+          ) Clear all
+        .auto-dash-empty(*ngIf='!recentPushes.length')
+          | No push history yet — pushes from the canvas, dashboard, scheduler, and per-node Push buttons will be recorded here.
+        table.auto-dash-table(*ngIf='recentPushes.length')
+          thead: tr
+            th(style='width: 18px')
+            th Time
+            th Mode
+            th Source
+            th Scope
+            th Result
+            th Duration
+          tbody
+            ng-container(*ngFor='let p of recentPushes')
+              tr.auto-dash-push-row.row-clickable(
+                [class.failed]='p.failed > 0',
+                (click)='togglePushExpand(p.id)'
+              )
+                td.expand-arrow {{ isPushExpanded(p.id) ? '▾' : '▸' }}
+                td {{ formatTime(p.timestamp) }}
+                td
+                  span.push-mode-pill([class.staging]='p.mode === "staging"', [class.full]='p.mode === "full"')
+                    | {{ p.mode }}{{ p.sequential ? ' · seq' : '' }}{{ p.dryRun ? ' · dry' : '' }}
+                td {{ p.source }}
+                td.message-cell {{ p.scope }}
+                td
+                  span.compliance-pass {{ p.succeeded }}
+                  | &nbsp;✓&nbsp;
+                  span.compliance-fail {{ p.failed }}
+                  | &nbsp;✗
+                td {{ formatDuration(p.totalDurationMs ?? 0) }}
+              tr.auto-dash-push-detail(*ngIf='isPushExpanded(p.id)')
+                td(colspan='7')
+                  .push-detail-list
+                    .push-detail-row(
+                      *ngFor='let res of p.results',
+                      [class.row-fail]='!res.ok'
+                    )
+                      span.push-detail-icon {{ res.ok ? '✓' : '✗' }}
+                      span.push-detail-node {{ res.nodeLabel }}
+                      span.push-detail-msg(*ngIf='res.message') {{ res.message }}
+
+      //- ── Scheduled Jobs preview (next to fire) ─────────────────────────
+      .auto-dash-section
+        h4.auto-dash-section-title
+          | ⏱ Upcoming Scheduled Jobs
+          span.auto-dash-rule-count(style='margin-left:8px')
+            | {{ schedulerRunning ? '· running' : '· idle' }}
+          button.auto-dash-tiny-btn(type='button', (click)='requestScheduledJobsPanel()') Manage →
+        .auto-dash-empty(*ngIf='!upcomingJobs.length') No enabled scheduled jobs.
+        table.auto-dash-table(*ngIf='upcomingJobs.length')
+          thead: tr
+            th Job
+            th Action
+            th Schedule
+            th Next run
+            th Last run
+            th(style='width: 100px')
+          tbody
+            tr(*ngFor='let j of upcomingJobs')
+              td {{ j.name }}
+              td.message-cell {{ j.action }}
+              td {{ j.schedule }}
+              td {{ formatRelative(j.nextRun) }}
+              td {{ j.lastRun ? formatTime(j.lastRun) : 'never' }}
+              td
+                button.auto-dash-small-btn(type='button', (click)='runJobNow(j)') Run now
+
       //- Recent events section
       .auto-dash-section
         h4.auto-dash-section-title Recent Events ({{ recentEvents.length }})
-        .auto-dash-events
+        .auto-dash-empty(*ngIf='!recentEvents.length') No recent events recorded.
+        .auto-dash-events(*ngIf='recentEvents.length')
           .auto-dash-event(*ngFor='let ev of recentEvents')
             span.event-type-badge([class]='ev.type') {{ ev.type }}
             span.event-node {{ getNodeLabel(ev.nodeId) }}
             span.event-detail {{ ev.detail }}
             span.event-time {{ formatTime(ev.timestamp) }}
 
+      //- ── Compliance results ───────────────────────────────────────────
+      .auto-dash-section(*ngIf='complianceStatus || complianceResults.length')
+        h4.auto-dash-section-title Compliance
+        .auto-dash-compliance-status(*ngIf='complianceStatus') {{ complianceStatus }}
+        table.auto-dash-table(*ngIf='complianceResults.length')
+          thead: tr
+            th Node
+            th Score
+            th Pass / Fail
+            th Top failures
+          tbody
+            tr.auto-dash-comp-row(
+              *ngFor='let r of complianceResults',
+              [class.compliant]='r.score >= 80',
+              [class.failing]='r.score < 60'
+            )
+              td {{ r.nodeLabel || getNodeLabel(r.nodeId) }}
+              td.score-cell
+                span.score-num {{ r.score }}%
+              td
+                span.compliance-pass {{ r.passed.length }}
+                | &nbsp;/&nbsp;
+                span.compliance-fail {{ r.failed.length }}
+              td.message-cell {{ topFailures(r) }}
+
       //- Backups section
       .auto-dash-section
-        h4.auto-dash-section-title Backup Status
-        .auto-dash-backup-grid
+        h4.auto-dash-section-title Backup Status ({{ backupNodes.length }})
+        .auto-dash-empty(*ngIf='!backupNodes.length') No config backups yet — Inventory menu → Backup All.
+        .auto-dash-backup-grid(*ngIf='backupNodes.length')
           .auto-dash-backup-card(*ngFor='let node of backupNodes')
             span.backup-node-name {{ node.label }}
             span.backup-last {{ node.lastBackup || 'Never' }}
             span.backup-drift([class.drift]='node.hasDrift') {{ node.hasDrift ? 'Drift' : 'OK' }}
+
+      //- ── Approval History (audit trail) ────────────────────────────────
+      .auto-dash-section(*ngIf='approvalHistoryRecent.length')
+        h4.auto-dash-section-title Recent Approval Decisions ({{ approvalHistoryRecent.length }})
+        table.auto-dash-table
+          thead: tr
+            th Workflow
+            th Gate
+            th Node
+            th Decision
+            th Resolved
+          tbody
+            tr.auto-dash-history-row(
+              *ngFor='let h of approvalHistoryRecent',
+              [class.approved]='h.decision === "approve"',
+              [class.rejected]='h.decision === "reject" || h.decision === "timeout" || h.decision === "cancelled"'
+            )
+              td {{ h.workflowName }}
+              td {{ h.gate }}
+              td {{ h.nodeLabel }}
+              td
+                span.history-decision([class]='h.decision') {{ h.decision }}
+              td {{ h.resolvedAt }}
 
       //- Rules section
       .auto-dash-section

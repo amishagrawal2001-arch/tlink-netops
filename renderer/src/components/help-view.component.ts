@@ -3,7 +3,9 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component } from '@angular/
 /** Section IDs must match the template toggle calls */
 const ALL_SECTIONS = [
     'getting-started', 'templates', 'topology', 'containerlab',
-    'kvm', 'monitoring', 'snmp', 'syslog', 'snippets', 'workspace',
+    'kvm', 'monitoring', 'snmp', 'syslog', 'telemetry',
+    'staging', 'push-config', 'automation',
+    'snippets', 'workspace',
 ]
 
 @Component({

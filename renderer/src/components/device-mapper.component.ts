@@ -1,6 +1,6 @@
 import {
     ChangeDetectionStrategy, ChangeDetectorRef, Component,
-    EventEmitter, Input, OnInit, Output,
+    EventEmitter, Input, OnInit, Output, ViewEncapsulation,
 } from '@angular/core'
 import { TopologyNode, Topology } from '../api/interfaces'
 import { NetworkDiscoveryService, DiscoveredDevice, DiscoveredLink } from '../services/network-discovery.service'
@@ -26,6 +26,10 @@ interface ExtendedDevice extends DiscoveredDevice {
     templateUrl: './device-mapper.component.pug',
     styleUrls: ['./device-mapper.component.scss'],
     changeDetection: ChangeDetectionStrategy.OnPush,
+    // Make .mapper-* styles global so other dialogs (scheduler-panel,
+    // backup-history) can reuse the same overlay/dialog/header chrome.
+    // Class names are uniquely prefixed so global scope is safe.
+    encapsulation: ViewEncapsulation.None,
 })
 export class DeviceMapperComponent implements OnInit {
 
