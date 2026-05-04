@@ -420,3 +420,166 @@
     color: #93c5fd;
   }
 }
+
+// ─── Import summary banner (added/skipped counts after CSV/JSON import) ─────
+.mapper-import-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.08);
+  color: #86efac;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.mapper-summary-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  font-size: 13px;
+  margin-left: auto;
+  padding: 0 4px;
+  &:hover { color: var(--text); }
+}
+
+// ─── Inline-edit error states ──────────────────────────────────────────────
+.mapper-row-error {
+  background: rgba(239, 68, 68, 0.06) !important;
+}
+.mapper-input-invalid {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+}
+.mapper-row-errors {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mapper-row-error-msg {
+  font-size: 10.5px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+// ─── SSH status pill (per-row, shows last probe result) ────────────────────
+.ssh-pill {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  margin-right: 6px;
+  cursor: help;
+  vertical-align: middle;
+
+  &.ssh-pill-ok {
+    background: rgba(34, 197, 94, 0.18);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+  }
+  &.ssh-pill-auth {
+    background: rgba(245, 158, 11, 0.18);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    font-size: 10px;       // emoji
+  }
+  &.ssh-pill-unreachable {
+    background: rgba(239, 68, 68, 0.18);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    font-size: 10px;
+  }
+  &.ssh-pill-other,
+  &.ssh-pill-fail {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+  }
+}
+
+// Cell carrying the pill needs alignment of its inner input + pill.
+.hostname-cell {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.hostname-cell .mapper-inline-edit { flex: 1; }
+
+// Row tints — subtle so the pill is the primary cue but the row is scannable.
+.mapper-row-ssh-fail {
+  background: rgba(239, 68, 68, 0.04);
+  &:hover { background: rgba(239, 68, 68, 0.08) !important; }
+}
+.mapper-row-ssh-ok {
+  // Don't tint OK rows; just the pill is enough. Avoids visual noise on
+  // a healthy fabric.
+}
+
+// ─── SSH-failure banner (shown after discovery if any probe failed) ────────
+.mapper-failure-banner {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mapper-failure-header {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: #fca5a5;
+
+  strong { color: #fecaca; }
+}
+.mapper-failure-spacer { flex: 1; }
+.mapper-failure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-left: 4px;
+  border-left: 2px solid rgba(239, 68, 68, 0.25);
+  margin-left: 6px;
+}
+.mapper-failure-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 140px 160px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  padding: 2px 0;
+
+  .ssh-pill { margin-right: 0; }
+}
+.mapper-failure-name  { color: var(--text); font-weight: 500; }
+.mapper-failure-ip    { color: var(--text-muted); font-family: 'SF Mono', monospace; font-size: 10.5px; }
+.mapper-failure-cause { color: #f59e0b; font-size: 11px; }
+.mapper-failure-detail {
+  color: var(--text-muted);
+  font-family: 'SF Mono', monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapper-failure-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}

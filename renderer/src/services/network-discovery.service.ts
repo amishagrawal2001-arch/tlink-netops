@@ -400,7 +400,12 @@ export class NetworkDiscoveryService {
             port?: number;
             timeoutMs?: number;
             concurrency?: number;
-            onProgress?: (info: { processed: number; total: number; elapsedMs: number }) => void;
+            /** Progress callback now reports per-cause failure counters so the
+             *  UI can surface "12 of 50 auth-failed" mid-run. */
+            onProgress?: (info: {
+                processed: number; total: number; elapsedMs: number;
+                authFailed?: number; unreachable?: number; otherFailed?: number;
+            }) => void;
             /** Streamed-discovery callbacks (deltas only). */
             onDevices?: (newDevices: DiscoveredDevice[]) => void;
             onLinks?:   (newLinks: DiscoveredLink[]) => void;
@@ -408,6 +413,11 @@ export class NetworkDiscoveryService {
              *  matching inventory devices and drops any LLDP link with a
              *  matching endpoint. */
             excludePatterns?: RegExp[];
+            /** Abort the run after this many consecutive auth-failed devices.
+             *  Defaults to 5 — protects against typo'd fallback creds blasting
+             *  the same wrong password against an entire fabric and locking
+             *  out service accounts. Set to 0 to disable the safety. */
+            authFailFastThreshold?: number;
         } = {},
     ): Promise<DiscoveryResult> {
       try {
@@ -454,13 +464,31 @@ export class NetworkDiscoveryService {
 
         const devices: DiscoveredDevice[] = []
         const links: DiscoveredLink[] = []
-        const diagnostics: Array<{ host: string; status: string; detail?: string }> = []
+        const diagnostics: Array<{ host: string; status: string; detail?: string; cause?: 'auth' | 'unreachable' | 'other' | 'no-creds' | 'vendor' }> = []
+        const authFailFastThreshold = opts.authFailFastThreshold ?? 5
+        let consecutiveAuthFails = 0
+        let bailedEarly = false   // set when we abort due to repeated auth fails
+        let authFailed = 0
+        let unreachable = 0
+        let otherFailed = 0
+
+        // Classify a per-device failure message into the bucket the UI displays.
+        // The patterns mirror _detectVendor's fatalErrRe for consistency.
+        const classifyError = (msg: string): 'auth' | 'unreachable' | 'other' => {
+            if (/Authentication failed|auth.*fail|Permission denied|invalid password|access denied|bad credentials/i.test(msg)) {
+                return 'auth'
+            }
+            if (/ENOTFOUND|EHOSTUNREACH|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|connection refused|host unreachable|network unreachable|connection timed out|client-side timeout/i.test(msg)) {
+                return 'unreachable'
+            }
+            return 'other'
+        }
 
         // Probe one inventory device. Credentials are per-device with fallback.
         const probeInv = async (inv: { hostname: string; mgmtIp: string; sshUsername?: string; sshPassword?: string }): Promise<{
             device?: DiscoveredDevice;
             links: DiscoveredLink[];
-            diag: { host: string; status: string; detail?: string };
+            diag: { host: string; status: string; detail?: string; cause?: 'auth' | 'unreachable' | 'other' | 'no-creds' | 'vendor' };
         }> => {
             const target = (inv.mgmtIp || inv.hostname || '').trim()
             const user = inv.sshUsername || opts.fallbackUsername || ''
@@ -476,6 +504,19 @@ export class NetworkDiscoveryService {
             try {
                 const det = await this._detectVendorImpl(creds, timeoutMs)
                 if (!det.vendor) {
+                    // _detectVendor returns empty in two cases:
+                    //   (a) all probes ran but none matched a known vendor → genuinely "skip"
+                    //   (b) probes short-circuited on a fatal network/auth error → reclassify as "fail"
+                    //       with the proper cause so the wave counters reflect reality
+                    const probes = this.lastProbeResult ?? []
+                    const failedProbes = probes.filter(p => !p.ok)
+                    const allFailed = probes.length > 0 && failedProbes.length === probes.length
+                    if (allFailed) {
+                        // Pick the most common cause across the failed probes.
+                        const firstErr = failedProbes[0]?.err ?? ''
+                        const cause = classifyError(firstErr)
+                        return { links: [], diag: { host: target, status: 'fail', detail: firstErr.slice(0, 200), cause } }
+                    }
                     return { links: [], diag: { host: target, status: 'skip', detail: 'vendor not detected' } }
                 }
                 const cmds = getVendorCommands(det.vendor)
@@ -523,7 +564,8 @@ export class NetworkDiscoveryService {
                 }
             } catch (err) {
                 const msg = (err as Error).message || String(err)
-                return { links: [], diag: { host: target, status: 'fail', detail: msg } }
+                const cause = classifyError(msg)
+                return { links: [], diag: { host: target, status: 'fail', detail: msg, cause } }
             }
         }
 
@@ -543,6 +585,17 @@ export class NetworkDiscoveryService {
                 if (r.device) { devices.push(r.device); waveDevices.push(r.device) }
                 for (const l of r.links) { links.push(l); waveLinks.push(l) }
                 diagnostics.push(r.diag)
+                // Maintain per-cause counters for the progress callback.
+                if (r.diag.status === 'fail') {
+                    if (r.diag.cause === 'auth')        { authFailed++;  consecutiveAuthFails++ }
+                    else if (r.diag.cause === 'unreachable') { unreachable++; consecutiveAuthFails = 0 }
+                    else                                 { otherFailed++; consecutiveAuthFails = 0 }
+                } else if (r.diag.status === 'ok') {
+                    consecutiveAuthFails = 0
+                } else if (r.diag.status === 'skip' && /no SSH credentials/i.test(r.diag.detail ?? '')) {
+                    // Skip-no-creds doesn't reset the auth-fail streak (it's not a successful auth either)
+                    // but doesn't count toward the threshold either.
+                }
             }
             try { if (waveDevices.length && onDevices) { onDevices(waveDevices) } } catch { /* swallow */ }
             try { if (waveLinks.length   && onLinks)   { onLinks(waveLinks) } }   catch { /* swallow */ }
@@ -550,9 +603,23 @@ export class NetworkDiscoveryService {
             const elapsedMs = Date.now() - t0
             console.log(
                 `[discovery-inv] wave done — processed=${processed}/${inventory.length} ` +
-                `concurrency=${concurrency} elapsed=${(elapsedMs / 1000).toFixed(1)}s`,
+                `concurrency=${concurrency} elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
+                `(authFail=${authFailed} unreachable=${unreachable} other=${otherFailed})`,
             )
-            try { onProgress?.({ processed, total: inventory.length, elapsedMs }) } catch { /* ignore */ }
+            try { onProgress?.({ processed, total: inventory.length, elapsedMs, authFailed, unreachable, otherFailed }) } catch { /* ignore */ }
+
+            // Fail-fast: if N consecutive devices have failed auth, the credentials
+            // are almost certainly wrong. Bail rather than blast the same bad
+            // password at the rest of the fabric (risk of locking out accounts).
+            if (authFailFastThreshold > 0 && consecutiveAuthFails >= authFailFastThreshold) {
+                console.warn(
+                    `[discovery-inv] aborting — ${consecutiveAuthFails} consecutive auth failures ` +
+                    `(threshold ${authFailFastThreshold}). Check fallback credentials.`,
+                )
+                bailedEarly = true
+                this._abortRequested = true
+                break
+            }
         }
 
         // De-dupe A↔B / B↔A so each cable counts once.
@@ -570,12 +637,29 @@ export class NetworkDiscoveryService {
             dedupedLinks.push(l)
         }
 
+        // Stamp diagnostics + counters on the result so the calling UI can
+        // build a "12 unreachable, 8 auth-failed, 30 ok" summary line without
+        // having to re-classify the messages itself.
         ;(devices as any).__diagnostics = diagnostics
         ;(dedupedLinks as any).__diagnostics = diagnostics
+        const summary = {
+            authFailed,
+            unreachable,
+            otherFailed,
+            ok: devices.length,
+            bailedEarly,
+            bailReason: bailedEarly
+                ? `Aborted after ${authFailed} auth failure(s) — credentials likely wrong`
+                : undefined,
+        }
+        ;(devices as any).__summary = summary
+        ;(dedupedLinks as any).__summary = summary
         console.log(
-            `[discovery-inv] complete — probed ${inventory.length} inventory device(s), ` +
+            `[discovery-inv] complete — probed ${processed}/${inventory.length} inventory device(s), ` +
             `${devices.length} reachable, ${dedupedLinks.length} unique inventory↔inventory links ` +
-            `in ${((Date.now() - t0) / 1000).toFixed(1)}s:`, diagnostics,
+            `(authFail=${authFailed} unreachable=${unreachable} other=${otherFailed}` +
+            `${bailedEarly ? ' BAILED EARLY' : ''}) in ${((Date.now() - t0) / 1000).toFixed(1)}s:`,
+            diagnostics,
         )
 
         return { devices, links: dedupedLinks }
@@ -794,7 +878,11 @@ export class NetworkDiscoveryService {
         // Errors where the host itself is unreachable — no point trying the
         // remaining shell variants, they'll all fail identically. Short-circuit
         // and surface a single concise warning instead of 8 duplicate lines.
-        const fatalErrRe = /ENOTFOUND|EHOSTUNREACH|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|Authentication failed|auth.*fail|Host key|Permission denied/i
+        // Patterns where the FIRST probe failure means the host is fundamentally
+        // unreachable / unauth — no point trying 7 more shell-variant probes
+        // each costing another ~10 s. Includes our hard client-side timeout
+        // wrapper so a hung backend doesn't burn ~76 s per dead host.
+        const fatalErrRe = /ENOTFOUND|EHOSTUNREACH|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|Authentication failed|auth.*fail|Host key|Permission denied|client-side timeout|backend did not return/i
         for (const cmd of probeCommands) {
             try {
                 const output = await this._runCommand(creds, cmd, timeoutMs)
@@ -835,11 +923,12 @@ export class NetworkDiscoveryService {
                     const kind = /ENOTFOUND/i.test(msg) ? 'DNS lookup failed'
                         : /EHOSTUNREACH|ENETUNREACH/i.test(msg) ? 'host unreachable'
                         : /ECONNREFUSED/i.test(msg) ? 'SSH refused'
+                        : /client-side timeout|backend did not return/i.test(msg) ? 'connection hung (no response within deadline)'
                         : /ETIMEDOUT/i.test(msg) ? 'connection timed out'
                         : /Authentication|auth|Permission/i.test(msg) ? 'SSH auth failed'
                         : /Host key/i.test(msg) ? 'SSH host-key mismatch'
                         : 'connection failed'
-                    console.warn(`[discovery] ${creds.host}: skipped — ${kind}`)
+                    console.warn(`[discovery] ${creds.host}: skipped after first probe — ${kind}`)
                     return { vendor: '', output: '' }
                 }
             }
@@ -864,34 +953,49 @@ export class NetworkDiscoveryService {
      * Execute a single SSH command via the Electron preload API.
      */
     private async _runCommand (creds: SshCredentials, command: string, timeoutMs: number): Promise<string> {
-        if (this._backendClient?.isConnected) {
-            const result = await this._backendClient.pollDevice(creds.host, creds.port, creds.username, creds.password, [command])
-            if (!result.ok) {
-                throw new Error(result.message ?? 'SSH command failed')
-            }
-            const entry = result.results?.[0]
-            return entry?.stdout ?? entry?.output ?? ''
-        }
+        // Build the underlying RPC promise. The backend is supposed to honour
+        // `timeoutMs`, but we've seen ssh2-driven backends silently hang during
+        // auth retries when the device throttles repeated bad-password attempts.
+        // Wrap with a hard client-side deadline so a stuck SSH session can
+        // never block the BFS / inventory wave indefinitely. We add a small
+        // grace (1.5 s) so the backend has a chance to surface its own clean
+        // error first.
+        const inner = this._backendClient?.isConnected
+            ? this._backendClient.pollDevice(creds.host, creds.port, creds.username, creds.password, [command])
+                .then((result: any) => {
+                    if (!result.ok) { throw new Error(result.message ?? 'SSH command failed') }
+                    const entry = result.results?.[0]
+                    return entry?.stdout ?? entry?.output ?? ''
+                })
+            : (() => {
+                const api = (window as any).netopsAPI
+                if (!api?.sshRunCommands) { return Promise.reject(new Error('SSH API not available')) }
+                return api.sshRunCommands({
+                    host: creds.host,
+                    port: creds.port,
+                    username: creds.username,
+                    password: creds.password,
+                    timeoutMs,
+                    commands: [command],
+                }).then((result: any) => {
+                    if (!result.ok) { throw new Error(result.message ?? 'SSH command failed') }
+                    const entry = result.results?.[0]
+                    return entry?.stdout ?? entry?.output ?? ''
+                })
+            })()
 
-        const api = (window as any).netopsAPI
-        if (!api?.sshRunCommands) {
-            throw new Error('SSH API not available')
-        }
-
-        const result = await api.sshRunCommands({
-            host: creds.host,
-            port: creds.port,
-            username: creds.username,
-            password: creds.password,
-            timeoutMs,
-            commands: [command],
+        const hardDeadlineMs = timeoutMs + 1500
+        let timer: ReturnType<typeof setTimeout> | null = null
+        const guard = new Promise<string>((_, reject) => {
+            timer = setTimeout(() => {
+                reject(new Error(`client-side timeout after ${hardDeadlineMs}ms (backend did not return — likely auth retry hang)`))
+            }, hardDeadlineMs)
         })
 
-        if (!result.ok) {
-            throw new Error(result.message ?? 'SSH command failed')
+        try {
+            return await Promise.race([inner, guard])
+        } finally {
+            if (timer) { clearTimeout(timer) }
         }
-
-        const entry = result.results?.[0]
-        return entry?.stdout ?? entry?.output ?? ''
     }
 }

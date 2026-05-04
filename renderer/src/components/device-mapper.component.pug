@@ -50,8 +50,15 @@
       button.mapper-btn.mapper-btn-auto(
         type='button',
         [disabled]='!discoveredDevices.length',
+        title='Match every node to its best inventory device. Confirms before overwriting any existing manual mappings.',
         (click)='autoMatch(); activeTab = "mapping"; cdr.markForCheck()'
       ) ⚡ Auto-Match
+      button.mapper-btn(
+        type='button',
+        [disabled]='!discoveredDevices.length',
+        title='Auto-match only nodes that are currently unmapped — preserves manually-set mappings.',
+        (click)='autoMatchMerge(); activeTab = "mapping"; cdr.markForCheck()'
+      ) ⚡+ Match (merge)
       span.mapper-status(*ngIf='discoveredDevices.length')
         | {{ discoveredDevices.length }} device{{ discoveredDevices.length === 1 ? '' : 's' }}
         span(*ngIf='discoveredLinks.length', style='margin-left:6px;color:#60a5fa')
@@ -104,9 +111,24 @@
           span(*ngIf='!allInventoryHasCreds')
             | {{ devicesWithCreds }}/{{ discoveredDevices.length }} device(s) have their own SSH credentials.
             |  The fallback above will be used for the remaining {{ discoveredDevices.length - devicesWithCreds }}.
+
+      //- Scope indicator: shows whether the user has restricted the probe to a
+      //- subset via the inventory-table checkboxes. Highlighted when in effect.
+      .mapper-form-row(*ngIf='discoveryMode === "inventory"')
+        span(
+          *ngIf='selectedDeviceHosts.size > 0',
+          style='font-size:11px; color:#3b82f6; flex:1; padding:6px 10px; background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.3); border-radius:5px'
+        )
+          | 🎯 Selection scope active — will probe only the {{ selectedDeviceHosts.size }} checkbox-selected device(s),
+          |  not the full inventory of {{ discoveredDevices.length }}. Uncheck rows or click the header checkbox to clear scope.
+        span(
+          *ngIf='selectedDeviceHosts.size === 0',
+          style='font-size:11px; color:var(--text-muted); flex:1'
+        )
+          | Probes all {{ discoveredDevices.length }} device(s) in inventory. Tip: check specific rows in the table to scope the probe.
       .mapper-form-row(*ngIf='discoveryMode === "inventory"')
         span(style='font-size:11px; color:var(--text-muted); flex:1')
-          | Probes only the {{ discoveredDevices.length }} device(s) in inventory. Keeps only LLDP links between them. No BFS expansion.
+          | Keeps only LLDP links between probed devices. No BFS expansion.
       .mapper-form-row(*ngIf='discoveryMode === "bfs"')
         span(style='font-size:11px; color:var(--text-muted); flex:1')
           | Walks LLDP outward from the seed, up to 3 hops. Adds every reachable device to inventory.
@@ -216,10 +238,40 @@
           button.mapper-btn(type='button', (click)='downloadSampleCsv()') 📄 Sample CSV
           button.mapper-btn(type='button', (click)='downloadSampleJson()') 📋 Sample JSON
 
+      //- Import summary banner (added/skipped counts)
+      .mapper-import-summary(*ngIf='importSummary')
+        span {{ importSummary }}
+        button.mapper-summary-close(type='button', (click)='clearImportSummary()', title='Dismiss') ✕
+
+      //- ── SSH-failure banner ─────────────────────────────────────────────
+      //- Surfaced after a discovery run if any probed device failed. Shows
+      //- a per-cause breakdown and a list of the failing hostnames so the
+      //- user immediately sees WHICH devices are broken and WHY.
+      .mapper-failure-banner(*ngIf='hasProbeFailures')
+        .mapper-failure-header
+          | ⚠ <strong>{{ probeFailedDevices.length }} device(s) failed SSH probe</strong>
+          span.mapper-failure-spacer
+          button.mapper-summary-close(
+            type='button',
+            (click)='clearFailureBanner()',
+            title='Dismiss banner (preserves inventory; only clears the status pills)'
+          ) ✕
+        .mapper-failure-list
+          .mapper-failure-row(*ngFor='let d of probeFailedDevices')
+            span.ssh-pill.ssh-pill-fail([class]='"ssh-pill-" + (d.lastProbe?.cause || "other")')
+              | {{ d.lastProbe?.cause === 'auth' ? '🔒' : d.lastProbe?.cause === 'unreachable' ? '🚫' : '✗' }}
+            span.mapper-failure-name {{ d.hostname }}
+            span.mapper-failure-ip(*ngIf='d.mgmtIp') {{ d.mgmtIp }}
+            span.mapper-failure-cause
+              | {{ d.lastProbe?.cause === 'auth' ? 'auth failed' : d.lastProbe?.cause === 'unreachable' ? 'unreachable / no SSH response' : 'connection failed' }}
+            span.mapper-failure-detail(*ngIf='d.lastProbe?.detail') {{ d.lastProbe?.detail }}
+        .mapper-failure-hint
+          | Tip: edit the SSH user/pass inline, or use <strong>Devices → Set SSH Credentials</strong> for bulk updates, then re-run discovery.
+
       .mapper-search(*ngIf='discoveredDevices.length')
         input.mapper-form-input(
           type='text',
-          placeholder='Search by hostname, IP, or vendor...',
+          placeholder='Search by hostname, IP, vendor, model, SSH user, or serial…',
           [(ngModel)]='searchQuery',
           (ngModelChange)='cdr.markForCheck()'
         )
@@ -244,8 +296,11 @@
             th Actions
         tbody
           tr.mapper-row(
-            *ngFor='let dev of filteredDevices; let i = index',
-            [class.mapper-row-selected]='isDeviceSelected(dev)'
+            *ngFor='let dev of filteredDevices; let i = index; trackBy: trackByHostname',
+            [class.mapper-row-selected]='isDeviceSelected(dev)',
+            [class.mapper-row-error]='inlineEditErrors.has(dev.hostname.toLowerCase())',
+            [class.mapper-row-ssh-fail]='dev.lastProbe?.status === "fail"',
+            [class.mapper-row-ssh-ok]='dev.lastProbe?.status === "ok"'
           )
             td(style='text-align:center')
               input(
@@ -254,47 +309,68 @@
                 (change)='toggleDeviceSelection(dev)'
               )
             td {{ i + 1 }}
-            td
+            td.hostname-cell
+              //- SSH status pill — shows the result of the most recent discovery probe.
+              //- Renders even before a probe (status='unknown') so the column stays aligned.
+              span.ssh-pill(
+                *ngIf='dev.lastProbe',
+                [class]='"ssh-pill-" + (dev.lastProbe?.status === "ok" ? "ok" : (dev.lastProbe?.cause || "other"))',
+                [title]='probeTooltip(dev)'
+              )
+                | {{ dev.lastProbe?.status === 'ok' ? '✓' : dev.lastProbe?.cause === 'auth' ? '🔒' : dev.lastProbe?.cause === 'unreachable' ? '🚫' : '✗' }}
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.hostname',
-                (change)='saveDeviceEdit(dev, "hostname", $event)'
+                (blur)='saveDeviceEdit(dev, "hostname", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.mgmtIp',
-                (change)='saveDeviceEdit(dev, "mgmtIp", $event)'
+                [class.mapper-input-invalid]='inlineEditErrors.has(dev.hostname.toLowerCase())',
+                (blur)='saveDeviceEdit(dev, "mgmtIp", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.vendor',
-                (change)='saveDeviceEdit(dev, "vendor", $event)'
+                (blur)='saveDeviceEdit(dev, "vendor", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.model',
-                (change)='saveDeviceEdit(dev, "model", $event)'
+                (blur)='saveDeviceEdit(dev, "model", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='text',
                 [value]='dev.sshUsername || ""',
-                (change)='saveDeviceEdit(dev, "sshUsername", $event)'
+                (blur)='saveDeviceEdit(dev, "sshUsername", $event)'
               )
             td
               input.mapper-inline-edit(
                 type='password',
                 [value]='dev.sshPassword || ""',
-                (change)='saveDeviceEdit(dev, "sshPassword", $event)'
+                (blur)='saveDeviceEdit(dev, "sshPassword", $event)'
               )
             td
               button.mapper-remove-btn(type='button', title='Remove', (click)='removeDevice(dev)') ✕
 
+      //- Per-row inline-edit error pills (rendered below the table when any).
+      .mapper-row-errors(*ngIf='inlineEditErrors.size > 0')
+        .mapper-row-error-msg(*ngFor='let entry of inlineEditErrors | keyvalue')
+          | ⚠ <strong>{{ entry.key }}</strong>: {{ entry.value }}
+
     //- ── Mapping Tab ────────────────────────────────────────────────
     .mapper-table-wrap(*ngIf='activeTab === "mapping"')
+      .mapper-search(*ngIf='topologyNodes.length')
+        input.mapper-form-input(
+          type='text',
+          placeholder='Search topology nodes by label, vendor, model, or role…',
+          [(ngModel)]='mappingSearchQuery',
+          (ngModelChange)='cdr.markForCheck()'
+        )
       table.mapper-table
         thead
           tr
@@ -307,7 +383,7 @@
             th Status
         tbody
           tr.mapper-row(
-            *ngFor='let node of topologyNodes',
+            *ngFor='let node of filteredTopologyNodes; trackBy: trackByNodeId',
             [class.mapped]='mappings.has(node.id)'
           )
             td.mapper-cell-name {{ node.label }}
@@ -376,6 +452,7 @@
           (click)='buildTopologyFromDiscovery(true)'
         ) ⟳ Replace &amp; Build
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', (click)='exportInventoryCsv()') 📥 Export CSV
+        button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', title='Lossless export — preserves interfaces array and round-trips with import', (click)='exportInventoryJson()') 📥 Export JSON
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length && !showClearConfirm', (click)='clearAllDevices()') Clear All
         span.mapper-confirm(*ngIf='showClearConfirm')
           | Are you sure?

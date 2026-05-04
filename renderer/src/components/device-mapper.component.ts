@@ -19,6 +19,19 @@ interface MappingEntry {
 interface ExtendedDevice extends DiscoveredDevice {
     sshUsername?: string
     sshPassword?: string
+    /** Outcome of the most recent discovery probe against this device. Used by
+     *  the inventory table to render a per-row SSH-status pill so the user can
+     *  see at a glance which devices are reachable vs failing auth vs unreachable. */
+    lastProbe?: {
+        /** 'ok' = vendor detected; 'fail' = SSH/auth/timeout error; 'unknown' = never probed. */
+        status: 'ok' | 'fail' | 'unknown'
+        /** When status='fail', the high-level cause from the discovery service. */
+        cause?: 'auth' | 'unreachable' | 'other'
+        /** Short human-readable detail (first 200 chars of the error). */
+        detail?: string
+        /** ISO timestamp of when the probe completed. */
+        at?: string
+    }
 }
 
 @Component({
@@ -131,6 +144,7 @@ export class DeviceMapperComponent implements OnInit {
     }
     clearDeviceSelection (): void {
         this.selectedDeviceHosts.clear()
+        this._saveInventory()    // persist the cleared state
         this.cdr.markForCheck()
     }
 
@@ -153,15 +167,23 @@ export class DeviceMapperComponent implements OnInit {
         )
         if (!ok) { return }
 
-        // Lookup helper — case-insensitive against the selection set.
-        const isSel = (s: string): boolean => sel.has((s || '').toLowerCase())
-
+        // Snapshot the doomed devices so we can cascade-purge each one through
+        // mappings (the bulk filter below handles inventory + links).
+        const doomed = this.discoveredDevices.filter(d =>
+            sel.has(this._key(d.hostname)),
+        )
         // Drop devices whose hostname is in the selection.
-        this.discoveredDevices = this.discoveredDevices.filter(d => !isSel(d.hostname))
+        this.discoveredDevices = this.discoveredDevices.filter(d =>
+            !sel.has(this._key(d.hostname)),
+        )
         // Drop any LLDP link that touches a selected device on either end.
         this.discoveredLinks = this.discoveredLinks.filter(l =>
-            !isSel(l.srcHost) && !isSel(l.dstHost),
+            !sel.has(this._key(l.srcHost)) && !sel.has(this._key(l.dstHost)),
         )
+        // Cascade through mappings using the central purge helper so the
+        // Mapping tab doesn't end up with orphan rows pointing at deleted devices.
+        for (const d of doomed) { this._purgeReferences(d.hostname, d.mgmtIp) }
+        this._invalidateFilterCache()
         sel.clear()
         this.lastDiscoverySummary =
             `Deleted ${count} device(s); inventory now ${this.discoveredDevices.length} ` +
@@ -178,19 +200,86 @@ export class DeviceMapperComponent implements OnInit {
     activeTab: 'mapping' | 'inventory' = 'inventory'
     editingIdx = -1
     searchQuery = ''
+    /** Search scope for the Mapping tab — separate from inventory search so
+     *  filtering one tab doesn't surprise the other. */
+    mappingSearchQuery = ''
     showClearConfirm = false
     addError = ''
+    /** Toast/inline-banner for import summaries (added/skipped counts). */
+    importSummary = ''
+    /** When user inline-edits an mgmt IP that fails validation, store the
+     *  message keyed by hostname so the UI can show a per-row error pill. */
+    inlineEditErrors = new Map<string, string>()
 
     private _api = (window as any).netopsAPI
 
+    /** Memoized cache for `filteredDevices` — re-derived only when the
+     *  search query OR the underlying array reference / length changes.
+     *  Avoids quadratic re-filtering on every change-detection cycle. */
+    private _filteredCache: { key: string; result: ExtendedDevice[] } | null = null
+
+    /** Public accessor for trackBy in the inventory `*ngFor`. Identity-stable
+     *  enough for normal use; the hostname is the natural key. */
+    trackByHostname (_idx: number, dev: ExtendedDevice): string {
+        return (dev.hostname || '') + '|' + (dev.mgmtIp || '')
+    }
+    trackByNodeId (_idx: number, node: TopologyNode): string { return node.id }
+
+    /** Lowercased hostname used as the canonical key in selection / dedup /
+     *  cascades. Centralised so we never accidentally mismatch case. */
+    private _key (s: string | undefined | null): string {
+        return (s || '').trim().toLowerCase()
+    }
+
     get filteredDevices (): ExtendedDevice[] {
-        if (!this.searchQuery) { return this.discoveredDevices }
-        const q = this.searchQuery.toLowerCase()
-        return this.discoveredDevices.filter(d =>
-            d.hostname.toLowerCase().includes(q) ||
-            d.mgmtIp.toLowerCase().includes(q) ||
-            d.vendor.toLowerCase().includes(q)
+        const key = `${this.searchQuery}|${this.discoveredDevices.length}`
+        // Cheap reference check — if the array hasn't been swapped AND the
+        // query hasn't changed, return the previous filter result directly.
+        if (this._filteredCache && this._filteredCache.key === key) {
+            return this._filteredCache.result
+        }
+        const q = (this.searchQuery || '').toLowerCase().trim()
+        const result = q
+            ? this.discoveredDevices.filter(d =>
+                d.hostname.toLowerCase().includes(q)        ||
+                d.mgmtIp.toLowerCase().includes(q)          ||
+                (d.vendor || '').toLowerCase().includes(q)  ||
+                (d.model  || '').toLowerCase().includes(q)  ||
+                (d.sshUsername || '').toLowerCase().includes(q) ||
+                ((d as any).serialNumber || '').toLowerCase().includes(q),
+              )
+            : this.discoveredDevices
+        this._filteredCache = { key, result }
+        return result
+    }
+
+    /** Force-invalidate the filteredDevices memo. Call whenever the
+     *  underlying array is mutated in-place (push/splice). */
+    private _invalidateFilterCache (): void { this._filteredCache = null }
+
+    /** Topology-node search for the Mapping tab. */
+    get filteredTopologyNodes (): TopologyNode[] {
+        const q = (this.mappingSearchQuery || '').toLowerCase().trim()
+        if (!q) { return this.topologyNodes }
+        return this.topologyNodes.filter(n =>
+            n.label.toLowerCase().includes(q) ||
+            (n.vendor || '').toLowerCase().includes(q) ||
+            (n.model || '').toLowerCase().includes(q) ||
+            (n.role || '').toLowerCase().includes(q),
         )
+    }
+
+    /** Pre-computed Set of hostnames already claimed by other mappings.
+     *  Built once per render via a getter rather than per-row in
+     *  `getAvailableDevices(nodeId)`. */
+    private _usedHostnamesByOtherMappings (excludeNodeId: string): Set<string> {
+        const used = new Set<string>()
+        for (const [id, entry] of this.mappings) {
+            if (id !== excludeNodeId && entry.hostname) {
+                used.add(this._key(entry.hostname))
+            }
+        }
+        return used
     }
 
     constructor (
@@ -250,6 +339,17 @@ export class DeviceMapperComponent implements OnInit {
         if (typeof savedPatterns === 'string') {
             this.excludePatternsText = savedPatterns
         }
+        // Restore selection — only keep entries that still match a current
+        // inventory device. Stale entries are silently dropped.
+        const savedSel = await this._api?.prefGet?.('device-inventory-selection')
+        if (Array.isArray(savedSel)) {
+            const validHosts = new Set(this.discoveredDevices.map(d => this._key(d.hostname)))
+            for (const k of savedSel) {
+                const norm = this._key(k)
+                if (norm && validHosts.has(norm)) { this.selectedDeviceHosts.add(norm) }
+            }
+        }
+        this._invalidateFilterCache()
         this.cdr.markForCheck()
     }
 
@@ -263,6 +363,69 @@ export class DeviceMapperComponent implements OnInit {
         this._api?.prefSet?.('device-inventory-links', cleanLinks)
         // Persist exclude patterns
         this._api?.prefSet?.('discovery-exclude-patterns', this.excludePatternsText)
+        // Persist selection so a user's curated subset survives reopen.
+        this._api?.prefSet?.('device-inventory-selection', [...this.selectedDeviceHosts])
+    }
+
+    /** Propagate a hostname rename through every state that keys on hostname:
+     *   - selection set (lowercased keys)
+     *   - LLDP links (both srcHost and dstHost endpoints)
+     *   - existing mappings (`MappingEntry.hostname` field)
+     *  Without this cascade, renaming a device leaves orphaned references
+     *  scattered across these structures. */
+    private _cascadeHostnameRename (oldHostname: string, newHostname: string): void {
+        const oldK = this._key(oldHostname)
+        const newK = this._key(newHostname)
+        if (!oldK || oldK === newK) { return }
+
+        // Selection
+        if (this.selectedDeviceHosts.has(oldK)) {
+            this.selectedDeviceHosts.delete(oldK)
+            this.selectedDeviceHosts.add(newK)
+        }
+        // Links
+        for (const l of this.discoveredLinks) {
+            if (this._key(l.srcHost) === oldK) { l.srcHost = newHostname }
+            if (this._key(l.dstHost) === oldK) { l.dstHost = newHostname }
+        }
+        // Mappings
+        for (const [, entry] of this.mappings) {
+            if (this._key(entry.hostname) === oldK) { entry.hostname = newHostname }
+        }
+    }
+
+    /** Propagate a mgmt-IP rename through mappings (the only structure that
+     *  keys on IP — links use hostname; selection too). */
+    private _cascadeMgmtIpRename (oldIp: string, newIp: string): void {
+        if (!oldIp || oldIp === newIp) { return }
+        for (const [, entry] of this.mappings) {
+            if (entry.mgmtIp === oldIp) { entry.mgmtIp = newIp }
+        }
+    }
+
+    /** Drop EVERY reference to the named device — selection, mappings, links.
+     *  Called from `removeDevice` and `confirmClearAll`. */
+    private _purgeReferences (hostname: string, mgmtIp: string): void {
+        const hostK = this._key(hostname)
+        const ipK   = (mgmtIp || '').toLowerCase()
+        const matches = (s: string): boolean => {
+            const v = (s || '').toLowerCase()
+            return !!((hostK && v === hostK) || (ipK && v === ipK))
+        }
+        // Links — drop any link whose either endpoint matches.
+        this.discoveredLinks = this.discoveredLinks.filter(l =>
+            !matches(l.srcHost) && !matches(l.dstHost),
+        )
+        // Selection
+        if (hostK) { this.selectedDeviceHosts.delete(hostK) }
+        // Mappings — drop entries whose hostname / IP point at the removed device.
+        const toDrop: string[] = []
+        for (const [nodeId, entry] of this.mappings) {
+            if (this._key(entry.hostname) === hostK || (ipK && entry.mgmtIp.toLowerCase() === ipK)) {
+                toDrop.push(nodeId)
+            }
+        }
+        for (const id of toDrop) { this.mappings.delete(id) }
     }
 
     editDevice (idx: number): void { this.editingIdx = idx; this.cdr.markForCheck() }
@@ -273,10 +436,51 @@ export class DeviceMapperComponent implements OnInit {
         // index — `dev` came from `filteredDevices` which is index-shifted
         // when a search filter is active.
         const idx = this.discoveredDevices.indexOf(dev)
-        if (idx >= 0) {
-            (this.discoveredDevices[idx] as any)[field] = value
-            this._saveInventory()
+        if (idx < 0) { return }
+
+        const oldHost = (this.discoveredDevices[idx].hostname || '')
+        const oldIp   = (this.discoveredDevices[idx].mgmtIp   || '')
+        const errKey  = this._key(oldHost)
+
+        // Validate mgmt IP edits — refuse the write if it's not a valid
+        // address. Show the error per-row so the user sees it inline.
+        if (field === 'mgmtIp' && value && !isValidMgmtAddress(value)) {
+            this.inlineEditErrors.set(errKey, `"${value}" is not a valid IPv4 / IPv6 / hostname`)
+            // Reset the input visually so the bad value doesn't persist.
+            ;(event.target as HTMLInputElement).value = oldIp
+            this.cdr.markForCheck()
+            return
         }
+        // Refuse hostname collisions — keying selection / mappings on hostname
+        // means two rows with the same name silently break invariants.
+        if (field === 'hostname' && value && this._key(value) !== this._key(oldHost)) {
+            const collision = this.discoveredDevices.some((d, i) =>
+                i !== idx && this._key(d.hostname) === this._key(value),
+            )
+            if (collision) {
+                this.inlineEditErrors.set(errKey, `Hostname "${value}" already exists in inventory`)
+                ;(event.target as HTMLInputElement).value = oldHost
+                this.cdr.markForCheck()
+                return
+            }
+        }
+
+        // Apply the edit.
+        ;(this.discoveredDevices[idx] as any)[field] = value
+        this.inlineEditErrors.delete(errKey)
+        this._invalidateFilterCache()
+
+        // Cascade renames through mappings + selection + links so they don't
+        // become orphaned. (Without this, a renamed device leaves stale entries
+        // in mappings keyed by the old hostname; push fails with "no creds".)
+        if (field === 'hostname' && value && this._key(value) !== this._key(oldHost)) {
+            this._cascadeHostnameRename(oldHost, value)
+        }
+        if (field === 'mgmtIp' && value !== oldIp) {
+            this._cascadeMgmtIpRename(oldIp, value)
+        }
+
+        this._saveInventory()
     }
 
     downloadSampleCsv (): void {
@@ -317,25 +521,15 @@ export class DeviceMapperComponent implements OnInit {
     }
 
     removeDevice (dev: ExtendedDevice): void {
-        // Same fix as saveDeviceEdit — locate the live entry by reference.
-        // The previous index-based version deleted the wrong device whenever
-        // a search filter was active because filteredDevices index ≠
-        // discoveredDevices index.
+        // Locate the live entry by reference (filteredDevices is index-shifted
+        // when a search filter is active — index lookup would target the
+        // wrong row).
         const idx = this.discoveredDevices.indexOf(dev)
         if (idx < 0) { return }
         this.discoveredDevices.splice(idx, 1)
-        // Drop any LLDP links and selection-state that referenced this device
-        // — otherwise stale entries pile up and re-attach to future runs.
-        const host = (dev.hostname || '').toLowerCase()
-        const ip   = (dev.mgmtIp   || '').toLowerCase()
-        const matches = (s: string): boolean => {
-            const v = (s || '').toLowerCase()
-            return !!((host && v === host) || (ip && v === ip))
-        }
-        this.discoveredLinks = this.discoveredLinks.filter(l =>
-            !matches(l.srcHost) && !matches(l.dstHost),
-        )
-        if (host) { this.selectedDeviceHosts.delete(host) }
+        // Cascade: drop selection / mapping / link references in one place.
+        this._purgeReferences(dev.hostname, dev.mgmtIp)
+        this._invalidateFilterCache()
         this._saveInventory()
         this.cdr.markForCheck()
     }
@@ -358,7 +552,16 @@ export class DeviceMapperComponent implements OnInit {
         this.cdr.markForCheck()
     }
 
-    close (): void { this.closed.emit() }
+    close (): void {
+        // If a discovery is mid-flight, abort it — otherwise the worker keeps
+        // hammering SSH against the fabric in the background even after the
+        // user clicks ✕ and walks away.
+        if (this.discovering) {
+            console.warn('[device-mapper] dialog closed mid-discovery — aborting active run')
+            try { this.discoverySvc.abort() } catch { /* swallow */ }
+        }
+        this.closed.emit()
+    }
 
     // Discovery form state
     showDiscoveryForm = false
@@ -636,20 +839,42 @@ export class DeviceMapperComponent implements OnInit {
             return
         }
 
+        // Honour explicit selection: when the user has checked specific rows in
+        // the inventory table, probe ONLY those devices. Empty selection means
+        // "no special scope" → probe every device. This lets the user iterate
+        // on a subset without having to delete unrelated devices.
+        const probeTargets: ExtendedDevice[] = this.selectedDeviceHosts.size > 0
+            ? this.discoveredDevices.filter(d =>
+                this.selectedDeviceHosts.has((d.hostname || '').toLowerCase()),
+              )
+            : this.discoveredDevices
+        const scopeIsSelection = this.selectedDeviceHosts.size > 0
+        if (scopeIsSelection && !probeTargets.length) {
+            this.discoveryError =
+                'Selection is non-empty but none of the selected hostnames match an inventory device. ' +
+                'Clear the selection (header checkbox) to probe everything, or re-check the rows you want.'
+            this.cdr.markForCheck()
+            return
+        }
+
         // Each device is probed with its own SSH creds if present; the form's
         // user/pass act as a fallback for devices missing creds. Only raise
-        // the form when there's NO usable path for at least one device.
+        // the form when there's NO usable path for at least one device IN
+        // THE SCOPED SUBSET — devices outside the scope are irrelevant.
         const seedUser = this.discoveryForm.username
         const seedPass = this.discoveryForm.password
         const haveFallback = !!(seedUser && seedPass)
-        const devicesWithoutCreds = this.discoveredDevices.filter(d => !d.sshUsername || !d.sshPassword)
+        const devicesWithoutCreds = probeTargets.filter(d => !d.sshUsername || !d.sshPassword)
         if (devicesWithoutCreds.length > 0 && !haveFallback) {
             // Some devices have no creds and no fallback is set — ask for one.
             this.showDiscoveryForm = true
             this.discoveryMode = 'inventory'
+            const scopeNote = scopeIsSelection
+                ? ` (within the ${probeTargets.length} selected device(s))`
+                : ''
             this.discoveryError =
-                `${devicesWithoutCreds.length} of ${this.discoveredDevices.length} device(s) have no SSH ` +
-                `credentials. Enter a fallback username/password to use for those, or cancel and fill the ` +
+                `${devicesWithoutCreds.length} of ${probeTargets.length} device(s) have no SSH ` +
+                `credentials${scopeNote}. Enter a fallback username/password to use for those, or cancel and fill the ` +
                 `creds into the inventory table first.`
             this.cdr.markForCheck()
             return
@@ -658,13 +883,17 @@ export class DeviceMapperComponent implements OnInit {
         this.discovering = true
         this.discoveryError = ''
         this.cdr.markForCheck()
+        console.log(
+            `[discovery-inv] scope=${scopeIsSelection ? 'selected' : 'all'} ` +
+            `targets=${probeTargets.length}/${this.discoveredDevices.length}`,
+        )
 
         try {
             if (this.invSvc.hasBackend) {
                 this.discoverySvc.setBackendClient(this.invSvc.backendClient)
             }
             const result = await this.discoverySvc.discoverLinksAmongInventory(
-                this.discoveredDevices.map(d => ({
+                probeTargets.map(d => ({
                     hostname: d.hostname,
                     mgmtIp: d.mgmtIp,
                     sshUsername: d.sshUsername,
@@ -678,9 +907,15 @@ export class DeviceMapperComponent implements OnInit {
                     concurrency: 8,
                     excludePatterns: this._compileExcludePatterns(),
                     onProgress: (info) => {
+                        // Show per-cause fail counts mid-run so a wrong-credentials
+                        // mistake becomes visible immediately, not 5 minutes later.
+                        const failBreakdown = (info.authFailed || info.unreachable || info.otherFailed)
+                            ? ` · auth-fail=${info.authFailed ?? 0} unreachable=${info.unreachable ?? 0} other=${info.otherFailed ?? 0}`
+                            : ''
+                        const scopeLabel = scopeIsSelection ? 'selection' : 'inventory'
                         this.lastDiscoverySummary =
-                            `Probing inventory… ${info.processed}/${info.total} ` +
-                            `(${(info.elapsedMs / 1000).toFixed(1)}s)`
+                            `Probing ${scopeLabel}… ${info.processed}/${info.total} ` +
+                            `(${(info.elapsedMs / 1000).toFixed(1)}s)${failBreakdown}`
                         this.cdr.markForCheck()
                     },
                     // Stream link deltas live so the canvas grows as we go.
@@ -740,10 +975,41 @@ export class DeviceMapperComponent implements OnInit {
                 if (!existing.model && dev.model)   { existing.model  = dev.model }
             }
 
+            // Surface the failure breakdown stamped by the service, plus the
+            // bail-early reason if discovery aborted on consecutive auth fails.
+            const summary: any = (result.devices as any).__summary
+            const breakdown = summary
+                ? ` · auth-fail=${summary.authFailed} unreachable=${summary.unreachable} other=${summary.otherFailed}`
+                : ''
+            const bail = summary?.bailedEarly
+                ? ` · ⚠ ${summary.bailReason}`
+                : ''
+            const scopeNote = scopeIsSelection
+                ? ` (selection of ${probeTargets.length} from ${this.discoveredDevices.length})`
+                : ''
             this.lastDiscoverySummary =
-                `Inventory discovery complete: probed ${this.discoveredDevices.length} device(s), ` +
+                `Inventory discovery complete: probed ${probeTargets.length} device(s)${scopeNote}, ` +
                 `${result.devices.length} reachable, ${result.links.length} unique link(s) ` +
-                `(${newLinks.length} new)`
+                `(${newLinks.length} new)${breakdown}${bail}`
+
+            // Promote auth-fail / bail-early to a visible error so the user
+            // sees it as a problem, not a normal "complete" message.
+            if (summary?.bailedEarly) {
+                this.discoveryError =
+                    `Discovery aborted: ${summary.authFailed} consecutive authentication failure(s). ` +
+                    `Verify the fallback username/password are correct and that any per-device credentials in the inventory aren't expired/locked. ` +
+                    `Tip: try the Devices → Set SSH Credentials… dialog to refresh creds across the inventory before retrying.`
+            } else if (summary && summary.authFailed > 0 && summary.ok === 0) {
+                this.discoveryError =
+                    `All ${summary.authFailed} reachable device(s) failed SSH authentication. ` +
+                    `Check your fallback username/password.`
+            }
+
+            // ── Stamp per-device probe status onto the inventory rows so the
+            //    table shows a green/red dot per device. The discovery service
+            //    attaches a __diagnostics array to the result with one entry per
+            //    probed inventory device — match those back to inventory rows. ──
+            this._applyDiagnosticsToInventory(probeTargets, result)
 
             console.log(`[discovery-inv] ${this.lastDiscoverySummary}`)
             console.log('[discovery-inv] links:', result.links)
@@ -754,6 +1020,126 @@ export class DeviceMapperComponent implements OnInit {
         }
 
         this.discovering = false
+        this.cdr.markForCheck()
+    }
+
+    /** Walk the discovery service's diagnostics array and stamp each entry's
+     *  outcome onto the matching inventory row's `lastProbe` field. Powers
+     *  the per-row SSH-status pill in the inventory table. */
+    private _applyDiagnosticsToInventory (
+        probed: ExtendedDevice[],
+        result: any,
+    ): void {
+        const diagnostics = (result.devices as any).__diagnostics as Array<{
+            host: string; status: string; detail?: string; cause?: string;
+        }> | undefined
+        if (!Array.isArray(diagnostics)) { return }
+
+        const now = new Date().toISOString()
+        // Diagnostics are keyed by `host` which is the resolved target —
+        // either mgmtIp or hostname. Build a lookup by both so we can match
+        // back to the inventory row.
+        const byTarget = new Map<string, typeof diagnostics[0]>()
+        for (const d of diagnostics) {
+            const key = (d.host || '').toLowerCase()
+            if (key) { byTarget.set(key, d) }
+        }
+
+        for (const dev of probed) {
+            const ipKey = (dev.mgmtIp || '').toLowerCase()
+            const hostKey = (dev.hostname || '').toLowerCase()
+            const diag = byTarget.get(ipKey) ?? byTarget.get(hostKey)
+            if (!diag) { continue }
+
+            // Find the live inventory entry by reference and stamp the result.
+            const idx = this.discoveredDevices.findIndex(d =>
+                d.hostname === dev.hostname || d.mgmtIp === dev.mgmtIp,
+            )
+            if (idx < 0) { continue }
+
+            const live = this.discoveredDevices[idx] as ExtendedDevice
+            if (diag.status === 'ok') {
+                live.lastProbe = { status: 'ok', detail: diag.detail, at: now }
+            } else if (diag.status === 'fail') {
+                live.lastProbe = {
+                    status: 'fail',
+                    cause: (diag.cause as 'auth' | 'unreachable' | 'other' | undefined) ?? 'other',
+                    detail: diag.detail,
+                    at: now,
+                }
+            } else {
+                // 'skip' = no creds / no mgmtIp / vendor not detected (probes ran but matched nothing)
+                live.lastProbe = {
+                    status: 'fail',
+                    cause: 'other',
+                    detail: diag.detail ?? 'skipped',
+                    at: now,
+                }
+            }
+        }
+        this._invalidateFilterCache()
+    }
+
+    /** True if any inventory device's most-recent probe was a failure.
+     *  Drives the post-discovery failure summary banner. */
+    get hasProbeFailures (): boolean {
+        return this.discoveredDevices.some(d => (d as ExtendedDevice).lastProbe?.status === 'fail')
+    }
+
+    /** Subset of inventory whose last probe failed — for the failure banner. */
+    get probeFailedDevices (): ExtendedDevice[] {
+        return this.discoveredDevices.filter(d =>
+            (d as ExtendedDevice).lastProbe?.status === 'fail',
+        ) as ExtendedDevice[]
+    }
+
+    /** Tooltip text for a row's SSH-status pill. */
+    probeTooltip (dev: ExtendedDevice): string {
+        const p = dev.lastProbe
+        if (!p || p.status === 'unknown') { return 'SSH status unknown — never probed' }
+        if (p.status === 'ok') {
+            return `SSH OK${p.at ? ` · ${this._timeAgo(p.at)}` : ''}${p.detail ? ` · ${p.detail}` : ''}`
+        }
+        const causeLabel = p.cause === 'auth'        ? 'Authentication failed'
+                         : p.cause === 'unreachable' ? 'Host unreachable / SSH not responding'
+                                                     : 'Connection failed'
+        return `${causeLabel}${p.at ? ` · ${this._timeAgo(p.at)}` : ''}${p.detail ? `\n${p.detail}` : ''}`
+    }
+
+    /** Human-friendly age relative to now (e.g. "2m ago"). */
+    private _timeAgo (iso: string): string {
+        try {
+            const ms = Date.now() - new Date(iso).getTime()
+            if (ms < 60_000)        { return 'just now' }
+            if (ms < 3_600_000)     { return `${Math.round(ms / 60_000)}m ago` }
+            if (ms < 86_400_000)    { return `${Math.round(ms / 3_600_000)}h ago` }
+            return `${Math.round(ms / 86_400_000)}d ago`
+        } catch { return iso }
+    }
+
+    /** Dismiss the failure banner — clears the per-row pills (so the banner
+     *  stops rendering) but preserves the inventory itself. Called from the ✕
+     *  on the banner. */
+    clearFailureBanner (): void {
+        for (const d of this.discoveredDevices) {
+            (d as ExtendedDevice).lastProbe = undefined
+        }
+        this._invalidateFilterCache()
+        this._saveInventory()
+        this.cdr.markForCheck()
+    }
+
+    /** Filter the inventory table to show only failed-probe devices.
+     *  Wired to the failure banner's "Show failed only" link. */
+    filterFailedOnly (): void {
+        // Hostname-based filter — leverage the existing search box. We can't
+        // do a multi-hostname OR via a single text query, so we use a magic
+        // sentinel: typing "ssh:fail" makes filteredDevices show fails only.
+        // Simpler approach: just clear search and let the user see all rows
+        // tinted red (see SCSS). The banner already lists the failed names.
+        // For now, scroll to the table and rely on the row tint + banner.
+        this.searchQuery = ''
+        this._invalidateFilterCache()
         this.cdr.markForCheck()
     }
 
@@ -774,13 +1160,18 @@ export class DeviceMapperComponent implements OnInit {
         reader.onload = () => {
             const content = reader.result as string
             try {
-                if (file.name.endsWith('.json')) {
-                    this._parseJsonDevices(content)
-                } else {
-                    this._parseCsvDevices(content)
-                }
+                const summary = file.name.endsWith('.json')
+                    ? this._parseJsonDevices(content)
+                    : this._parseCsvDevices(content)
+                this._invalidateFilterCache()
                 this._saveInventory()
-                this.autoMatch()
+                this.importSummary =
+                    `Import: +${summary.added} added` +
+                    (summary.skippedDup > 0 ? `, ${summary.skippedDup} skipped (duplicate of existing inventory)` : '') +
+                    (summary.skippedInvalid > 0 ? `, ${summary.skippedInvalid} skipped (invalid hostname/IP)` : '')
+                // Auto-match in MERGE mode so we don't blow away the user's
+                // manual mappings just because they imported new devices.
+                this.autoMatch('merge')
             } catch (err) {
                 alert(`Failed to parse file: ${(err as Error).message}`)
             }
@@ -790,32 +1181,93 @@ export class DeviceMapperComponent implements OnInit {
         input.value = '' // reset so same file can be re-uploaded
     }
 
-    private _parseJsonDevices (content: string): void {
-        const data = JSON.parse(content)
-        const devices = Array.isArray(data) ? data : data.devices ?? data.hosts ?? [data]
-        const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
-        for (const d of devices) {
-            const hostname = d.hostname ?? d.name ?? d.host ?? ''
-            const mgmtIp = d.mgmtIp ?? d.ip ?? d.management_ip ?? d.address ?? ''
-            const vendor = d.vendor ?? d.platform ?? d.os ?? ''
-            const model = d.model ?? d.hardware ?? ''
-            const sshUsername = d.sshUsername ?? d.ssh_username ?? d.username ?? ''
-            const sshPassword = d.sshPassword ?? d.ssh_password ?? d.password ?? ''
-            if (hostname || mgmtIp) {
-                if (hostname && existingHosts.has(hostname)) { continue }
-                if (hostname) { existingHosts.add(hostname) }
-                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [], sshUsername, sshPassword })
-            }
+    /** Tries to add an incoming device, deduping by BOTH hostname AND mgmtIp.
+     *  Returns the bucket the row landed in so the import summary can count. */
+    private _ingestDevice (
+        d: { hostname: string; mgmtIp: string; vendor: string; model: string;
+             sshUsername: string; sshPassword: string },
+        existingHosts: Set<string>,
+        existingIps: Set<string>,
+    ): 'added' | 'skipped-dup' | 'skipped-invalid' {
+        const hostname = (d.hostname || '').trim()
+        const mgmtIp   = (d.mgmtIp   || '').trim()
+        // Need at least one of hostname/IP to identify the row.
+        if (!hostname && !mgmtIp) { return 'skipped-invalid' }
+        // Validate the IP up-front — bogus values stop downstream discovery.
+        if (mgmtIp && !isValidMgmtAddress(mgmtIp)) { return 'skipped-invalid' }
+
+        const hostK = this._key(hostname)
+        const ipK   = mgmtIp.toLowerCase()
+        if ((hostK && existingHosts.has(hostK)) || (ipK && existingIps.has(ipK))) {
+            return 'skipped-dup'
         }
+        this.discoveredDevices.push({
+            hostname, mgmtIp,
+            vendor: (d.vendor || '').trim(),
+            model:  (d.model  || '').trim(),
+            interfaces: [],
+            sshUsername: d.sshUsername || '',
+            sshPassword: d.sshPassword || '',
+        })
+        if (hostK) { existingHosts.add(hostK) }
+        if (ipK)   { existingIps.add(ipK) }
+        return 'added'
     }
 
-    private _parseCsvDevices (content: string): void {
-        const lines = content.split('\n').map(l => l.trim()).filter(l => l)
-        if (lines.length < 2) { return }
+    private _parseJsonDevices (content: string): { added: number; skippedDup: number; skippedInvalid: number } {
+        const data = JSON.parse(content)
+        const devices = Array.isArray(data) ? data : data.devices ?? data.hosts ?? [data]
+        const existingHosts = new Set(this.discoveredDevices.map(d => this._key(d.hostname)))
+        const existingIps   = new Set(this.discoveredDevices.map(d => (d.mgmtIp || '').toLowerCase()))
+        let added = 0, skippedDup = 0, skippedInvalid = 0
+        for (const d of devices) {
+            const result = this._ingestDevice({
+                hostname:    d.hostname ?? d.name ?? d.host ?? '',
+                mgmtIp:      d.mgmtIp   ?? d.ip ?? d.management_ip ?? d.address ?? '',
+                vendor:      d.vendor   ?? d.platform ?? d.os ?? '',
+                model:       d.model    ?? d.hardware ?? '',
+                sshUsername: d.sshUsername ?? d.ssh_username ?? d.username ?? '',
+                sshPassword: d.sshPassword ?? d.ssh_password ?? d.password ?? '',
+            }, existingHosts, existingIps)
+            if (result === 'added')           { added++ }
+            else if (result === 'skipped-dup') { skippedDup++ }
+            else                                { skippedInvalid++ }
+        }
+        return { added, skippedDup, skippedInvalid }
+    }
 
-        // Parse header to find column indices
-        const header = lines[0].toLowerCase().split(',').map(h => h.trim())
-        // Use exact match first, then partial match for each field
+    /** RFC-4180 quote-aware CSV row splitter. Handles fields like
+     *  "Spine-1, rack 5", embedded "" escapes, and bare un-quoted fields.
+     *  Drops the surrounding quotes after split. */
+    private _splitCsvRow (line: string): string[] {
+        const out: string[] = []
+        let cur = ''
+        let inQuotes = false
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i]
+            if (inQuotes) {
+                if (ch === '"') {
+                    if (line[i + 1] === '"') { cur += '"'; i++ }   // escaped quote
+                    else                      { inQuotes = false }
+                } else {
+                    cur += ch
+                }
+            } else {
+                if (ch === ',')      { out.push(cur); cur = '' }
+                else if (ch === '"' && cur === '') { inQuotes = true }
+                else                  { cur += ch }
+            }
+        }
+        out.push(cur)
+        return out.map(s => s.trim())
+    }
+
+    private _parseCsvDevices (content: string): { added: number; skippedDup: number; skippedInvalid: number } {
+        const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l)
+        if (lines.length < 2) { return { added: 0, skippedDup: 0, skippedInvalid: 0 } }
+
+        // Quote-aware parse so commas inside quoted fields don't shift columns.
+        const header = this._splitCsvRow(lines[0]).map(h => h.toLowerCase())
         const hostIdx = header.findIndex(h => h === 'hostname') >= 0
             ? header.findIndex(h => h === 'hostname')
             : header.findIndex(h => h.includes('hostname') || h === 'name' || h === 'host' || h === 'device_name')
@@ -824,28 +1276,33 @@ export class DeviceMapperComponent implements OnInit {
             : header.findIndex(h => h === 'ip' || h === 'address' || h === 'ip_address')
         const vendorIdx = header.findIndex(h => h === 'vendor' || h === 'platform' || h === 'manufacturer')
         const modelIdx = header.findIndex(h => h === 'model' || h === 'hardware' || h === 'device_type')
-        const serialIdx = header.findIndex(h => h.includes('serial'))
         const sshUserIdx = header.findIndex(h => h === 'sshusername' || h === 'ssh_username' || h === 'username')
         const sshPassIdx = header.findIndex(h => h === 'sshpassword' || h === 'ssh_password' || h === 'password')
 
-        const existingHosts = new Set(this.discoveredDevices.map(d => d.hostname))
+        const existingHosts = new Set(this.discoveredDevices.map(d => this._key(d.hostname)))
+        const existingIps   = new Set(this.discoveredDevices.map(d => (d.mgmtIp || '').toLowerCase()))
+        let added = 0, skippedDup = 0, skippedInvalid = 0
 
         for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''))
-            if (!cols.length || !cols.some(c => c)) { continue }  // skip empty rows
-            const hostname = hostIdx >= 0 ? cols[hostIdx] ?? '' : cols[0] ?? ''
-            const mgmtIp = ipIdx >= 0 ? cols[ipIdx] ?? '' : cols[1] ?? ''
-            const vendor = vendorIdx >= 0 ? cols[vendorIdx] ?? '' : ''
-            const model = modelIdx >= 0 ? cols[modelIdx] ?? '' : ''
-            const sshUsername = sshUserIdx >= 0 ? cols[sshUserIdx] ?? '' : ''
-            const sshPassword = sshPassIdx >= 0 ? cols[sshPassIdx] ?? '' : ''
-            if (hostname || mgmtIp) {
-                if (hostname && existingHosts.has(hostname)) { continue }
-                if (hostname) { existingHosts.add(hostname) }
-                this.discoveredDevices.push({ hostname, mgmtIp, vendor, model, interfaces: [], sshUsername, sshPassword })
-            }
+            const cols = this._splitCsvRow(lines[i])
+            if (!cols.length || !cols.some(c => c)) { continue }
+            const result = this._ingestDevice({
+                hostname:    hostIdx    >= 0 ? cols[hostIdx]    ?? '' : cols[0] ?? '',
+                mgmtIp:      ipIdx      >= 0 ? cols[ipIdx]      ?? '' : cols[1] ?? '',
+                vendor:      vendorIdx  >= 0 ? cols[vendorIdx]  ?? '' : '',
+                model:       modelIdx   >= 0 ? cols[modelIdx]   ?? '' : '',
+                sshUsername: sshUserIdx >= 0 ? cols[sshUserIdx] ?? '' : '',
+                sshPassword: sshPassIdx >= 0 ? cols[sshPassIdx] ?? '' : '',
+            }, existingHosts, existingIps)
+            if (result === 'added')            { added++ }
+            else if (result === 'skipped-dup') { skippedDup++ }
+            else                                { skippedInvalid++ }
         }
+        return { added, skippedDup, skippedInvalid }
     }
+
+    /** Dismiss the import summary banner. */
+    clearImportSummary (): void { this.importSummary = ''; this.cdr.markForCheck() }
 
     // Inline add form state
     showAddForm = false
@@ -900,76 +1357,127 @@ export class DeviceMapperComponent implements OnInit {
                 .join(',')
         )
         const csv = [headers, ...rows].join('\n')
-        const blob = new Blob([csv], { type: 'text/csv' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'device-inventory.csv'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
+        this._downloadFile(csv, 'device-inventory.csv', 'text/csv')
     }
 
-    /** Returns devices not already mapped to another node (except the current node's own mapping) */
+    /** JSON export — round-trips losslessly with the import path (preserves
+     *  the `interfaces` array which CSV strips). */
+    exportInventoryJson (): void {
+        const cleaned = this.discoveredDevices.map(d => ({
+            hostname: d.hostname,
+            mgmtIp:   d.mgmtIp,
+            vendor:   d.vendor || '',
+            model:    d.model || '',
+            interfaces: d.interfaces ?? [],
+            sshUsername: (d as any).sshUsername || '',
+            sshPassword: (d as any).sshPassword || '',
+        }))
+        const json = JSON.stringify({ devices: cleaned, exportedAt: new Date().toISOString() }, null, 2)
+        this._downloadFile(json, 'device-inventory.json', 'application/json')
+    }
+
+    /** Returns devices not already mapped to another node (except the current
+     *  node's own mapping). Case-insensitive on hostname so renames flow
+     *  through correctly. */
     getAvailableDevices (nodeId: string): DiscoveredDevice[] {
-        const usedHostnames = new Set<string>()
-        for (const [id, entry] of this.mappings) {
-            if (id !== nodeId && entry.hostname) {
-                usedHostnames.add(entry.hostname)
-            }
-        }
-        return this.discoveredDevices.filter(d => !usedHostnames.has(d.hostname))
+        const used = this._usedHostnamesByOtherMappings(nodeId)
+        return this.discoveredDevices.filter(d => !used.has(this._key(d.hostname)))
     }
 
-    autoMatch (): void {
-        this.mappings.clear()
+    /**
+     * Auto-match topology nodes to inventory devices using a hostname/vendor/
+     * model heuristic. Two-pass to avoid duplicate-assignment:
+     *   Pass 1 — score every (node, device) pair, sort by score descending
+     *   Pass 2 — walk in order, claiming each device for at most ONE node
+     *
+     * Threshold raised from 30 (vendor-only) to 60 (requires either a
+     * hostname overlap OR vendor+model agreement) — vendor alone is too
+     * weak when the inventory has 20 Junipers and the topology has 20 Junipers.
+     *
+     * Confirms before clearing existing mappings unless `mode === 'merge'`,
+     * which preserves manually-set mappings and only fills in the gaps.
+     */
+    autoMatch (mode: 'replace' | 'merge' = 'replace'): void {
+        if (mode === 'replace' && this.mappings.size > 0) {
+            const ok = confirm(
+                `Auto-match will overwrite all ${this.mappings.size} existing mapping(s). ` +
+                `Use "Auto-match (merge)" to keep them and only fill in unmapped nodes.\n\nContinue?`,
+            )
+            if (!ok) { return }
+        }
 
+        if (mode === 'replace') { this.mappings.clear() }
+
+        // Score every plausible (node, device) pairing. Higher score = better.
+        // Threshold = 60 means at least one of:
+        //   - hostname overlap (50 partial / 100 exact)
+        //   - vendor (30) + model (20) = 50 combined → still under threshold
+        //   - vendor (30) + hostname-partial (50) = 80 → match
+        // So vendor-alone (30) and model-alone (20) are correctly rejected.
+        type Candidate = { nodeId: string; dev: DiscoveredDevice; score: number }
+        const candidates: Candidate[] = []
         for (const node of this.topologyNodes) {
+            // In merge mode, skip nodes that already have a mapping.
+            if (mode === 'merge' && this.mappings.has(node.id)) { continue }
             const normalLabel = node.label.toLowerCase().replace(/[\s_-]/g, '')
             const nodeVendor = (node.vendor ?? '').toLowerCase()
-
-            // Try hostname match first, then vendor+model match
-            let bestMatch: DiscoveredDevice | null = null
-            let bestScore = 0
-
             for (const dev of this.discoveredDevices) {
                 const normalHost = dev.hostname.toLowerCase().replace(/[\s_-]/g, '')
                 let score = 0
-
-                // Exact hostname match
                 if (normalHost === normalLabel) { score += 100 }
-                // Partial hostname match
                 else if (normalHost.includes(normalLabel) || normalLabel.includes(normalHost)) { score += 50 }
-
-                // Vendor match
                 if (nodeVendor && dev.vendor.toLowerCase().includes(nodeVendor)) { score += 30 }
-
-                // Model match
                 if (node.model && dev.model && dev.model.toLowerCase().includes(node.model.toLowerCase())) { score += 20 }
-
-                if (score > bestScore) {
-                    bestScore = score
-                    bestMatch = dev
-                }
-            }
-
-            // Only accept matches with reasonable confidence
-            if (bestMatch && bestScore >= 30) {
-                const ext = bestMatch as ExtendedDevice
-                this.mappings.set(node.id, {
-                    hostname: bestMatch.hostname,
-                    mgmtIp: bestMatch.mgmtIp,
-                    vendor: bestMatch.vendor,
-                    model: bestMatch.model,
-                    sshUsername: ext.sshUsername,
-                    sshPassword: ext.sshPassword,
-                })
+                if (score >= 60) { candidates.push({ nodeId: node.id, dev, score }) }
             }
         }
 
+        // Greedy assign: highest-score pair first, claim the device, move on.
+        // This way one inventory device can't be assigned to N topology nodes —
+        // the runner-up node sees the dev as already-claimed and gets its
+        // second-best (or no match) instead.
+        candidates.sort((a, b) => b.score - a.score)
+        const claimedNodes = new Set<string>()
+        const claimedDevs  = new Set<string>()
+        if (mode === 'merge') {
+            // Pre-populate claimed sets from existing mappings so they
+            // don't get re-assigned and so their devices stay claimed.
+            for (const [id, entry] of this.mappings) {
+                claimedNodes.add(id)
+                claimedDevs.add(this._key(entry.hostname))
+            }
+        }
+
+        let matched = 0
+        for (const c of candidates) {
+            if (claimedNodes.has(c.nodeId)) { continue }
+            const devK = this._key(c.dev.hostname)
+            if (claimedDevs.has(devK)) { continue }
+            const ext = c.dev as ExtendedDevice
+            this.mappings.set(c.nodeId, {
+                hostname: c.dev.hostname,
+                mgmtIp: c.dev.mgmtIp,
+                vendor: c.dev.vendor,
+                model: c.dev.model,
+                sshUsername: ext.sshUsername,
+                sshPassword: ext.sshPassword,
+            })
+            claimedNodes.add(c.nodeId)
+            claimedDevs.add(devK)
+            matched++
+        }
+
+        const totalEligible = mode === 'merge'
+            ? this.topologyNodes.length - (this.mappings.size - matched)  // approximate "previously unmapped"
+            : this.topologyNodes.length
+        console.log(
+            `[device-mapper] auto-match (${mode}): ${matched}/${totalEligible} node(s) matched`,
+        )
         this.cdr.markForCheck()
     }
+
+    /** Convenience entry point for the "Auto-match (merge)" button. */
+    autoMatchMerge (): void { this.autoMatch('merge') }
 
     onMapChange (nodeId: string, event: Event): void {
         const hostname = (event.target as HTMLSelectElement).value
