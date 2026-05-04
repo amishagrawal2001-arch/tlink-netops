@@ -1,6 +1,6 @@
 {
   "name": "tlink-netops",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Professional Network Topology Design & Management Tool",
   "author": {
     "name": "Tlink Technologies",
@@ -84,7 +84,16 @@
       "index.html",
       "assets/icon.icns",
       "assets/icon.png",
-      "assets/icon.ico"
+      "assets/icon.ico",
+      "node_modules/**"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/node-pty/**",
+      "**/node_modules/ssh2/**",
+      "**/node_modules/cpu-features/**",
+      "**/node_modules/net-snmp/**",
+      "**/*.node"
     ],
     "mac": {
       "category": "public.app-category.utilities",
