@@ -1,4 +1,4 @@
-import { NodePort, PortSpeed, SwitchFamily, VlanDefinition, VrfDefinition, parseVlanList } from '../api/interfaces'
+import { EsiLagDefinition, NodePort, PolicyStatement, PortSpeed, SwitchFamily, VlanDefinition, VrfDefinition, parseVlanList } from '../api/interfaces'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -106,6 +106,11 @@ export interface VendorConfigContext {
 
     // BGP underlay context
     asn?: number
+    /** Overlay AS — when set and != asn, BGP emitters wrap EVPN-signaling
+     *  groups with `local-as <overlayAsn>` so the device peers in the
+     *  overlay AS while keeping `asn` for the underlay (sample-deployment
+     *  pattern: underlay 65101 + overlay 100 in DC1, 65201 + 200 in DC2). */
+    overlayAsn?: number
     routerId?: string                 // loopback IP without mask
     bgpNeighbors?: BgpNeighbor[]
     underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' | 'none'
@@ -159,6 +164,17 @@ export interface VendorConfigContext {
      *  VNI/RD/RT + optional interconnect{routingVni,vrfTarget,domainId,
      *  mapsToVrfId} block needed for T5↔T5 stitching config generation. */
     vrfs?: VrfDefinition[]
+    /** All policy-statements declared on the topology. Lowered per-vendor
+     *  to `policy-options policy-statement` (Junos) or `route-map`
+     *  (Cisco/Arista). Referenced from VrfDefinition.exportPolicy and
+     *  similar — the emitter only produces a policy body when at least
+     *  one VRF on this node references it. */
+    policies?: PolicyStatement[]
+    /** First-class ESI-LAG definitions. Replaces the older approach of
+     *  encoding ESI/LACP info in port description strings. The Junos
+     *  emitter walks ctx.esiLags filtered to entries where this node
+     *  participates, and produces the full ae<N> + esi + lacp config. */
+    esiLags?: EsiLagDefinition[]
 }
 
 // ── VLAN config helpers ─────────────────────────────────────────────────────
@@ -606,6 +622,12 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 lines.push('set protocols bgp group OVERLAY type internal')
                 lines.push(`set protocols bgp group OVERLAY local-address ${vtep}`)
                 lines.push('set protocols bgp group OVERLAY family evpn signaling')
+                // Dual-AS: when overlayAsn differs from the node's underlay AS,
+                // make this BGP group peer as the overlay AS via local-as. Matches
+                // the sample-deployment pattern (asn=65103 underlay, overlay AS=100).
+                if (ctx.overlayAsn && ctx.overlayAsn !== ctx.asn) {
+                    lines.push(`set protocols bgp group OVERLAY local-as ${ctx.overlayAsn}`)
+                }
                 lines.push('set protocols bgp group OVERLAY multipath')
                 lines.push('set protocols bgp group OVERLAY bfd-liveness-detection minimum-interval 350')
                 lines.push('set protocols bgp group OVERLAY bfd-liveness-detection multiplier 3')
@@ -702,6 +724,9 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 lines.push('set protocols bgp group OVERLAY type internal')
                 lines.push(`set protocols bgp group OVERLAY local-address ${vtep}`)
                 lines.push('set protocols bgp group OVERLAY family evpn signaling')
+                if (ctx.overlayAsn && ctx.overlayAsn !== ctx.asn) {
+                    lines.push(`set protocols bgp group OVERLAY local-as ${ctx.overlayAsn}`)
+                }
                 lines.push(`set protocols bgp group OVERLAY cluster ${rid}`)
                 lines.push('set protocols bgp group OVERLAY multipath')
                 lines.push('set protocols bgp group OVERLAY vpn-apply-export')
@@ -718,6 +743,9 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                 lines.push('set protocols bgp group OVERLAY type internal')
                 lines.push(`set protocols bgp group OVERLAY local-address ${vtep}`)
                 lines.push('set protocols bgp group OVERLAY family evpn signaling')
+                if (ctx.overlayAsn && ctx.overlayAsn !== ctx.asn) {
+                    lines.push(`set protocols bgp group OVERLAY local-as ${ctx.overlayAsn}`)
+                }
                 for (const peer of overlayPeers) {
                     lines.push(`set protocols bgp group OVERLAY neighbor ${peer}`)
                 }
@@ -874,10 +902,18 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
 
             lines.push('router bgp ' + asn)
             if (aristaRid) { lines.push(`   router-id ${aristaRid}`) }
+            // Dual-AS: when overlayAsn differs from underlay asn, the OVERLAY
+            // peer group uses local-as so EVPN peers see us in the overlay AS.
+            // EOS syntax: `neighbor X local-as Y no-prepend replace-as`.
+            const overlayPeerAs = ctx.overlayAsn ?? asn
+            const overlayLocalAs = ctx.overlayAsn && ctx.overlayAsn !== asn ? ctx.overlayAsn : null
             if (isAristaSpine) {
                 // Spine: EVPN RR
                 lines.push('   neighbor OVERLAY peer group')
-                lines.push(`   neighbor OVERLAY remote-as ${asn}`)
+                lines.push(`   neighbor OVERLAY remote-as ${overlayPeerAs}`)
+                if (overlayLocalAs) {
+                    lines.push(`   neighbor OVERLAY local-as ${overlayLocalAs} no-prepend replace-as`)
+                }
                 lines.push('   neighbor OVERLAY update-source Loopback0')
                 lines.push('   neighbor OVERLAY send-community extended')
                 lines.push('   neighbor OVERLAY route-reflector-client')
@@ -889,7 +925,10 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
             } else {
                 // Leaf: EVPN client
                 lines.push('   neighbor OVERLAY peer group')
-                lines.push(`   neighbor OVERLAY remote-as ${asn}`)
+                lines.push(`   neighbor OVERLAY remote-as ${overlayPeerAs}`)
+                if (overlayLocalAs) {
+                    lines.push(`   neighbor OVERLAY local-as ${overlayLocalAs} no-prepend replace-as`)
+                }
                 lines.push('   neighbor OVERLAY update-source Loopback0')
                 lines.push('   neighbor OVERLAY send-community extended')
                 for (const peer of overlayPeers) {
@@ -2350,6 +2389,92 @@ function hasExplicitT5Vrfs (ctx: VendorConfigContext): boolean {
     return ctx.vrfs.some(v => v.memberNodes.includes(i))
 }
 
+/**
+ * Emit Junos policy-options for policies referenced by VRFs on this node.
+ * Walks ctx.vrfs to find which policies are referenced (via exportPolicy),
+ * then emits the corresponding bodies from ctx.policies in Junos
+ * `set policy-options policy-statement X term N ...` form. Communities
+ * referenced inside policy terms (`then community add comX`) are emitted
+ * once at the top, derived from term contents.
+ *
+ * Output is grouped per policy with a header comment and follows the
+ * docx sample's term ordering. No-op when the node references no
+ * policies or the topology hasn't declared any.
+ */
+function emitJunosPolicies (ctx: VendorConfigContext): string[] {
+    const lines: string[] = []
+    const vrfs = ctx.vrfs ?? []
+    const policies = ctx.policies ?? []
+    const myIndex = ctx.nodeIndex
+    if (myIndex === undefined || !policies.length) { return lines }
+
+    // Find which policies are referenced by VRFs on this node.
+    const myVrfs = vrfs.filter(v => v.memberNodes.includes(myIndex))
+    const referencedNames = new Set<string>()
+    for (const v of myVrfs) {
+        if (v.exportPolicy) { referencedNames.add(v.exportPolicy) }
+    }
+    if (!referencedNames.size) { return lines }
+
+    const referencedPolicies = policies.filter(p => referencedNames.has(p.name))
+    if (!referencedPolicies.length) { return lines }
+
+    // Collect every community referenced across all terms so we can declare
+    // them once at policy-options community scope (Junos requires the
+    // community to be declared before it can be added).
+    const communities = new Set<string>()
+    for (const p of referencedPolicies) {
+        for (const t of p.terms) {
+            if (t.from?.community) { communities.add(t.from.community) }
+            if (t.then?.communityAdd) { communities.add(t.then.communityAdd) }
+        }
+    }
+
+    lines.push('')
+    lines.push('# ── EVPN policy-options (referenced by T5 VRFs) ─────────────────────')
+
+    // Emit community declarations first. Members value is a placeholder —
+    // operators typically declare these elsewhere (e.g. ['100:101']); we emit
+    // a comment so the operator knows to fill in.
+    if (communities.size > 0) {
+        lines.push('')
+        lines.push('# Community members (operator must set the actual values)')
+        for (const c of communities) {
+            lines.push(`# set policy-options community ${c} members <community-value>  # e.g. 100:101`)
+        }
+    }
+
+    for (const policy of referencedPolicies) {
+        lines.push('')
+        lines.push(`# Policy ${policy.name}`)
+        for (const term of policy.terms) {
+            const head = `set policy-options policy-statement ${policy.name} term ${term.name}`
+            if (term.from?.protocol) {
+                lines.push(`${head} from protocol ${term.from.protocol}`)
+            }
+            if (term.from?.routeFilter) {
+                lines.push(`${head} from route-filter ${term.from.routeFilter}`)
+            }
+            if (term.from?.community) {
+                lines.push(`${head} from community ${term.from.community}`)
+            }
+            if (term.from?.interfaceName) {
+                lines.push(`${head} from interface ${term.from.interfaceName}`)
+            }
+            if (term.then?.localPreference !== undefined) {
+                lines.push(`${head} then local-preference ${term.then.localPreference}`)
+            }
+            if (term.then?.communityAdd) {
+                lines.push(`${head} then community add ${term.then.communityAdd}`)
+            }
+            if (term.then?.action) {
+                lines.push(`${head} then ${term.then.action}`)
+            }
+        }
+    }
+    return lines
+}
+
 /** Sanitize for Cisco/Arista VRF names — same rules but underscores allowed. */
 function sanitizeIosInstanceName (raw: string): string {
     return raw
@@ -2688,45 +2813,114 @@ export function buildVendorStartupConfig (
         }
 
         // ── ESI-LAG configuration ─────────────────────────────────────────
-        // Detect ESI-LAG ports by description containing "ESI" and a LAG name (e.g. "ESI ae0")
-        const esiPorts = ports.filter(p => {
-            const desc = (p.description ?? '').toLowerCase()
-            return desc.includes('esi') && desc.includes('ae')
-        })
-        if (esiPorts.length > 0) {
+        // PRIMARY PATH: first-class ctx.esiLags (the topology-level typed
+        // model). Walk every esiLag entry whose memberPorts include a port
+        // on THIS node (matched by ctx.nodeIndex); emit the ae<N> + esi
+        // + lacp config for it, and move each local member port into the
+        // ae bundle. This produces correct config even when the port
+        // description doesn't follow the legacy "esi aeN" convention.
+        const myEsiPortIds = new Map<string, EsiLagDefinition>()  // portId → its lag
+        if (ctx.nodeIndex !== undefined && ctx.esiLags?.length) {
+            for (const lag of ctx.esiLags) {
+                for (const m of lag.memberPorts) {
+                    if (m.nodeIndex === ctx.nodeIndex) {
+                        myEsiPortIds.set(m.portId, lag)
+                    }
+                }
+            }
+        }
+
+        // LEGACY PATH: description-string parser, kept for templates that
+        // pre-date the typed model. Skipped when typed defs are present
+        // for this node so we don't emit ae interfaces twice.
+        const legacyEsiPorts = myEsiPortIds.size > 0
+            ? []
+            : ports.filter(p => {
+                const desc = (p.description ?? '').toLowerCase()
+                return desc.includes('esi') && desc.includes('ae')
+            })
+
+        const totalEsiPortCount = myEsiPortIds.size + legacyEsiPorts.length
+        if (totalEsiPortCount > 0) {
             lines.push('')
             lines.push('# ESI-LAG (EVPN multi-homing)')
-            lines.push(`set chassis aggregated-devices ethernet device-count ${esiPorts.length}`)
+            lines.push(`set chassis aggregated-devices ethernet device-count ${totalEsiPortCount}`)
+        }
 
-            // Group ESI ports by ae name
-            const aeGroups = new Map<string, typeof esiPorts>()
-            for (const ep of esiPorts) {
+        // ── Typed (ctx.esiLags) emission ──────────────────────────────────
+        if (myEsiPortIds.size > 0) {
+            // Group local ports per ae<N> so we can emit each ae block once
+            // even when multiple physical members bundle into the same ae.
+            const localByAe = new Map<string, { lag: EsiLagDefinition; portIds: string[] }>()
+            for (const [portId, lag] of myEsiPortIds) {
+                const aeName = lag.aeInterfaceName ?? 'ae0'
+                const entry = localByAe.get(aeName) ?? { lag, portIds: [] }
+                entry.portIds.push(portId)
+                localByAe.set(aeName, entry)
+            }
+
+            for (const [aeName, { lag, portIds }] of localByAe) {
+                const allActive = lag.allActive !== false  // default true
+                lines.push(`set interfaces ${aeName} esi ${lag.esi}`)
+                lines.push(`set interfaces ${aeName} esi ${allActive ? 'all-active' : 'single-active'}`)
+                lines.push(`set interfaces ${aeName} aggregated-ether-options lacp active`)
+                lines.push(`set interfaces ${aeName} aggregated-ether-options lacp system-id ${lag.lacpSystemId}`)
+
+                // Move physical member ports into the bundle.
+                const firstMemberPort = ports.find(p => p.id === portIds[0])
+                for (const pid of portIds) {
+                    const member = ports.find(p => p.id === pid)
+                    if (member?.label) {
+                        lines.push(`set interfaces ${member.label.trim()} ether-options 802.3ad ${aeName}`)
+                    }
+                }
+
+                // Inherit VLAN config from the first physical member.
+                if (firstMemberPort) {
+                    const mode = firstMemberPort.vlanMode ?? 'access'
+                    if (mode === 'trunk') {
+                        lines.push(`set interfaces ${aeName} unit 0 family ethernet-switching interface-mode trunk`)
+                        if (firstMemberPort.trunkNativeVlan) {
+                            lines.push(`set interfaces ${aeName} native-vlan-id ${firstMemberPort.trunkNativeVlan}`)
+                        }
+                        const allowed = firstMemberPort.trunkAllowedVlans ?? ''
+                        if (allowed && allowed.toLowerCase() !== 'all') {
+                            for (const vid of allowed.split(',')) {
+                                lines.push(`set interfaces ${aeName} unit 0 family ethernet-switching vlan members vlan${vid.trim()}`)
+                            }
+                        } else if (allowed.toLowerCase() === 'all') {
+                            lines.push(`set interfaces ${aeName} unit 0 family ethernet-switching vlan members all`)
+                        }
+                    } else if (mode === 'access' && firstMemberPort.vlan) {
+                        lines.push(`set interfaces ${aeName} unit 0 family ethernet-switching interface-mode access`)
+                        lines.push(`set interfaces ${aeName} unit 0 family ethernet-switching vlan members vlan${firstMemberPort.vlan}`)
+                    }
+                }
+            }
+        }
+
+        // ── Legacy (description-string) emission ──────────────────────────
+        if (legacyEsiPorts.length > 0) {
+            const aeGroups = new Map<string, typeof legacyEsiPorts>()
+            for (const ep of legacyEsiPorts) {
                 const aeMatch = (ep.description ?? '').match(/ae(\d+)/i)
                 const aeName = aeMatch ? `ae${aeMatch[1]}` : 'ae0'
                 if (!aeGroups.has(aeName)) { aeGroups.set(aeName, []) }
                 aeGroups.get(aeName)!.push(ep)
             }
-
             let esiIdx = 1
             for (const [aeName, aePorts] of aeGroups) {
-                // Generate deterministic ESI from loopback + ae index
                 const loopOctet = loopParsed ? loopParsed.ip.split('.').pop() : '1'
                 const esiValue = `00:11:22:33:44:55:66:77:${String(loopOctet).padStart(2, '0')}:${String(esiIdx).padStart(2, '0')}`
-                // Shared LACP system-id for the leaf pair (same for both leaves in a pair)
                 const lacpSysId = `00:00:00:01:01:${String(esiIdx).padStart(2, '0')}`
-
                 lines.push(`set interfaces ${aeName} esi ${esiValue}`)
                 lines.push(`set interfaces ${aeName} esi all-active`)
                 lines.push(`set interfaces ${aeName} aggregated-ether-options lacp active`)
                 lines.push(`set interfaces ${aeName} aggregated-ether-options lacp system-id ${lacpSysId}`)
-
-                // Move physical ports into ae bundle
                 for (const ep of aePorts) {
                     const ifName = ep.label.trim()
                     lines.push(`set interfaces ${ifName} ether-options 802.3ad ${aeName}`)
                 }
-
-                // Apply VLAN config from the first member port to the ae interface
                 const firstPort = aePorts[0]
                 if (firstPort) {
                     const mode = firstPort.vlanMode ?? 'access'
@@ -2835,6 +3029,10 @@ export function buildVendorStartupConfig (
         // are present. No-op when ctx.vrfs is empty or the current node
         // isn't a member of any VRF.
         lines.push(...emitJunosT5Vrfs(ctx))
+        // Policy-options for policies referenced by the T5 VRFs above
+        // (e.g. `t5-export` referenced via VrfDefinition.exportPolicy).
+        // No-op when no policies are referenced from this node's VRFs.
+        lines.push(...emitJunosPolicies(ctx))
         lines.push(...emitOspfUnderlay('juniper', ctx, ctx.underlayProtocol === 'ospfv3'))
         lines.push(...emitIsisUnderlay('juniper', ctx))
         lines.push(...emitSrMpls('juniper', ctx))

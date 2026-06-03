@@ -687,6 +687,7 @@ export class TopologyService {
                 loopbackIpSecondary: def.loopbackIpSecondary,
                 vlans: def.vlans ? def.vlans.map(v => ({ ...v })) : undefined,
                 asn: def.asn,
+                overlayAsn: def.overlayAsn,
                 role: def.role,
                 ospfArea: def.ospfArea,
                 isisLevel: def.isisLevel,
@@ -747,6 +748,8 @@ export class TopologyService {
             // live topology. Deep-cloned (nested objects/arrays) so canvas
             // edits never mutate the source template.
             ...(tpl.vrfs?.length ? { vrfs: JSON.parse(JSON.stringify(tpl.vrfs)) } : {}),
+            ...(tpl.policies?.length ? { policies: JSON.parse(JSON.stringify(tpl.policies)) } : {}),
+            ...(tpl.esiLags?.length ? { esiLags: JSON.parse(JSON.stringify(tpl.esiLags)) } : {}),
         })
         this._selectedNode$.next(null)
         this._selectedLink$.next(null)
@@ -2264,6 +2267,7 @@ export class TopologyService {
 
                 // BGP underlay context
                 asn: n.asn,
+                overlayAsn: n.overlayAsn,
                 routerId: loopIp || undefined,
                 bgpNeighbors: bgpNeighborMap.get(n.id) ?? [],
                 underlayProtocol: underlay,
@@ -2321,6 +2325,8 @@ export class TopologyService {
                 // so unaffected nodes get no extra config.
                 nodeIndex: nodeIdx,
                 vrfs: (topo as any).vrfs,
+                policies: (topo as any).policies,
+                esiLags: (topo as any).esiLags,
             }
 
             // Skip regeneration for nodes with pulled/manual configs unless forced by explicit user action

@@ -144,7 +144,16 @@ export interface TopologyNode {
      *  distinct (e.g. primary 10.255.1.1/32, secondary 10.255.1.11/32). */
     loopbackIpSecondary?: string
     role?: NodeRole             // builder-assigned role tag (spine, leaf, etc.)
-    asn?: number                // BGP autonomous system number
+    asn?: number                // BGP autonomous system number (underlay)
+    /** Optional overlay AS used as `local-as` override on EVPN signaling
+     *  BGP sessions. When set and != `asn`, the BGP emitter wraps overlay
+     *  groups with `local-as <overlayAsn>` (Junos) / `local-as <overlayAsn>
+     *  no-prepend replace-as` (Cisco/Arista) so the device looks like it's
+     *  in the overlay AS to EVPN peers while keeping its real `asn` for the
+     *  underlay. Matches the dual-AS pattern in the sample-deployment docx
+     *  (GW11: asn 65101 underlay + overlayAsn 100 on dci-overlay + 2Tor-
+     *  overlay-ibgp groups). */
+    overlayAsn?: number
     ospfArea?: number           // OSPF area ID (0 = backbone)
     isisLevel?: 1 | 2 | 12     // IS-IS level (12 = L1/L2)
     nodeSid?: number            // SR-MPLS Node SID index (e.g. 1 → label 16001)
@@ -375,6 +384,84 @@ export interface Topology {
      *  equivalent stanzas on other vendors. Introduced for RLI 52387
      *  (Pure T5↔T5 EVPN-VXLAN seamless stitching). */
     vrfs?: VrfDefinition[]
+    /** BGP/EVPN policy statements emitted alongside the routing-instance
+     *  config (e.g. `t5-export`, `t5-internal-export`, `internal-overlay-lo`).
+     *  Referenced from `VrfDefinition.exportPolicy` and similar; the policy
+     *  body itself is declared here and lowered into vendor-specific
+     *  policy-options / route-map config. */
+    policies?: PolicyStatement[]
+    /** ESI-LAG (EVPN multi-homing) link bundles — first-class typed
+     *  alternative to encoding ESI/LACP/all-active details in port
+     *  description strings. Each entry groups two or more leaves that share
+     *  the same ESI toward a dual-/multi-homed CE. */
+    esiLags?: EsiLagDefinition[]
+}
+
+/**
+ * EVPN ESI-LAG definition — the typed alternative to description-string
+ * parsing. Captures the shared ESI value, LACP system-id, all-active mode,
+ * and the set of (node, port) pairs that belong to the bundle.
+ *
+ * Each iGW leaf in `memberPorts` lights up an `ae<N>` interface bound to
+ * the same ESI and LACP system-id, so the CE sees a single LAG across
+ * both physical leaves.
+ */
+export interface EsiLagDefinition {
+    /** Stable identifier (e.g. 'esi-ce1', 'esi-ce2'). */
+    id: string
+    /** Human-readable label shown in the UI / config comments. */
+    name: string
+    /** 10-octet ESI value, e.g. '00:01:02:00:00:00:00:00:00:01'. */
+    esi: string
+    /** Shared LACP system-id across the leaves that bundle into this LAG. */
+    lacpSystemId: string
+    /** True for all-active multi-homing (default), false for single-active. */
+    allActive?: boolean
+    /** Local AE interface name on each leaf member (e.g. 'ae0'). All leaves
+     *  in this LAG use this same name for clarity. */
+    aeInterfaceName?: string
+    /** Members are (leaf node index, port id on that leaf). The port id
+     *  refers to the *physical* port that becomes an aggregated-ether-options
+     *  member of `aeInterfaceName`. */
+    memberPorts: { nodeIndex: number; portId: string }[]
+}
+
+/**
+ * Generic policy-statement model — vendor-agnostic on the surface,
+ * lowered per-vendor in the config emitter (Junos `policy-options
+ * policy-statement`, Cisco `route-map`, Arista `route-map`).
+ *
+ * Each policy is an ordered list of terms; each term has a `from` clause
+ * (match conditions) and a `then` clause (action). The emitter walks
+ * them in order and short-circuits on the first matching term, matching
+ * Junos policy evaluation semantics.
+ */
+export interface PolicyStatement {
+    /** Stable identifier referenced by VrfDefinition.exportPolicy and
+     *  similar fields. Used directly as the routing-instance name where
+     *  legal, sanitized for vendors that restrict character sets. */
+    name: string
+    /** Ordered list of policy terms. Emitter produces one set-command
+     *  block per term, in order. */
+    terms: PolicyTerm[]
+}
+
+export interface PolicyTerm {
+    /** Term identifier — typically '1', '2', or a meaningful name. */
+    name: string
+    /** Match conditions (any of). Combined with logical AND inside a term. */
+    from?: {
+        protocol?: 'direct' | 'evpn' | 'bgp' | 'ospf' | 'isis' | 'static'
+        routeFilter?: string                 // e.g. '0.0.0.0/0 prefix-length-range /24-/32'
+        community?: string                   // community name (declared separately)
+        interfaceName?: string               // e.g. 'lo0.1'
+    }
+    /** Action and side effects. */
+    then?: {
+        action: 'accept' | 'reject' | 'next-term'
+        communityAdd?: string                // add a community to matched routes
+        localPreference?: number
+    }
 }
 
 /**
@@ -921,7 +1008,10 @@ export interface TemplateNodeDef {
     loopbackIpSecondary?: string
     vlans?: VlanDefinition[]
     ports?: NodePort[]          // overrides DEFAULT_PORTS[type] when present
-    asn?: number                // BGP autonomous system number
+    asn?: number                // BGP autonomous system number (underlay)
+    /** Overlay AS — see TopologyNode.overlayAsn. Used as local-as override
+     *  on EVPN signaling sessions for dual-AS deployments. */
+    overlayAsn?: number
     role?: NodeRole             // node role (spine, leaf, etc.) for BGP/overlay neighbor resolution
     ospfArea?: number           // OSPF area ID (0 = backbone)
     isisLevel?: 1 | 2 | 12     // IS-IS level (12 = L1/L2)
@@ -991,6 +1081,14 @@ export interface TopologyTemplate {
      *  on load. Used by EVPN-VXLAN templates (esp. T5↔T5 stitching, RLI 52387)
      *  to carry per-VRF VNI/RD/RT/domain-id + interconnect mappings. */
     vrfs?: VrfDefinition[]
+    /** BGP/EVPN policy statements declared on the template. Seeded into
+     *  Topology.policies on load and lowered to vendor-specific config
+     *  (Junos policy-options, Cisco/Arista route-map). */
+    policies?: PolicyStatement[]
+    /** First-class ESI-LAG definitions. Seeded into Topology.esiLags on
+     *  load. Lowered to Junos `set chassis aggregated-devices`,
+     *  `set interfaces aeN esi`, `aggregated-ether-options lacp` etc. */
+    esiLags?: EsiLagDefinition[]
 }
 
 export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
@@ -3731,7 +3829,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-GW11', x: 180, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.10.1/24', loopbackIp: '10.255.1.1/32', loopbackIpSecondary: '10.255.1.11/32', asn: 65101, role: 'border-leaf',
+                mgmtIp: '172.16.10.1/24', loopbackIp: '10.255.1.1/32', loopbackIpSecondary: '10.255.1.11/32', asn: 65101, overlayAsn: 100, role: 'border-leaf',
                 description: 'DC1 iGW. underlay-AS 65101, overlay-AS 100 (via local-as on dci-overlay + 2Tor-overlay-ibgp groups). lo0.1=10.255.1.11/32 used as VRF-100 interface and as iRD source (10.255.1.11:110). interconnect-mh-peer=10.255.1.2 (GW12). Acts as RR cluster (cluster 10.255.1.1) for the 2 DC1 leaves.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (2Tor-underlay, 13.13.13.1/24, peer-as 65103)', ipAddress: '13.13.13.1/24' },
@@ -3743,7 +3841,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-GW12', x: 320, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.10.2/24', loopbackIp: '10.255.1.2/32', loopbackIpSecondary: '10.255.1.12/32', asn: 65102, role: 'border-leaf',
+                mgmtIp: '172.16.10.2/24', loopbackIp: '10.255.1.2/32', loopbackIpSecondary: '10.255.1.12/32', asn: 65102, overlayAsn: 100, role: 'border-leaf',
                 description: 'DC1 iGW MH-peer. underlay-AS 65102, overlay-AS 100. lo0.1=10.255.1.12/32, iRD=10.255.1.12:110. interconnect-mh-peer=10.255.1.1 (GW11).',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (24.24.24.2/24, peer-as 65103)', ipAddress: '24.24.24.2/24' },
@@ -3755,7 +3853,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-LEAF11', x: 180, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.10.11/24', loopbackIp: '10.255.1.3/32', loopbackIpSecondary: '10.255.1.13/32', asn: 65103, role: 'leaf',
+                mgmtIp: '172.16.10.11/24', loopbackIp: '10.255.1.3/32', loopbackIpSecondary: '10.255.1.13/32', asn: 65103, overlayAsn: 100, role: 'leaf',
                 description: 'DC1 server leaf. underlay-AS 65103, overlay-AS 100 (via local-as on pod-overlay-ibgp). lo0.1=10.255.1.13/32 (VRF-100 interface, advertised with com1=100:101). 4 VLANs (1-4) with IRBs irb.1-irb.4 in VRF-100. ae0 ESI-LAG to CE1 with esi=00:01:02:00:00:00:00:00:00:01 all-active.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3770,7 +3868,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-LEAF12', x: 320, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.10.12/24', loopbackIp: '10.255.1.4/32', loopbackIpSecondary: '10.255.1.14/32', asn: 65104, role: 'leaf',
+                mgmtIp: '172.16.10.12/24', loopbackIp: '10.255.1.4/32', loopbackIpSecondary: '10.255.1.14/32', asn: 65104, overlayAsn: 100, role: 'leaf',
                 description: 'DC1 server leaf (ESI-LAG peer). underlay-AS 65104, overlay-AS 100. lo0.1=10.255.1.14/32. Same VLANs/IRBs as LEAF11. ae0 ESI-LAG MH-peer.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3809,7 +3907,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-GW21', x: 640, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.20.1/24', loopbackIp: '10.255.2.1/32', loopbackIpSecondary: '10.255.2.11/32', asn: 65201, role: 'border-leaf',
+                mgmtIp: '172.16.20.1/24', loopbackIp: '10.255.2.1/32', loopbackIpSecondary: '10.255.2.11/32', asn: 65201, overlayAsn: 200, role: 'border-leaf',
                 description: 'DC2 iGW. underlay-AS 65201, overlay-AS 200. lo0.1=10.255.2.11/32, iRD=10.255.2.11:210. interconnect-mh-peer=10.255.2.2 (GW22). Has reject-asymmetric-vni knob set.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (57.57.57.5/24, peer-as 65203)', ipAddress: '57.57.57.5/24' },
@@ -3821,7 +3919,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-GW22', x: 780, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.20.2/24', loopbackIp: '10.255.2.2/32', loopbackIpSecondary: '10.255.2.12/32', asn: 65202, role: 'border-leaf',
+                mgmtIp: '172.16.20.2/24', loopbackIp: '10.255.2.2/32', loopbackIpSecondary: '10.255.2.12/32', asn: 65202, overlayAsn: 200, role: 'border-leaf',
                 description: 'DC2 iGW MH-peer. underlay-AS 65202, overlay-AS 200. lo0.1=10.255.2.12/32, iRD=10.255.2.12:210.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (67.67.67.6/24, peer-as 65203)', ipAddress: '67.67.67.6/24' },
@@ -3833,7 +3931,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-LEAF21', x: 640, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.20.11/24', loopbackIp: '10.255.2.3/32', loopbackIpSecondary: '10.255.2.13/32', asn: 65203, role: 'leaf',
+                mgmtIp: '172.16.20.11/24', loopbackIp: '10.255.2.3/32', loopbackIpSecondary: '10.255.2.13/32', asn: 65203, overlayAsn: 200, role: 'leaf',
                 description: 'DC2 server leaf. underlay-AS 65203, overlay-AS 200. lo0.1=10.255.2.13/32. ae0 ESI-LAG to CE2.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3848,7 +3946,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-LEAF22', x: 780, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.20.12/24', loopbackIp: '10.255.2.4/32', loopbackIpSecondary: '10.255.2.14/32', asn: 65204, role: 'leaf',
+                mgmtIp: '172.16.20.12/24', loopbackIp: '10.255.2.4/32', loopbackIpSecondary: '10.255.2.14/32', asn: 65204, overlayAsn: 200, role: 'leaf',
                 description: 'DC2 server leaf (ESI-LAG peer). underlay-AS 65204, overlay-AS 200. lo0.1=10.255.2.14/32.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3934,6 +4032,66 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                     mapsToVrfId: 'vrf-100-dc1',
                 },
                 description: 'DC2 tenant VRF. Same VRF name as DC1 but DIFFERENT local vrf-target (300:300 vs 100:100) — proper BGP-level isolation. Bound to DC1 only via shared interconnect target:200:200.',
+            },
+        ],
+        // Policy declarations referenced from the VRFs above. Modeled directly
+        // from the docx sample's t5-export — 4 terms covering EVPN-prefix
+        // export, lo0.1 advertisement with community, IPv6 prefixes, and
+        // catch-all reject. The actual community values get assigned by the
+        // operator per their numbering plan (com1=100:101 in the sample).
+        policies: [
+            {
+                name: 't5-export',
+                terms: [
+                    {
+                        name: '1',
+                        from: { protocol: 'evpn', routeFilter: '0.0.0.0/0 prefix-length-range /24-/32' },
+                        then: { action: 'accept' },
+                    },
+                    {
+                        name: '2',
+                        from: { interfaceName: 'lo0.1' },
+                        then: { communityAdd: 'com1', action: 'accept' },
+                    },
+                    {
+                        name: '3',
+                        from: { protocol: 'evpn', routeFilter: '00:00:00:00:00:00:00:00/0 prefix-length-range /96-/128' },
+                        then: { action: 'accept' },
+                    },
+                    {
+                        name: '4',
+                        then: { action: 'reject' },
+                    },
+                ],
+            },
+        ],
+        // ESI-LAGs replacing the description-string encoding. Each LAG bundles
+        // both leaves in a DC behind a single ae0 facing the CE. ESI values
+        // and lacp system-id match the docx sample.
+        esiLags: [
+            {
+                id: 'esi-ce1',
+                name: 'DC1 CE1 ESI-LAG',
+                esi: '00:01:02:00:00:00:00:00:00:01',
+                lacpSystemId: '44:44:44:44:44:44',
+                allActive: true,
+                aeInterfaceName: 'ae0',
+                memberPorts: [
+                    { nodeIndex: 2, portId: 'ae0' },  // LEAF11 ae0 anchor
+                    { nodeIndex: 3, portId: 'ae0' },  // LEAF12 ae0 anchor
+                ],
+            },
+            {
+                id: 'esi-ce2',
+                name: 'DC2 CE2 ESI-LAG',
+                esi: '00:01:02:00:00:00:00:00:00:02',
+                lacpSystemId: '55:55:55:55:55:55',
+                allActive: true,
+                aeInterfaceName: 'ae0',
+                memberPorts: [
+                    { nodeIndex: 8, portId: 'ae0' },  // LEAF21
+                    { nodeIndex: 9, portId: 'ae0' },  // LEAF22
+                ],
             },
         ],
     },
