@@ -95,6 +95,10 @@ export interface VendorConfigContext {
     mgmtIp: string              // management IP for SSH access (not used for Loopback0)
     loopbackIp?: string         // dedicated loopback IP (for Loopback0, router-id, etc.)
     loopbackIpv6?: string       // dedicated IPv6 loopback (for Loopback0 inet6, etc.)
+    /** Secondary loopback (lo0.1 in Junos, Loopback1 in NX-OS). Bound to T5
+     *  VRF instances + used as iRD source. See `<loopback1>` placeholder
+     *  expansion in expandRdPlaceholders(). */
+    loopbackIpSecondary?: string
     sshUsername: string
     model: string
     switchFamily: SwitchFamily | ''
@@ -2195,16 +2199,30 @@ function sanitizeJunosInstanceName (raw: string): string {
 }
 
 /**
- * Substitute `<loopback>` placeholder in route-distinguisher / vrf-target
- * strings with this node's loopback IP. Lets a template author write
- * `'<loopback>:100'` and have each member node emit its own per-RD value
- * (each node uses its own loopback as the IP component of the RD per Junos
- * convention). Pass-through when no placeholder is present.
+ * Substitute loopback placeholders in route-distinguisher / vrf-target
+ * strings:
+ *   • `<loopback>`  → primary loopback IP (lo0.0 / Loopback0)
+ *   • `<loopback1>` → secondary loopback IP (lo0.1 / Loopback1) — used for
+ *                     interconnect RDs in T5 stitching deployments (the iGW
+ *                     uses lo0.1 as the iRD source). Falls back to primary
+ *                     when secondary isn't set.
+ *
+ * Both forms can appear in the same string. Lets a template author write
+ *   `routeDistinguisher: '<loopback>:100'`
+ *   `interconnect.routeDistinguisher: '<loopback1>:110'`
+ * and have each member node emit its own per-RD values.
  */
-function expandRdPlaceholders (raw: string, loopbackIp?: string): string {
-    if (!raw.includes('<loopback>')) { return raw }
-    const ip = (loopbackIp ?? '').split('/')[0] || '0.0.0.0'
-    return raw.replace(/<loopback>/g, ip)
+function expandRdPlaceholders (
+    raw: string,
+    loopbackIp?: string,
+    loopbackIpSecondary?: string,
+): string {
+    if (!raw.includes('<loopback')) { return raw }
+    const primary = (loopbackIp ?? '').split('/')[0] || '0.0.0.0'
+    const secondary = (loopbackIpSecondary ?? '').split('/')[0] || primary
+    return raw
+        .replace(/<loopback1>/g, secondary)
+        .replace(/<loopback>/g, primary)
 }
 
 function emitJunosT5Vrfs (ctx: VendorConfigContext): string[] {
@@ -2217,6 +2235,15 @@ function emitJunosT5Vrfs (ctx: VendorConfigContext): string[] {
     if (!myVrfs.length) { return lines }
 
     const loopbackIp = ctx.loopbackIp
+    const loopbackIpSecondary = ctx.loopbackIpSecondary
+    // Emit lo0.1 interface declaration once if the node has a secondary loop-
+    // back AND it's actually used by any VRF (i.e. this node has VRFs at all).
+    if (loopbackIpSecondary) {
+        const lo1 = loopbackIpSecondary.split('/')[0] + '/' + (loopbackIpSecondary.split('/')[1] || '32')
+        lines.push('')
+        lines.push('# Secondary loopback for VRF / iRD source (lo0.1)')
+        lines.push(`set interfaces lo0 unit 1 family inet address ${lo1}`)
+    }
 
     lines.push('')
     lines.push('# ── EVPN T5↔T5 VRF definitions (RLI 52387) ─────────────────────────')
@@ -2227,18 +2254,37 @@ function emitJunosT5Vrfs (ctx: VendorConfigContext): string[] {
         lines.push(`# VRF ${v.name}${v.description ? ' — ' + v.description : ''}`)
         lines.push(`set routing-instances ${safeName} instance-type ${v.instanceType}`)
         lines.push(`set routing-instances ${safeName} routing-options multipath`)
-        lines.push(`set routing-instances ${safeName} route-distinguisher ${expandRdPlaceholders(v.routeDistinguisher, loopbackIp)}`)
+        lines.push(`set routing-instances ${safeName} route-distinguisher ${expandRdPlaceholders(v.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
         lines.push(`set routing-instances ${safeName} vrf-target ${v.vrfTarget}`)
 
         // ip-prefix-routes: T5 NLRI advertisement
         lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes advertise direct-nexthop`)
         lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes encapsulation vxlan`)
         lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes vni ${v.routingVni}`)
+        if (v.exportPolicy) {
+            lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes export ${v.exportPolicy}`)
+        }
+
+        // Bind per-VLAN IRBs into the VRF (symmetric IRB pattern). Only emit
+        // for VLANs the current node actually hosts — leaves carry the IRBs
+        // for tenant VLANs, iGWs typically don't. Empty intersection → no
+        // IRB bindings (matches sample-config: GW11 has VRF-100 but no
+        // irb.1..4 bindings; LEAF-1 has the full set).
+        const nodeVlanIds = new Set((ctx.vlans ?? []).map(vl => vl.id))
+        for (const vlanId of (v.vlans ?? [])) {
+            if (nodeVlanIds.has(vlanId)) {
+                lines.push(`set routing-instances ${safeName} interface irb.${vlanId}`)
+            }
+        }
+
+        // Bind lo0.1 to the VRF when this node has a secondary loopback —
+        // matches the sample-config convention where lo0.1 lives inside the
+        // tenant VRF and is advertised via t5-export.
+        if (loopbackIpSecondary) {
+            lines.push(`set routing-instances ${safeName} interface lo0.1`)
+        }
 
         // Interconnect stanza — only on iGW members.
-        // interconnectNodes explicitly lists which nodes re-originate; when
-        // omitted, all memberNodes are treated as interconnect points
-        // (single-side interco VRFs like T5-VRF-D in the N:1 model).
         const emitInterco = v.interconnect && (
             v.interconnectNodes
                 ? v.interconnectNodes.includes(myIndex)
@@ -2247,7 +2293,7 @@ function emitJunosT5Vrfs (ctx: VendorConfigContext): string[] {
         if (emitInterco && v.interconnect) {
             const ic = v.interconnect
             if (ic.routeDistinguisher) {
-                lines.push(`set routing-instances ${safeName} protocols evpn interconnect route-distinguisher ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp)}`)
+                lines.push(`set routing-instances ${safeName} protocols evpn interconnect route-distinguisher ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
             }
             if (ic.vrfTarget) {
                 lines.push(`set routing-instances ${safeName} protocols evpn interconnect vrf-target ${ic.vrfTarget}`)
@@ -2302,6 +2348,218 @@ function hasExplicitT5Vrfs (ctx: VendorConfigContext): boolean {
     const i = ctx.nodeIndex
     if (i === undefined || !ctx.vrfs?.length) { return false }
     return ctx.vrfs.some(v => v.memberNodes.includes(i))
+}
+
+/** Sanitize for Cisco/Arista VRF names — same rules but underscores allowed. */
+function sanitizeIosInstanceName (raw: string): string {
+    return raw
+        .replace(/\([^)]*\)/g, '')
+        .replace(/[^A-Za-z0-9_-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+}
+
+/**
+ * Emit Cisco NX-OS `vrf context` + `interface nve1 member vni associate-vrf`
+ * + `router bgp asn vrf X` stanzas for explicit T5 VRFs (RLI 52387).
+ *
+ * NX-OS doesn't have a direct equivalent of Junos `interconnect { ... }`.
+ * EVPN T5 stitching on Nexus is typically implemented via:
+ *   1. The standard per-VRF address-family ipv4/l2vpn evpn config below.
+ *   2. Route-target rewriting through BGP route-maps (out of scope here —
+ *      we emit a TODO comment when an interconnect block is present).
+ * Modern NX-OS DCI features (border-gateway / multi-site EVPN) are a separate
+ * feature stack; we note them rather than emit broken approximations.
+ */
+function emitCiscoT5Vrfs (ctx: VendorConfigContext): string[] {
+    const lines: string[] = []
+    const myIndex = ctx.nodeIndex
+    const vrfs = ctx.vrfs
+    if (myIndex === undefined || !vrfs?.length) { return lines }
+
+    const myVrfs = vrfs.filter(v => v.memberNodes.includes(myIndex))
+    if (!myVrfs.length) { return lines }
+
+    const loopbackIp = ctx.loopbackIp
+    const loopbackIpSecondary = ctx.loopbackIpSecondary
+
+    if (loopbackIpSecondary) {
+        const ip = loopbackIpSecondary.split('/')[0]
+        const prefix = loopbackIpSecondary.split('/')[1] || '32'
+        lines.push('!')
+        lines.push('! Secondary loopback (Loopback1) — VRF-facing, iRD source')
+        lines.push('interface Loopback1')
+        lines.push(`  ip address ${ip}/${prefix}`)
+        lines.push('!')
+    }
+
+    lines.push('!')
+    lines.push('! ── EVPN T5↔T5 VRF definitions (RLI 52387) ─────────────────────────')
+
+    for (const v of myVrfs) {
+        const safeName = sanitizeIosInstanceName(v.name) || sanitizeIosInstanceName(v.id)
+        const rd = expandRdPlaceholders(v.routeDistinguisher, loopbackIp, loopbackIpSecondary)
+        // RT values: NX-OS expects `<asn>:<id>` form, but Junos `target:asn:id`
+        // is the same data — strip the `target:` prefix.
+        const rt = v.vrfTarget.replace(/^target:/, '')
+
+        lines.push('!')
+        lines.push(`! VRF ${v.name}${v.description ? ' — ' + v.description : ''}`)
+        lines.push(`vrf context ${safeName}`)
+        lines.push(`  vni ${v.routingVni}`)
+        lines.push(`  rd ${rd}`)
+        lines.push('  address-family ipv4 unicast')
+        lines.push(`    route-target both ${rt}`)
+        lines.push(`    route-target both ${rt} evpn`)
+        if (v.exportPolicy) {
+            lines.push(`    export map ${v.exportPolicy}`)
+        }
+        lines.push('!')
+
+        // SVI bindings — only for VLANs this node hosts (symmetric IRB).
+        const nodeVlanIds = new Set((ctx.vlans ?? []).map(vl => vl.id))
+        for (const vlanId of (v.vlans ?? [])) {
+            if (nodeVlanIds.has(vlanId)) {
+                lines.push(`interface Vlan${vlanId}`)
+                lines.push(`  vrf member ${safeName}`)
+                lines.push('!')
+            }
+        }
+
+        // VXLAN VRF binding on nve1.
+        lines.push('interface nve1')
+        lines.push(`  member vni ${v.routingVni} associate-vrf`)
+        lines.push('!')
+
+        // BGP per-VRF address-family.
+        if (ctx.asn) {
+            lines.push(`router bgp ${ctx.asn}`)
+            lines.push(`  vrf ${safeName}`)
+            lines.push('    address-family ipv4 unicast')
+            lines.push('      advertise l2vpn evpn')
+            lines.push('!')
+        }
+
+        const emitInterco = v.interconnect && (
+            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
+        )
+        if (emitInterco && v.interconnect) {
+            const ic = v.interconnect
+            lines.push(`! Interconnect (T5↔T5 stitching) — NX-OS equivalent requires`)
+            lines.push(`!   route-target rewriting via BGP route-map or multi-site EVPN`)
+            lines.push(`!   border-gateway feature. Not auto-emitted; configure manually:`)
+            if (ic.vrfTarget) {
+                lines.push(`!     interconnect vrf-target: ${ic.vrfTarget.replace(/^target:/, '')}`)
+            }
+            if (ic.routeDistinguisher) {
+                lines.push(`!     interconnect rd: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
+            }
+            if (ic.mapsToVrfId) {
+                const target = vrfs.find(x => x.id === ic.mapsToVrfId)
+                if (target) {
+                    lines.push(`!     maps to: ${target.name} (vni ${target.routingVni})`)
+                }
+            }
+        }
+    }
+    return lines
+}
+
+/**
+ * Emit Arista EOS `vrf instance` + `router bgp vrf` + `Vxlan1 vrf X vni N`
+ * stanzas for explicit T5 VRFs. Same DCI-stitching caveat as Cisco — Arista's
+ * T5↔T5 interconnect is via DCI gateway / route-target maps, not a single
+ * config knob; we emit the standard per-VRF config and TODO the interconnect.
+ */
+function emitAristaT5Vrfs (ctx: VendorConfigContext): string[] {
+    const lines: string[] = []
+    const myIndex = ctx.nodeIndex
+    const vrfs = ctx.vrfs
+    if (myIndex === undefined || !vrfs?.length) { return lines }
+
+    const myVrfs = vrfs.filter(v => v.memberNodes.includes(myIndex))
+    if (!myVrfs.length) { return lines }
+
+    const loopbackIp = ctx.loopbackIp
+    const loopbackIpSecondary = ctx.loopbackIpSecondary
+
+    if (loopbackIpSecondary) {
+        const ip = loopbackIpSecondary.split('/')[0]
+        const prefix = loopbackIpSecondary.split('/')[1] || '32'
+        lines.push('!')
+        lines.push('! Secondary loopback (Loopback1) — VRF-facing')
+        lines.push('interface Loopback1')
+        lines.push(`   ip address ${ip}/${prefix}`)
+        lines.push('!')
+    }
+
+    lines.push('!')
+    lines.push('! ── EVPN T5↔T5 VRF definitions (RLI 52387) ─────────────────────────')
+
+    for (const v of myVrfs) {
+        const safeName = sanitizeIosInstanceName(v.name) || sanitizeIosInstanceName(v.id)
+        const rd = expandRdPlaceholders(v.routeDistinguisher, loopbackIp, loopbackIpSecondary)
+        const rt = v.vrfTarget.replace(/^target:/, '')
+
+        lines.push('!')
+        lines.push(`! VRF ${v.name}${v.description ? ' — ' + v.description : ''}`)
+        lines.push(`vrf instance ${safeName}`)
+        lines.push(`   rd ${rd}`)
+        lines.push(`   route-target import ${rt}`)
+        lines.push(`   route-target export ${rt}`)
+        lines.push('!')
+        lines.push(`ip routing vrf ${safeName}`)
+        lines.push('!')
+
+        // SVI bindings (Vlan interfaces) — only for VLANs this node hosts.
+        const nodeVlanIds = new Set((ctx.vlans ?? []).map(vl => vl.id))
+        for (const vlanId of (v.vlans ?? [])) {
+            if (nodeVlanIds.has(vlanId)) {
+                lines.push(`interface Vlan${vlanId}`)
+                lines.push(`   vrf ${safeName}`)
+                lines.push('!')
+            }
+        }
+
+        // Vxlan1 VRF→VNI binding.
+        lines.push('interface Vxlan1')
+        lines.push(`   vxlan vrf ${safeName} vni ${v.routingVni}`)
+        lines.push('!')
+
+        if (ctx.asn) {
+            lines.push(`router bgp ${ctx.asn}`)
+            lines.push(`   vrf ${safeName}`)
+            lines.push(`      rd ${rd}`)
+            lines.push(`      route-target import evpn ${rt}`)
+            lines.push(`      route-target export evpn ${rt}`)
+            if (v.exportPolicy) {
+                lines.push(`      route-map ${v.exportPolicy} out`)
+            }
+            lines.push('!')
+        }
+
+        const emitInterco = v.interconnect && (
+            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
+        )
+        if (emitInterco && v.interconnect) {
+            const ic = v.interconnect
+            lines.push(`! Interconnect (T5↔T5 stitching) — EOS DCI requires route-target`)
+            lines.push(`!   import/export rewriting + selective leaking. Configure manually:`)
+            if (ic.vrfTarget) {
+                lines.push(`!     interconnect vrf-target: ${ic.vrfTarget.replace(/^target:/, '')}`)
+            }
+            if (ic.routeDistinguisher) {
+                lines.push(`!     interconnect rd: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
+            }
+            if (ic.mapsToVrfId) {
+                const target = vrfs.find(x => x.id === ic.mapsToVrfId)
+                if (target) {
+                    lines.push(`!     maps to: ${target.name} (vni ${target.routingVni})`)
+                }
+            }
+        }
+    }
+    return lines
 }
 
 export function buildVendorStartupConfig (
@@ -2653,6 +2911,9 @@ export function buildVendorStartupConfig (
 
         lines.push(...emitBgpUnderlay('arista', ctx))
         lines.push(...emitEvpnOverlay('arista', ctx))
+        // Explicit T5↔T5 VRFs (RLI 52387) — emits per-VRF Arista stanzas
+        // from ctx.vrfs. No-op when ctx.vrfs is empty.
+        lines.push(...emitAristaT5Vrfs(ctx))
         lines.push(...emitOspfUnderlay('arista', ctx, ctx.underlayProtocol === 'ospfv3'))
         lines.push(...emitIsisUnderlay('arista', ctx))
         lines.push(...emitSrMpls('arista', ctx))
@@ -3479,6 +3740,10 @@ export function buildVendorStartupConfig (
 
     lines.push(...emitBgpUnderlay('cisco', ctx))
     lines.push(...emitEvpnOverlay('cisco', ctx))
+    // Explicit T5↔T5 VRFs (RLI 52387) — Cisco NX-OS form. Emits when ctx.vrfs
+    // has entries for this node. Note: NX-OS DCI interconnect requires route-
+    // target rewriting via BGP route-maps; the emitter notes this in a comment.
+    lines.push(...emitCiscoT5Vrfs(ctx))
     lines.push(...emitOspfUnderlay('cisco', ctx, ctx.underlayProtocol === 'ospfv3'))
     lines.push(...emitIsisUnderlay('cisco', ctx))
     lines.push(...emitSrMpls('cisco', ctx))

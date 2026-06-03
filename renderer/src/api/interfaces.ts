@@ -138,6 +138,11 @@ export interface TopologyNode {
     mappedBy?: 'hostname' | 'mgmtIp'
     loopbackIp?: string          // Loopback IP (e.g. "172.16.0.1/32"), separate from mgmtIp
     loopbackIpv6?: string        // IPv6 Loopback (e.g. "fd00::1/128"), separate from loopbackIp
+    /** Secondary loopback (lo0.1 in Junos / Loopback1 in NX-OS) used as the
+     *  VRF-facing interface for EVPN T5 stitching deployments. Typically a
+     *  different IP from the primary loopback so the iRD source address is
+     *  distinct (e.g. primary 10.255.1.1/32, secondary 10.255.1.11/32). */
+    loopbackIpSecondary?: string
     role?: NodeRole             // builder-assigned role tag (spine, leaf, etc.)
     asn?: number                // BGP autonomous system number
     ospfArea?: number           // OSPF area ID (0 = backbone)
@@ -418,6 +423,15 @@ export interface VrfDefinition {
     }
     /** Chassis MAC used as the router-mac community on re-originated T5 NLRI. */
     chassisMac?: string
+    /** VLAN ids whose IRB interfaces are bound to this VRF. The Junos emitter
+     *  produces `set routing-instances X interface irb.N` for each entry, and
+     *  the Cisco/Arista emitters bind the equivalent SVIs. Useful for symmetric
+     *  IRB deployments where each tenant VLAN's gateway lives in the VRF. */
+    vlans?: number[]
+    /** Optional EVPN ip-prefix-routes export policy name (Junos) / route-map
+     *  name (Cisco/Arista). Emitter just plumbs the reference; the policy
+     *  itself is declared outside the VRF (in policy-options / route-map). */
+    exportPolicy?: string
     /** Free-form description (subnet list, tenant role, fabric position). */
     description?: string
 }
@@ -902,6 +916,9 @@ export interface TemplateNodeDef {
     mgmtIp?: string
     loopbackIp?: string
     loopbackIpv6?: string
+    /** Secondary loopback (lo0.1 / Loopback1) used as VRF-facing interface for
+     *  T5 EVPN stitching templates. See TopologyNode.loopbackIpSecondary. */
+    loopbackIpSecondary?: string
     vlans?: VlanDefinition[]
     ports?: NodePort[]          // overrides DEFAULT_PORTS[type] when present
     asn?: number                // BGP autonomous system number
@@ -3399,10 +3416,13 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 // re-originate T5 prefixes onto the interco VNI (80104).
                 memberNodes: [2, 3, 4, 5, 6, 10, 11, 12, 13, 14],
                 interconnectNodes: [2, 3, 10, 11],
+                vlans: [101], // tenant VLAN, IRB irb.101 binds into the VRF on leaves
+                exportPolicy: 't5-export',
                 interconnect: {
                     routingVni: 80104,
                     vrfTarget: 'target:1:80104',
-                    routeDistinguisher: '<loopback>:2', // iRD per RLI Figure 2 (spine1=1.1.1.1:2, spine2=1.1.1.4:2)
+                    // iRD uses lo0.1 (figure 2: spine1=1.1.1.1:2, spine2=1.1.1.4:2 — lo0.1 values)
+                    routeDistinguisher: '<loopback1>:2',
                     domainId: '6500:2:evpn-dci',
                 },
                 description: 'Single tenant DC VRF stitched 1:1 to the interco VRF (vni 80104) at iGWs.',
@@ -3606,14 +3626,15 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 name: 'T5-VRF-A',
                 instanceType: 'vrf',
                 routingVni: 70104,
-                routeDistinguisher: '<loopback>:1', // each leaf uses its own loopback
+                routeDistinguisher: '<loopback>:1',
                 vrfTarget: 'target:1:101',
                 domainId: '6500:1:evpn',
                 memberNodes: [4, 12],
+                vlans: [101],
+                exportPolicy: 't5-export',
                 interconnect: { mapsToVrfId: 't5-vrf-d' },
                 description: 'Tenant A — pod1 leaf1 + pod2 leaf4, host nets 192.168.{1,4}.0/24.',
             },
-            // Tenant B — leaf2 + leaf5, vni 70105 → T5-VRF-D
             {
                 id: 't5-vrf-b',
                 name: 'T5-VRF-B',
@@ -3623,10 +3644,11 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 vrfTarget: 'target:1:102',
                 domainId: '6500:1:evpn',
                 memberNodes: [5, 13],
+                vlans: [102],
+                exportPolicy: 't5-export',
                 interconnect: { mapsToVrfId: 't5-vrf-d' },
                 description: 'Tenant B — pod1 leaf2 + pod2 leaf5, host nets 192.168.{2,5}.0/24.',
             },
-            // Tenant C — leaf3 + leaf6, vni 70106 → T5-VRF-D
             {
                 id: 't5-vrf-c',
                 name: 'T5-VRF-C',
@@ -3636,16 +3658,18 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 vrfTarget: 'target:1:103',
                 domainId: '6500:1:evpn',
                 memberNodes: [6, 14],
+                vlans: [103],
+                exportPolicy: 't5-export',
                 interconnect: { mapsToVrfId: 't5-vrf-d' },
                 description: 'Tenant C — pod1 leaf3 + pod2 leaf6, host nets 192.168.{3,6}.0/24.',
             },
             // Single interconnect VRF — lives on all four iGW spines, vni 80104
             {
                 id: 't5-vrf-d',
-                name: 'T5-VRF-D', // emitted name; '(interco)' suffix dropped by sanitizer
+                name: 'T5-VRF-D',
                 instanceType: 'vrf',
                 routingVni: 80104,
-                routeDistinguisher: '<loopback>:2', // per-iGW RD; figure shows 1.1.1.1:2 on spine1, etc.
+                routeDistinguisher: '<loopback1>:2', // lo0.1-derived; falls back to lo0.0 when no secondary set
                 vrfTarget: 'target:200:1',
                 domainId: '6500:2:evpn-dci',
                 memberNodes: [2, 3, 10, 11],
@@ -3707,7 +3731,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-GW11', x: 180, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.10.1/24', loopbackIp: '10.255.1.1/32', asn: 65101, role: 'border-leaf',
+                mgmtIp: '172.16.10.1/24', loopbackIp: '10.255.1.1/32', loopbackIpSecondary: '10.255.1.11/32', asn: 65101, role: 'border-leaf',
                 description: 'DC1 iGW. underlay-AS 65101, overlay-AS 100 (via local-as on dci-overlay + 2Tor-overlay-ibgp groups). lo0.1=10.255.1.11/32 used as VRF-100 interface and as iRD source (10.255.1.11:110). interconnect-mh-peer=10.255.1.2 (GW12). Acts as RR cluster (cluster 10.255.1.1) for the 2 DC1 leaves.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (2Tor-underlay, 13.13.13.1/24, peer-as 65103)', ipAddress: '13.13.13.1/24' },
@@ -3719,7 +3743,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-GW12', x: 320, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.10.2/24', loopbackIp: '10.255.1.2/32', asn: 65102, role: 'border-leaf',
+                mgmtIp: '172.16.10.2/24', loopbackIp: '10.255.1.2/32', loopbackIpSecondary: '10.255.1.12/32', asn: 65102, role: 'border-leaf',
                 description: 'DC1 iGW MH-peer. underlay-AS 65102, overlay-AS 100. lo0.1=10.255.1.12/32, iRD=10.255.1.12:110. interconnect-mh-peer=10.255.1.1 (GW11).',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (24.24.24.2/24, peer-as 65103)', ipAddress: '24.24.24.2/24' },
@@ -3731,7 +3755,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-LEAF11', x: 180, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.10.11/24', loopbackIp: '10.255.1.3/32', asn: 65103, role: 'leaf',
+                mgmtIp: '172.16.10.11/24', loopbackIp: '10.255.1.3/32', loopbackIpSecondary: '10.255.1.13/32', asn: 65103, role: 'leaf',
                 description: 'DC1 server leaf. underlay-AS 65103, overlay-AS 100 (via local-as on pod-overlay-ibgp). lo0.1=10.255.1.13/32 (VRF-100 interface, advertised with com1=100:101). 4 VLANs (1-4) with IRBs irb.1-irb.4 in VRF-100. ae0 ESI-LAG to CE1 with esi=00:01:02:00:00:00:00:00:00:01 all-active.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3746,7 +3770,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC1-LEAF12', x: 320, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.10.12/24', loopbackIp: '10.255.1.4/32', asn: 65104, role: 'leaf',
+                mgmtIp: '172.16.10.12/24', loopbackIp: '10.255.1.4/32', loopbackIpSecondary: '10.255.1.14/32', asn: 65104, role: 'leaf',
                 description: 'DC1 server leaf (ESI-LAG peer). underlay-AS 65104, overlay-AS 100. lo0.1=10.255.1.14/32. Same VLANs/IRBs as LEAF11. ae0 ESI-LAG MH-peer.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3785,7 +3809,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-GW21', x: 640, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.20.1/24', loopbackIp: '10.255.2.1/32', asn: 65201, role: 'border-leaf',
+                mgmtIp: '172.16.20.1/24', loopbackIp: '10.255.2.1/32', loopbackIpSecondary: '10.255.2.11/32', asn: 65201, role: 'border-leaf',
                 description: 'DC2 iGW. underlay-AS 65201, overlay-AS 200. lo0.1=10.255.2.11/32, iRD=10.255.2.11:210. interconnect-mh-peer=10.255.2.2 (GW22). Has reject-asymmetric-vni knob set.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (57.57.57.5/24, peer-as 65203)', ipAddress: '57.57.57.5/24' },
@@ -3797,7 +3821,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-GW22', x: 780, y: 180,
                 vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
-                mgmtIp: '172.16.20.2/24', loopbackIp: '10.255.2.2/32', asn: 65202, role: 'border-leaf',
+                mgmtIp: '172.16.20.2/24', loopbackIp: '10.255.2.2/32', loopbackIpSecondary: '10.255.2.12/32', asn: 65202, role: 'border-leaf',
                 description: 'DC2 iGW MH-peer. underlay-AS 65202, overlay-AS 200. lo0.1=10.255.2.12/32, iRD=10.255.2.12:210.',
                 ports: [
                     { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (67.67.67.6/24, peer-as 65203)', ipAddress: '67.67.67.6/24' },
@@ -3809,7 +3833,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-LEAF21', x: 640, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.20.11/24', loopbackIp: '10.255.2.3/32', asn: 65203, role: 'leaf',
+                mgmtIp: '172.16.20.11/24', loopbackIp: '10.255.2.3/32', loopbackIpSecondary: '10.255.2.13/32', asn: 65203, role: 'leaf',
                 description: 'DC2 server leaf. underlay-AS 65203, overlay-AS 200. lo0.1=10.255.2.13/32. ae0 ESI-LAG to CE2.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3824,7 +3848,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             {
                 type: 'switch', label: 'DC2-LEAF22', x: 780, y: 340,
                 vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
-                mgmtIp: '172.16.20.12/24', loopbackIp: '10.255.2.4/32', asn: 65204, role: 'leaf',
+                mgmtIp: '172.16.20.12/24', loopbackIp: '10.255.2.4/32', loopbackIpSecondary: '10.255.2.14/32', asn: 65204, role: 'leaf',
                 description: 'DC2 server leaf (ESI-LAG peer). underlay-AS 65204, overlay-AS 200. lo0.1=10.255.2.14/32.',
                 vlans: [
                     { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
@@ -3875,47 +3899,41 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         vrfs: [
             {
                 id: 'vrf-100-dc1',
-                // Junos instance name is what gets emitted; UI disambig via id.
-                // Sanitizer strips "(DC1)" parens — both DCs end up emitting
-                // routing-instances VRF-100 ... on their own devices.
                 name: 'VRF-100',
                 instanceType: 'vrf',
                 routingVni: 9100,
-                // <loopback> is substituted with each member's loopback IP at
-                // emit time, so GW11(10.255.1.1) → 10.255.1.1:100,
-                // LEAF11(10.255.1.3) → 10.255.1.3:100, etc.
+                // <loopback> = primary lo0.0 — RD on the DC-side per sample.
                 routeDistinguisher: '<loopback>:100',
-                vrfTarget: 'target:100:100', // DC1-local RT (com1=100:101)
-                memberNodes: [0, 1, 2, 3], // GW11, GW12, LEAF11, LEAF12
-                interconnectNodes: [0, 1], // only the GWs re-originate
+                vrfTarget: 'target:100:100',
+                memberNodes: [0, 1, 2, 3],
+                interconnectNodes: [0, 1],
+                vlans: [1, 2, 3, 4],         // 4 tenant VLANs (sample: VLAN_1..4 → vni 1..4)
+                exportPolicy: 't5-export',
                 interconnect: {
-                    vrfTarget: 'target:200:200', // shared interco RT (com2=200:101)
-                    // iRD uses the iGW's loopback as source. Real config uses
-                    // lo0.1 secondary loopback (e.g. 10.255.1.11/.12) — we don't
-                    // model that yet, so we use the primary loopback here. Result
-                    // looks the right shape; the IP part will need correction
-                    // when downstream config-gen consumes a real lo0.1 field.
-                    routeDistinguisher: '<loopback>:110',
+                    vrfTarget: 'target:200:200',
+                    // <loopback1> = secondary lo0.1 (10.255.1.11/.12 in sample config).
+                    routeDistinguisher: '<loopback1>:110',
                     mapsToVrfId: 'vrf-100-dc2',
-                    // routingVni omitted — sample re-uses vni 9100 on the interco
                 },
-                description: 'DC1 tenant VRF. ip-prefix-routes vni 9100. Re-originated by GW11/12 onto interco RT target:200:200. Loop prevention: t5-internal-export policy rejects routes tagged with com1 from BGP (so iGW won\'t re-import its own re-origination from the MH peer).',
+                description: 'DC1 tenant VRF. ip-prefix-routes vni 9100. Re-originated by GW11/12 onto interco RT target:200:200 with iRD sourced from lo0.1. Loop prevention: t5-internal-export policy rejects routes tagged with com1 from BGP.',
             },
             {
                 id: 'vrf-100-dc2',
-                name: 'VRF-100', // same emitted name as DC1 — disambig via id
+                name: 'VRF-100',
                 instanceType: 'vrf',
                 routingVni: 9100,
                 routeDistinguisher: '<loopback>:100',
-                vrfTarget: 'target:300:300', // DC2-local RT — DIFFERENT from DC1
+                vrfTarget: 'target:300:300',
                 memberNodes: [6, 7, 8, 9],
                 interconnectNodes: [6, 7],
+                vlans: [1, 2, 3, 4],
+                exportPolicy: 't5-export',
                 interconnect: {
-                    vrfTarget: 'target:200:200', // SAME interco RT — stitching glue
-                    routeDistinguisher: '<loopback>:210',
+                    vrfTarget: 'target:200:200',
+                    routeDistinguisher: '<loopback1>:210',
                     mapsToVrfId: 'vrf-100-dc1',
                 },
-                description: 'DC2 tenant VRF. Same VRF name as DC1 but DIFFERENT local vrf-target (300:300 vs 100:100) — proper BGP-level isolation. Bound to DC1 only via the shared interconnect target:200:200. GW21 also sets reject-asymmetric-vni.',
+                description: 'DC2 tenant VRF. Same VRF name as DC1 but DIFFERENT local vrf-target (300:300 vs 100:100) — proper BGP-level isolation. Bound to DC1 only via shared interconnect target:200:200.',
             },
         ],
     },
