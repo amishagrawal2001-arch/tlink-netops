@@ -2432,32 +2432,50 @@ function emitCiscoT5Vrfs (ctx: VendorConfigContext): string[] {
         lines.push('!')
 
         // BGP per-VRF address-family.
+        // On iGW members (i.e. those in interconnectNodes), the L2VPN EVPN
+        // address-family ALSO imports/exports the shared interconnect RT —
+        // that's how routes leak from DC-local RT into the interco RT and
+        // back, which is the NX-OS-equivalent of Junos `protocols evpn
+        // interconnect`. Approximate model — proper multi-site DCI uses the
+        // border-gateway feature (`evpn multisite border-gateway N` + a
+        // dedicated multisite source loopback); we emit a comment pointing
+        // at it for operators who want the full pattern.
+        const emitInterco = v.interconnect && (
+            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
+        )
+        const intercoRt = emitInterco && v.interconnect?.vrfTarget
+            ? v.interconnect.vrfTarget.replace(/^target:/, '')
+            : null
+
         if (ctx.asn) {
             lines.push(`router bgp ${ctx.asn}`)
             lines.push(`  vrf ${safeName}`)
             lines.push('    address-family ipv4 unicast')
             lines.push('      advertise l2vpn evpn')
+            if (intercoRt) {
+                lines.push('    address-family l2vpn evpn')
+                lines.push(`      route-target import ${intercoRt}`)
+                lines.push(`      route-target export ${intercoRt}`)
+            }
             lines.push('!')
         }
 
-        const emitInterco = v.interconnect && (
-            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
-        )
         if (emitInterco && v.interconnect) {
             const ic = v.interconnect
-            lines.push(`! Interconnect (T5↔T5 stitching) — NX-OS equivalent requires`)
-            lines.push(`!   route-target rewriting via BGP route-map or multi-site EVPN`)
-            lines.push(`!   border-gateway feature. Not auto-emitted; configure manually:`)
-            if (ic.vrfTarget) {
-                lines.push(`!     interconnect vrf-target: ${ic.vrfTarget.replace(/^target:/, '')}`)
-            }
+            lines.push(`! T5↔T5 stitching context (NX-OS): the local RT-${rt} routes`)
+            lines.push(`!   are re-exported with interconnect RT-${intercoRt} above.`)
+            lines.push(`!   For full multi-site DCI (separate iRD per direction,`)
+            lines.push(`!   border-gateway source loopback, anycast IPs), add:`)
+            lines.push(`!     evpn multisite border-gateway <N>`)
+            lines.push(`!     interface nve1`)
+            lines.push(`!       multisite border-gateway interface loopback1`)
             if (ic.routeDistinguisher) {
-                lines.push(`!     interconnect rd: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
+                lines.push(`!   iRD per docx convention: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
             }
             if (ic.mapsToVrfId) {
                 const target = vrfs.find(x => x.id === ic.mapsToVrfId)
                 if (target) {
-                    lines.push(`!     maps to: ${target.name} (vni ${target.routingVni})`)
+                    lines.push(`!   stitches into: ${target.name} (vni ${target.routingVni})`)
                 }
             }
         }
@@ -2526,35 +2544,51 @@ function emitAristaT5Vrfs (ctx: VendorConfigContext): string[] {
         lines.push(`   vxlan vrf ${safeName} vni ${v.routingVni}`)
         lines.push('!')
 
+        // Per-VRF BGP. iGW members additionally import/export the shared
+        // interconnect RT under EVPN AF — that's how DC-local routes leak
+        // into the interco RT and back. EOS DCI gateway feature does this
+        // via a dedicated DCI source loopback + RT maps; we keep the model
+        // simple and emit the RT-pair, noting the full pattern in a comment.
+        const emitInterco = v.interconnect && (
+            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
+        )
+        const intercoRt = emitInterco && v.interconnect?.vrfTarget
+            ? v.interconnect.vrfTarget.replace(/^target:/, '')
+            : null
+
         if (ctx.asn) {
             lines.push(`router bgp ${ctx.asn}`)
             lines.push(`   vrf ${safeName}`)
             lines.push(`      rd ${rd}`)
             lines.push(`      route-target import evpn ${rt}`)
             lines.push(`      route-target export evpn ${rt}`)
+            if (intercoRt) {
+                lines.push(`      route-target import evpn ${intercoRt}`)
+                lines.push(`      route-target export evpn ${intercoRt}`)
+            }
             if (v.exportPolicy) {
                 lines.push(`      route-map ${v.exportPolicy} out`)
             }
             lines.push('!')
         }
 
-        const emitInterco = v.interconnect && (
-            v.interconnectNodes ? v.interconnectNodes.includes(myIndex) : true
-        )
         if (emitInterco && v.interconnect) {
             const ic = v.interconnect
-            lines.push(`! Interconnect (T5↔T5 stitching) — EOS DCI requires route-target`)
-            lines.push(`!   import/export rewriting + selective leaking. Configure manually:`)
-            if (ic.vrfTarget) {
-                lines.push(`!     interconnect vrf-target: ${ic.vrfTarget.replace(/^target:/, '')}`)
-            }
+            lines.push(`! T5↔T5 stitching context (EOS): local RT-${rt} re-exported`)
+            lines.push(`!   with interconnect RT-${intercoRt} via the BGP block above.`)
+            lines.push(`!   For full DCI gateway (separate DCI loopback, per-direction`)
+            lines.push(`!   RT maps, anycast VTEP), add:`)
+            lines.push(`!     router bgp ${ctx.asn}`)
+            lines.push(`!       address-family evpn`)
+            lines.push(`!         host-flap detection window 5 threshold 5`)
+            lines.push(`!         next-hop-self received-evpn-routes route-type ip-prefix`)
             if (ic.routeDistinguisher) {
-                lines.push(`!     interconnect rd: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
+                lines.push(`!   iRD per docx convention: ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp, loopbackIpSecondary)}`)
             }
             if (ic.mapsToVrfId) {
                 const target = vrfs.find(x => x.id === ic.mapsToVrfId)
                 if (target) {
-                    lines.push(`!     maps to: ${target.name} (vni ${target.routingVni})`)
+                    lines.push(`!   stitches into: ${target.name} (vni ${target.routingVni})`)
                 }
             }
         }
