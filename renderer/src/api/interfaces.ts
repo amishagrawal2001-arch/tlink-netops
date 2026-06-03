@@ -3389,7 +3389,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 name: 'T5-VRF-A',
                 instanceType: 'vrf',
                 routingVni: 70104,
-                routeDistinguisher: '1.1.1.11:1',
+                routeDistinguisher: '<loopback>:1', // per-node RD substituted at emit time
                 vrfTarget: 'target:1:101',
                 domainId: '6500:1:evpn',
                 // All leaves AND all iGWs host the VRF. Only the iGWs
@@ -3402,6 +3402,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 interconnect: {
                     routingVni: 80104,
                     vrfTarget: 'target:1:80104',
+                    routeDistinguisher: '<loopback>:2', // iRD per RLI Figure 2 (spine1=1.1.1.1:2, spine2=1.1.1.4:2)
                     domainId: '6500:2:evpn-dci',
                 },
                 description: 'Single tenant DC VRF stitched 1:1 to the interco VRF (vni 80104) at iGWs.',
@@ -3605,7 +3606,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 name: 'T5-VRF-A',
                 instanceType: 'vrf',
                 routingVni: 70104,
-                routeDistinguisher: '1.1.1.11:1',
+                routeDistinguisher: '<loopback>:1', // each leaf uses its own loopback
                 vrfTarget: 'target:1:101',
                 domainId: '6500:1:evpn',
                 memberNodes: [4, 12],
@@ -3618,7 +3619,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 name: 'T5-VRF-B',
                 instanceType: 'vrf',
                 routingVni: 70105,
-                routeDistinguisher: '1.1.1.12:1',
+                routeDistinguisher: '<loopback>:1',
                 vrfTarget: 'target:1:102',
                 domainId: '6500:1:evpn',
                 memberNodes: [5, 13],
@@ -3631,7 +3632,7 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
                 name: 'T5-VRF-C',
                 instanceType: 'vrf',
                 routingVni: 70106,
-                routeDistinguisher: '1.1.1.13:1',
+                routeDistinguisher: '<loopback>:1',
                 vrfTarget: 'target:1:103',
                 domainId: '6500:1:evpn',
                 memberNodes: [6, 14],
@@ -3641,10 +3642,10 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             // Single interconnect VRF — lives on all four iGW spines, vni 80104
             {
                 id: 't5-vrf-d',
-                name: 'T5-VRF-D (interco)',
+                name: 'T5-VRF-D', // emitted name; '(interco)' suffix dropped by sanitizer
                 instanceType: 'vrf',
                 routingVni: 80104,
-                routeDistinguisher: '1.1.1.1:2',
+                routeDistinguisher: '<loopback>:2', // per-iGW RD; figure shows 1.1.1.1:2 on spine1, etc.
                 vrfTarget: 'target:200:1',
                 domainId: '6500:2:evpn-dci',
                 memberNodes: [2, 3, 10, 11],
@@ -3874,34 +3875,44 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         vrfs: [
             {
                 id: 'vrf-100-dc1',
-                name: 'VRF-100 (DC1)',
+                // Junos instance name is what gets emitted; UI disambig via id.
+                // Sanitizer strips "(DC1)" parens — both DCs end up emitting
+                // routing-instances VRF-100 ... on their own devices.
+                name: 'VRF-100',
                 instanceType: 'vrf',
                 routingVni: 9100,
-                routeDistinguisher: '10.255.1.x:100', // each node uses its own loopback as RD source
+                // <loopback> is substituted with each member's loopback IP at
+                // emit time, so GW11(10.255.1.1) → 10.255.1.1:100,
+                // LEAF11(10.255.1.3) → 10.255.1.3:100, etc.
+                routeDistinguisher: '<loopback>:100',
                 vrfTarget: 'target:100:100', // DC1-local RT (com1=100:101)
-                domainId: undefined, // sample uses BGP community-based loop prevention, not D_PATH
                 memberNodes: [0, 1, 2, 3], // GW11, GW12, LEAF11, LEAF12
                 interconnectNodes: [0, 1], // only the GWs re-originate
                 interconnect: {
-                    vrfTarget: 'target:200:200',          // shared interco RT (com2=200:101)
-                    routeDistinguisher: '10.255.1.1x:110', // iRD pattern (10.255.1.11:110 on GW11, 10.255.1.12:110 on GW12)
+                    vrfTarget: 'target:200:200', // shared interco RT (com2=200:101)
+                    // iRD uses the iGW's loopback as source. Real config uses
+                    // lo0.1 secondary loopback (e.g. 10.255.1.11/.12) — we don't
+                    // model that yet, so we use the primary loopback here. Result
+                    // looks the right shape; the IP part will need correction
+                    // when downstream config-gen consumes a real lo0.1 field.
+                    routeDistinguisher: '<loopback>:110',
                     mapsToVrfId: 'vrf-100-dc2',
-                    // routingVni omitted — sample reuses the same vni 9100 on the interconnect side
+                    // routingVni omitted — sample re-uses vni 9100 on the interco
                 },
-                description: 'DC1 tenant VRF. ip-prefix-routes vni 9100. Re-originated by GW11/12 onto interco RT target:200:200 with iRD 10.255.1.{11,12}:110. Loop prevention: t5-internal-export policy rejects routes tagged with com1 arriving from BGP (so the iGW won\'t re-import its own re-origination from the MH peer).',
+                description: 'DC1 tenant VRF. ip-prefix-routes vni 9100. Re-originated by GW11/12 onto interco RT target:200:200. Loop prevention: t5-internal-export policy rejects routes tagged with com1 from BGP (so iGW won\'t re-import its own re-origination from the MH peer).',
             },
             {
                 id: 'vrf-100-dc2',
-                name: 'VRF-100 (DC2)',
+                name: 'VRF-100', // same emitted name as DC1 — disambig via id
                 instanceType: 'vrf',
-                routingVni: 9100, // same VNI as DC1 side
-                routeDistinguisher: '10.255.2.x:100',
-                vrfTarget: 'target:300:300', // DC2-local RT (com3=300:101) — DIFFERENT from DC1
-                memberNodes: [6, 7, 8, 9], // GW21, GW22, LEAF21, LEAF22
+                routingVni: 9100,
+                routeDistinguisher: '<loopback>:100',
+                vrfTarget: 'target:300:300', // DC2-local RT — DIFFERENT from DC1
+                memberNodes: [6, 7, 8, 9],
                 interconnectNodes: [6, 7],
                 interconnect: {
-                    vrfTarget: 'target:200:200',           // SAME interco RT — that's the stitching glue
-                    routeDistinguisher: '10.255.2.1x:210',
+                    vrfTarget: 'target:200:200', // SAME interco RT — stitching glue
+                    routeDistinguisher: '<loopback>:210',
                     mapsToVrfId: 'vrf-100-dc1',
                 },
                 description: 'DC2 tenant VRF. Same VRF name as DC1 but DIFFERENT local vrf-target (300:300 vs 100:100) — proper BGP-level isolation. Bound to DC1 only via the shared interconnect target:200:200. GW21 also sets reject-asymmetric-vni.',

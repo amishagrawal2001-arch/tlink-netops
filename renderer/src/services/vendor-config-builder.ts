@@ -1,4 +1,4 @@
-import { NodePort, PortSpeed, SwitchFamily, VlanDefinition, parseVlanList } from '../api/interfaces'
+import { NodePort, PortSpeed, SwitchFamily, VlanDefinition, VrfDefinition, parseVlanList } from '../api/interfaces'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -143,6 +143,18 @@ export interface VendorConfigContext {
     // MPLS LDP context
     mplsLdp?: boolean                 // enable MPLS LDP on this node
     mplsInterfaces?: string[]         // interfaces to enable MPLS/LDP on
+
+    // ── EVPN T5↔T5 stitching context (RLI 52387) ─────────────────────────
+    /** This node's index into the topology's `nodes[]` array. Used to look
+     *  up VRF membership in `vrfs[]`: a VRF emits stanzas on this node iff
+     *  `vrf.memberNodes.includes(nodeIndex)`, and emits the `interconnect`
+     *  block iff `vrf.interconnectNodes?.includes(nodeIndex)`. */
+    nodeIndex?: number
+    /** All VRFs defined on the topology. The Junos emitter walks this list
+     *  and selects entries where this node is a member. Carries the per-VRF
+     *  VNI/RD/RT + optional interconnect{routingVni,vrfTarget,domainId,
+     *  mapsToVrfId} block needed for T5↔T5 stitching config generation. */
+    vrfs?: VrfDefinition[]
 }
 
 // ── VLAN config helpers ─────────────────────────────────────────────────────
@@ -659,19 +671,24 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                             lines.push(`set interfaces irb unit ${m.vlanId} mac 00:00:5e:00:53:aa`)
                             lines.push(`set routing-instances ${vrfName} vlans v${m.vlanId} l3-interface irb.${m.vlanId}`)
                         }
-                        // Type-5 VRF for inter-VLAN routing
-                        rdIdx++
-                        lines.push('')
-                        lines.push('# Type-5 VRF for inter-VLAN routing')
-                        lines.push('set routing-instances EVPN-VRF instance-type vrf')
-                        lines.push(`set routing-instances EVPN-VRF route-distinguisher ${rid}:${rdIdx}`)
-                        lines.push(`set routing-instances EVPN-VRF vrf-target target:${asn}:1`)
-                        for (const m of sharedMappings) {
-                            lines.push(`set routing-instances EVPN-VRF interface irb.${m.vlanId}`)
+                        // Type-5 VRF for inter-VLAN routing — auto-generated.
+                        // Suppressed when the template defines explicit VRFs
+                        // in ctx.vrfs (RLI 52387): those take precedence,
+                        // emitJunosT5Vrfs emits them after this function returns.
+                        if (!hasExplicitT5Vrfs(ctx)) {
+                            rdIdx++
+                            lines.push('')
+                            lines.push('# Type-5 VRF for inter-VLAN routing')
+                            lines.push('set routing-instances EVPN-VRF instance-type vrf')
+                            lines.push(`set routing-instances EVPN-VRF route-distinguisher ${rid}:${rdIdx}`)
+                            lines.push(`set routing-instances EVPN-VRF vrf-target target:${asn}:1`)
+                            for (const m of sharedMappings) {
+                                lines.push(`set routing-instances EVPN-VRF interface irb.${m.vlanId}`)
+                            }
+                            lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes advertise direct-nexthop')
+                            lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes encapsulation vxlan')
+                            lines.push(`set routing-instances EVPN-VRF protocols evpn ip-prefix-routes vni ${(sharedMappings[0]?.vni ?? 50000) + 9000}`)
                         }
-                        lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes advertise direct-nexthop')
-                        lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes encapsulation vxlan')
-                        lines.push(`set routing-instances EVPN-VRF protocols evpn ip-prefix-routes vni ${(sharedMappings[0]?.vni ?? 50000) + 9000}`)
                     }
                 }
             } else if (ctx.macVrfEnabled && isSpine) {
@@ -723,7 +740,8 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                     }
                     // Symmetric IRB: L3 VNI + Type-5 VRF for inter-subnet routing
                     // Asymmetric IRB: no VRF needed — all VLANs on all leaves, routing at ingress only
-                    if (!isAsymmetric) {
+                    // Suppress auto-EVPN-VRF when the template provides explicit T5 VRFs.
+                    if (!isAsymmetric && !hasExplicitT5Vrfs(ctx)) {
                         lines.push('# Symmetric IRB — L3 VNI carries inter-subnet traffic')
                         lines.push('set routing-instances EVPN-VRF instance-type vrf')
                         lines.push(`set routing-instances EVPN-VRF route-distinguisher ${rid}:1`)
@@ -734,7 +752,7 @@ function emitEvpnOverlay (vendorKey: string, ctx: VendorConfigContext): string[]
                         lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes advertise direct-nexthop')
                         lines.push('set routing-instances EVPN-VRF protocols evpn ip-prefix-routes encapsulation vxlan')
                         lines.push(`set routing-instances EVPN-VRF protocols evpn ip-prefix-routes vni ${(ctx.vniMappings?.[0]?.vni ?? 10000) + 9000}`)
-                    } else {
+                    } else if (isAsymmetric) {
                         lines.push('# Asymmetric IRB — inter-subnet routing at ingress leaf only')
                         lines.push('# All VLANs must be present on all leaves for return traffic bridging')
                     }
@@ -2133,6 +2151,159 @@ function emitMplsLdp (vendorKey: string, ctx: VendorConfigContext): string[] {
     return lines
 }
 
+/**
+ * Emit Junos `routing-instances VRF-X { ... }` stanzas from the template's
+ * explicit VRF definitions (RLI 52387 — Pure T5↔T5 EVPN-VXLAN seamless
+ * stitching). Walks ctx.vrfs[] and emits set commands for every VRF whose
+ * memberNodes includes ctx.nodeIndex.
+ *
+ * For each VRF on this node:
+ *   • Base routing-instance: instance-type, RD, vrf-target, ip-prefix-routes
+ *     (vni, encap vxlan), routing-options multipath.
+ *   • IF this node is in `interconnectNodes` (or interconnectNodes is unset
+ *     and an `interconnect` block exists): emit the interconnect stanza —
+ *     `protocols evpn interconnect { route-distinguisher; vrf-target; }`.
+ *   • IF the VRF has a `routingVni` override on the interconnect block: emit
+ *     it too. (In single-VNI deployments — see the sample-deployment template
+ *     — the interconnect side re-uses the DC routing VNI, so it's omitted.)
+ *
+ * Returns [] when ctx.vrfs is empty, ctx.nodeIndex is undefined, or this
+ * node has no VRF memberships.
+ *
+ * Vendors other than Junos: TODO — Cisco/Arista equivalents would emit
+ * `vrf definition` + `address-family l2vpn evpn` stanzas. Left as a follow-up
+ * since the templates that use vrfs[] are currently Juniper-only.
+ */
+/**
+ * Sanitize a VRF display name for use as a Junos routing-instance name.
+ * Junos allows letters/digits/hyphens/underscores. We:
+ *   1. Drop everything in parentheses (UI disambiguators like "(DC1)").
+ *   2. Replace illegal chars with '-'.
+ *   3. Collapse runs of hyphens.
+ *   4. Trim leading/trailing hyphens.
+ *
+ * Example: "VRF-100 (DC1)" → "VRF-100"
+ *          "T5-VRF-A (interco)" → "T5-VRF-A"
+ *          "  foo / bar  " → "foo-bar"
+ */
+function sanitizeJunosInstanceName (raw: string): string {
+    return raw
+        .replace(/\([^)]*\)/g, '')           // drop parenthetical
+        .replace(/[^A-Za-z0-9_-]+/g, '-')    // illegal chars → '-'
+        .replace(/-+/g, '-')                 // collapse hyphen runs
+        .replace(/^-+|-+$/g, '')             // trim ends
+}
+
+/**
+ * Substitute `<loopback>` placeholder in route-distinguisher / vrf-target
+ * strings with this node's loopback IP. Lets a template author write
+ * `'<loopback>:100'` and have each member node emit its own per-RD value
+ * (each node uses its own loopback as the IP component of the RD per Junos
+ * convention). Pass-through when no placeholder is present.
+ */
+function expandRdPlaceholders (raw: string, loopbackIp?: string): string {
+    if (!raw.includes('<loopback>')) { return raw }
+    const ip = (loopbackIp ?? '').split('/')[0] || '0.0.0.0'
+    return raw.replace(/<loopback>/g, ip)
+}
+
+function emitJunosT5Vrfs (ctx: VendorConfigContext): string[] {
+    const lines: string[] = []
+    const myIndex = ctx.nodeIndex
+    const vrfs = ctx.vrfs
+    if (myIndex === undefined || !vrfs?.length) { return lines }
+
+    const myVrfs = vrfs.filter(v => v.memberNodes.includes(myIndex))
+    if (!myVrfs.length) { return lines }
+
+    const loopbackIp = ctx.loopbackIp
+
+    lines.push('')
+    lines.push('# ── EVPN T5↔T5 VRF definitions (RLI 52387) ─────────────────────────')
+
+    for (const v of myVrfs) {
+        const safeName = sanitizeJunosInstanceName(v.name) || sanitizeJunosInstanceName(v.id)
+        lines.push('')
+        lines.push(`# VRF ${v.name}${v.description ? ' — ' + v.description : ''}`)
+        lines.push(`set routing-instances ${safeName} instance-type ${v.instanceType}`)
+        lines.push(`set routing-instances ${safeName} routing-options multipath`)
+        lines.push(`set routing-instances ${safeName} route-distinguisher ${expandRdPlaceholders(v.routeDistinguisher, loopbackIp)}`)
+        lines.push(`set routing-instances ${safeName} vrf-target ${v.vrfTarget}`)
+
+        // ip-prefix-routes: T5 NLRI advertisement
+        lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes advertise direct-nexthop`)
+        lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes encapsulation vxlan`)
+        lines.push(`set routing-instances ${safeName} protocols evpn ip-prefix-routes vni ${v.routingVni}`)
+
+        // Interconnect stanza — only on iGW members.
+        // interconnectNodes explicitly lists which nodes re-originate; when
+        // omitted, all memberNodes are treated as interconnect points
+        // (single-side interco VRFs like T5-VRF-D in the N:1 model).
+        const emitInterco = v.interconnect && (
+            v.interconnectNodes
+                ? v.interconnectNodes.includes(myIndex)
+                : true
+        )
+        if (emitInterco && v.interconnect) {
+            const ic = v.interconnect
+            if (ic.routeDistinguisher) {
+                lines.push(`set routing-instances ${safeName} protocols evpn interconnect route-distinguisher ${expandRdPlaceholders(ic.routeDistinguisher, loopbackIp)}`)
+            }
+            if (ic.vrfTarget) {
+                lines.push(`set routing-instances ${safeName} protocols evpn interconnect vrf-target ${ic.vrfTarget}`)
+            }
+            if (ic.routingVni !== undefined) {
+                lines.push(`# interconnect-side routing VNI: ${ic.routingVni}`)
+            }
+            if (ic.mapsToVrfId) {
+                const target = vrfs.find(x => x.id === ic.mapsToVrfId)
+                if (target) {
+                    lines.push(`# N:1 mapping: re-originated into ${target.name} (vni ${target.routingVni})`)
+                }
+            }
+        }
+    }
+
+    // Aggregate domain-ids across all VRFs on this node + their interconnect
+    // blocks, and emit them once at the protocols level — that's the correct
+    // Junos placement for `uniform-propagation-mode`. Set dedup also handles
+    // the common case where DC + DCI domain ids repeat across multiple VRFs.
+    const domainIds = new Set<string>()
+    for (const v of myVrfs) {
+        if (v.domainId) { domainIds.add(v.domainId) }
+        // Include the interconnect-side domain-id when this node is an iGW.
+        const isInterco = v.interconnect && (
+            v.interconnectNodes
+                ? v.interconnectNodes.includes(myIndex)
+                : true
+        )
+        if (isInterco && v.interconnect?.domainId) {
+            domainIds.add(v.interconnect.domainId)
+        }
+    }
+    if (domainIds.size > 0) {
+        lines.push('')
+        lines.push('# Uniform-propagation-mode domain-ids (D_PATH loop prevention)')
+        for (const d of domainIds) {
+            lines.push(`set protocols evpn-vpn uniform-propagation-mode domain-id ${d}`)
+        }
+    }
+
+    return lines
+}
+
+/**
+ * True when this node has at least one explicit VRF in ctx.vrfs[]. Used by
+ * emitEvpnOverlay to suppress its auto-generated `EVPN-VRF` stanza —
+ * otherwise we'd emit two VRF definitions (the auto one + the explicit
+ * RLI-52387 one), producing invalid duplicate routing-instance config.
+ */
+function hasExplicitT5Vrfs (ctx: VendorConfigContext): boolean {
+    const i = ctx.nodeIndex
+    if (i === undefined || !ctx.vrfs?.length) { return false }
+    return ctx.vrfs.some(v => v.memberNodes.includes(i))
+}
+
 export function buildVendorStartupConfig (
     vendor: string,
     ports: NodePort[],
@@ -2366,6 +2537,12 @@ export function buildVendorStartupConfig (
 
         lines.push(...emitBgpUnderlay('juniper', ctx))
         lines.push(...emitEvpnOverlay('juniper', ctx))
+        // Explicit T5↔T5 VRFs (RLI 52387). Emitted AFTER emitEvpnOverlay so
+        // the template-declared VRFs in ctx.vrfs[] take precedence over the
+        // auto-generated EVPN-VRF stanza inside emitEvpnOverlay when both
+        // are present. No-op when ctx.vrfs is empty or the current node
+        // isn't a member of any VRF.
+        lines.push(...emitJunosT5Vrfs(ctx))
         lines.push(...emitOspfUnderlay('juniper', ctx, ctx.underlayProtocol === 'ospfv3'))
         lines.push(...emitIsisUnderlay('juniper', ctx))
         lines.push(...emitSrMpls('juniper', ctx))

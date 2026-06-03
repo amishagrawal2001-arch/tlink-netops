@@ -2224,7 +2224,7 @@ export class TopologyService {
         const topoOverlay = topo.overlayEnabled === true
         const vniBase = topo.vniBase ?? 10000
 
-        const nodes = topo.nodes.map(n => {
+        const nodes = topo.nodes.map((n, nodeIdx) => {
             if (!n.vendor) { return n }
 
             const loopIp = n.loopbackIp?.split('/')[0] ?? ''
@@ -2311,6 +2311,14 @@ export class TopologyService {
                         return `49.0001.${padded.slice(0, 4)}.${padded.slice(4, 8)}.${padded.slice(8, 12)}.00`
                     })()
                     : undefined,
+
+                // ── EVPN T5↔T5 stitching (RLI 52387) ─────────────────────
+                // Pass the node's array index + the topology-level vrfs[] so
+                // the Junos emitter can lower ip-vrf + interconnect stanzas.
+                // The emitter filters vrfs by `memberNodes.includes(nodeIndex)`,
+                // so unaffected nodes get no extra config.
+                nodeIndex: nodeIdx,
+                vrfs: (topo as any).vrfs,
             }
 
             // Skip regeneration for nodes with pulled/manual configs unless forced by explicit user action
