@@ -79,19 +79,45 @@ export class SshConnectionPool {
                 reject(new Error(`SSH pool: connection timeout to ${host}:${port}`))
             }, (connectOpts?.readyTimeout ?? 10_000) + 2_000)
 
+            // Track which gate has fired so we know whether to reject the
+            // pending promise (handshake-time error) vs. just clean up
+            // (post-handshake error after the consumer moved on).
+            let settled = false
+
             client.once('ready', () => {
                 clearTimeout(timeout)
+                settled = true
                 entry.connected = true
                 resolve({ client, release: () => this._release(entry) })
             })
 
-            client.once('error', (err: Error) => {
+            // Persistent error listener — `on`, not `once`. This is critical:
+            // ssh2 can emit `error` multiple times (e.g. handshake fail
+            // followed by a connection-reset 'close', or a healthy connection
+            // that gets RST'd by the server later). With `once`, the second
+            // error has no listener → Node treats it as an uncaught exception
+            // and Electron's main process tears down the whole app.
+            //
+            // Symptom we're fixing: "Connection lost before handshake" bubbling
+            // up as an Uncaught Exception that crashes the renderer + main.
+            client.on('error', (err: Error) => {
                 clearTimeout(timeout)
                 this._removeEntry(entry)
-                reject(err)
+                if (!settled) {
+                    settled = true
+                    reject(err)
+                } else {
+                    // Connection was already in use (or already returned to the
+                    // caller) when the error fired. Log so the issue isn't
+                    // invisible, but DO NOT throw — the consumer will detect
+                    // the broken connection on next exec.
+                    console.warn(`[ssh-pool] post-handshake error on ${host}:${port}: ${err.message}`)
+                }
             })
 
-            client.once('close', () => {
+            // Same defence-in-depth for 'close': switch to `on` so we always
+            // have a listener for stale event emissions.
+            client.on('close', () => {
                 entry.connected = false
                 this._removeEntry(entry)
             })

@@ -881,9 +881,33 @@
       .config-push-msg
         | Push startup config to {{ canPushContainer ? 'container' : 'device' }}
         |  "{{ node?.label }}"? This will apply the configuration shown above.
+      //- Pre-push validation panel \u2014 shown when the staged config has any
+      //- issues. Errors get a red border + a more cautious confirm button
+      //- label; warnings are advisory.
+      .config-push-validation(
+        *ngIf='pushValidation && (pushValidation.errors > 0 || pushValidation.warnings > 0)',
+        [class.has-errors]='pushValidation.errors > 0'
+      )
+        .config-push-validation-header
+          | {{ pushValidation.errors > 0 ? '\ud83d\uded1' : '\u26a0' }}
+          | &nbsp;Pre-push validation: {{ pushValidation.summary }}
+        .config-push-validation-list
+          .config-push-validation-issue(
+            *ngFor='let issue of pushValidation.issues.slice(0, 8)',
+            [class]='"sev-" + issue.severity'
+          )
+            span.config-push-validation-line(*ngIf='issue.line > 0') line {{ issue.line }}:
+            span.config-push-validation-msg {{ issue.message }}
+        .config-push-validation-more(*ngIf='pushValidation.issues.length > 8')
+          | \u2026and {{ pushValidation.issues.length - 8 }} more (full detail in DevTools console)
       .config-push-actions
         button.btn-ghost(type='button', (click)='cancelPushConfig()') Cancel
-        button.btn-push-go(type='button', [disabled]='configPushing', (click)='executePushConfig()') {{ configPushing ? 'Pushing\u2026' : 'Confirm Push' }}
+        button.btn-push-go(
+          type='button',
+          [disabled]='configPushing',
+          [class.has-errors]='pushValidation && pushValidation.errors > 0',
+          (click)='executePushConfig()'
+        ) {{ configPushing ? 'Pushing\u2026' : (pushValidation && pushValidation.errors > 0 ? 'Push anyway (' + pushValidation.errors + ' error' + (pushValidation.errors === 1 ? '' : 's') + ')' : 'Confirm Push') }}
 
     .config-push-output(*ngIf='configPushOutput != null')
       .config-push-output-header

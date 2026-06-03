@@ -414,6 +414,55 @@
           span.mi-check {{ sequentialPush ? '✓' : '' }}
           span.mi-label Push sequentially (one device at a time)
 
+        //- ── Canary push (multi-stage with bake interval) ─────────────────
+        .menu-item-divider
+        .menu-item-section Canary Push
+        button.menu-item(type='button',
+          [class.menu-item-checked]='canaryEnabled',
+          title='Multi-stage canary: push to a small percentage of devices first, bake & smoke-test, then proceed to the next wave. Stops blast-radius if a config breaks.',
+          (click)='toggleCanary(); closeMenus()')
+          span.mi-check {{ canaryEnabled ? '✓' : '' }}
+          span.mi-label 🐤 Canary push (multi-stage)
+        button.menu-item(type='button',
+          [disabled]='!canaryEnabled',
+          title='Edit cumulative percentage stages — e.g. 10,50,100 means push 10% first, then 50% total, then 100%.',
+          (click)='editCanaryStages(); closeMenus()')
+          span.mi-icon …
+          span.mi-label Stages: {{ canaryStages.join(", ") }}%
+        button.menu-item(type='button',
+          [disabled]='!canaryEnabled',
+          title='Seconds to wait + smoke-test between waves before proceeding.',
+          (click)='editCanaryBakeInterval(); closeMenus()')
+          span.mi-icon ⏱
+          span.mi-label Bake interval: {{ canaryBakeIntervalSec }}s
+        button.menu-item(type='button',
+          [disabled]='!canaryEnabled',
+          [class.menu-item-checked]='canaryAbortOnBakeFailure',
+          title='If any post-push smoke test fails during bake, abort remaining waves and offer a rollback. Recommended ON.',
+          (click)='canaryAbortOnBakeFailure = !canaryAbortOnBakeFailure; closeMenus()')
+          span.mi-check {{ canaryAbortOnBakeFailure ? '✓' : '' }}
+          span.mi-label Abort canary on bake-test failure
+
+        //- ── Health-degradation rollback ──────────────────────────────────
+        .menu-item-divider
+        .menu-item-section Health Check
+        button.menu-item(type='button',
+          [class.menu-item-checked]='healthCheckEnabled',
+          title='Snapshot active alarms before push, re-poll after a delay, and surface alarm-delta in the post-push summary. Threshold ≥ delta + ≥30% of nodes triggers existing auto-rollback.',
+          (click)='toggleHealthCheck(); closeMenus()')
+          span.mi-check {{ healthCheckEnabled ? '✓' : '' }}
+          span.mi-label 🩺 Post-push health check
+        button.menu-item(type='button',
+          [disabled]='!healthCheckEnabled',
+          (click)='editHealthCheckDelay(); closeMenus()')
+          span.mi-icon ⏱
+          span.mi-label Post-push delay: {{ healthCheckDelaySec }}s
+        button.menu-item(type='button',
+          [disabled]='!healthCheckEnabled',
+          (click)='editHealthAlarmThreshold(); closeMenus()')
+          span.mi-icon !
+          span.mi-label Alarm-delta threshold: {{ healthAlarmThreshold }}
+
     //- ── Inventory ────────────────────────
     .menu-item-wrap
       button.menu-trigger(
@@ -2031,29 +2080,48 @@
           (click)='$event.stopPropagation()',
           (wheel)='$event.stopPropagation()'
         )
+          //- Lifecycle controls: real container ops for clab nodes, UI-only
+          //- status flip for unmapped canvas drawings. Disabled entirely for
+          //- mapped physical devices (where flipping the pill would lie about
+          //- the device's actual state — use Reboot Device instead).
           button.ctx-item.ctx-start(
             type='button',
-            [disabled]='ctxNodeStatus === "running"',
+            [disabled]='ctxNodeStatus === "running" || ctxNodeIsMappedPhysical',
+            [title]='ctxNodeIsMappedPhysical ? ctxLifecycleDisabledHint : (ctxNodeIsContainer ? "Start the clab container" : "Mark as running (UI only — no container backing this node)")',
             (click)='$event.stopPropagation(); ctxStart(ctxNodeId!)'
           )
             span.ctx-dot.dot-running
             | Start
           button.ctx-item.ctx-suspend(
             type='button',
-            [disabled]='ctxNodeStatus !== "running"',
+            [disabled]='ctxNodeStatus !== "running" || ctxNodeIsMappedPhysical',
+            [title]='ctxNodeIsMappedPhysical ? ctxLifecycleDisabledHint : (ctxNodeIsContainer ? "Pause the clab container" : "Mark as suspended (UI only)")',
             (click)='$event.stopPropagation(); ctxSuspend(ctxNodeId!)'
           )
             span.ctx-dot.dot-suspended
             | Suspend
           button.ctx-item.ctx-stop(
             type='button',
-            [disabled]='ctxNodeStatus === "stopped"',
+            [disabled]='ctxNodeStatus === "stopped" || ctxNodeIsMappedPhysical',
+            [title]='ctxNodeIsMappedPhysical ? ctxLifecycleDisabledHint : (ctxNodeIsContainer ? "Stop the clab container" : "Mark as stopped (UI only)")',
             (click)='$event.stopPropagation(); ctxStop(ctxNodeId!)'
           )
             span.ctx-dot.dot-stopped
             | Stop
+          //- Inline hint when this is a physical device — surfaces why the
+          //- lifecycle buttons are disabled and points to the alternative.
+          .ctx-physical-hint(*ngIf='ctxNodeIsMappedPhysical')
+            | Physical device — use ⟳ Reboot Device for actual hardware control
+          //- ── Lifecycle ↑ ────────────────────────────────────────────────
+          //- (Start / Suspend / Stop above are unchanged — sandbox node state.)
           .ctx-sep
-          button.ctx-item(type='button', (click)='ctxStartLink($event, ctxNodeId!)') Add Link
+
+          //- ── Connectivity ──────────────────────────────────────────────
+          //- Three flavours of "open a session to this device":
+          //-   • SSH Terminal    — real device via ssh in a separate window
+          //-   • Open Console    — clab container's console (docker exec)
+          //-   • Inline Terminal — same console but in the bottom panel
+          .ctx-sub-header Connectivity
           button.ctx-item(
             type='button',
             [disabled]='!ctxNodeCanOpenSsh',
@@ -2063,12 +2131,17 @@
             type='button',
             [disabled]='!ctxNodeCanOpenConsole',
             (click)='$event.stopPropagation(); ctxOpenConsole(ctxNodeId!)'
-          ) Open Console
+          ) Open Console (Container)
           button.ctx-item(
             type='button',
             [disabled]='!ctxNodeCanOpenConsole',
             (click)='$event.stopPropagation(); ctxOpenInlineTerminal(ctxNodeId!)'
           ) Open Terminal (Inline)
+          .ctx-sep
+
+          //- ── Config & Diff ─────────────────────────────────────────────
+          //- Read-only inspection of the node's config. No device changes.
+          .ctx-sub-header Config & Diff
           button.ctx-item(
             type='button',
             [disabled]='!ctxNodeHasConfig',
@@ -2082,9 +2155,22 @@
           ) Diff with Another Node…
           button.ctx-item(
             type='button',
+            title='Fetch running config over SSH and diff against local startup config',
+            [disabled]='!ctxNodeCanFetchDiff',
+            (click)='$event.stopPropagation(); ctxFetchAndCompare(ctxNodeId!)'
+          ) Diff vs Live Device
+          button.ctx-item(
+            type='button',
             title='Compare this device\'s configs across sources: generated vs live SSH pull, against a backup, or against pasted text',
             (click)='$event.stopPropagation(); openConfigDiff(ctxNodeId!); closeCtxMenu()'
           ) Config Diff (Generated / Live / Backup)…
+          .ctx-sep
+
+          //- ── Automation ────────────────────────────────────────────────
+          //- Pre-built parameterized actions; mostly read-only, but Run
+          //- Playbook can be destructive depending on the playbook chosen
+          //- (the playbook itself confirms before pushing config).
+          .ctx-sub-header Automation
           button.ctx-item(
             type='button',
             title='Run a pre-built playbook against this device (shut/no-shut, VLAN ops, BGP reset, diagnostics, …)',
@@ -2095,37 +2181,51 @@
             [disabled]='!ctxNodeHasConfig',
             (click)='$event.stopPropagation(); ctxShowTroubleshoot(ctxNodeId!)'
           ) Troubleshoot
-          button.ctx-item(
-            type='button',
-            title='Fetch running config over SSH and diff against local startup config',
-            [disabled]='!ctxNodeCanFetchDiff',
-            (click)='$event.stopPropagation(); ctxFetchAndCompare(ctxNodeId!)'
-          ) Diff vs Live Device
+          .ctx-sep
+
+          //- ── Apply / Modify Device (destructive) ───────────────────────
+          //- Both items mutate the live device. Reboot is highlighted via
+          //- .ctx-destructive (amber) since it causes service interruption;
+          //- Push Config is destructive too but staged through a confirm
+          //- dialog already.
+          .ctx-sub-header Apply
           button.ctx-item(
             type='button',
             title='Push this node\'s startup config to the live device',
             [disabled]='!ctxNodeCanPush || configPushAllRunning',
             (click)='$event.stopPropagation(); ctxPushConfig(ctxNodeId!)'
           ) Push Config
-          button.ctx-item(
+          button.ctx-item.ctx-destructive(
             type='button',
-            (click)='$event.stopPropagation(); ctxOpenConsole(ctxNodeId!)'
-          ) Console (SSH)
+            title='Send the vendor-specific reboot command over SSH (device will be unreachable for several minutes)',
+            [disabled]='!ctxNodeCanReboot',
+            (click)='$event.stopPropagation(); ctxRebootDevice(ctxNodeId!)'
+          ) ⟳ Reboot Device…
+          .ctx-sep
+
+          //- ── Topology Edit ─────────────────────────────────────────────
+          //- Canvas / topology-state changes. Don't touch live device.
+          .ctx-sub-header Topology
+          button.ctx-item(type='button', (click)='ctxStartLink($event, ctxNodeId!)') Add Link
           button.ctx-item(type='button', (click)='$event.stopPropagation(); ctxRename(ctxNodeId!)') Rename
           button.ctx-item(type='button', (click)='$event.stopPropagation(); ctxSimulateFailure(ctxNodeId!)')
             | {{ isNodeSimFailed(ctxNodeId!) ? 'Remove Failure' : 'Simulate Failure' }}
-          button.ctx-item(
-            *ngIf='selectedNodeIds.size > 1',
-            type='button',
-            (click)='$event.stopPropagation(); openBulkCredDialog()'
-          ) Set SSH Credentials ({{ selectedNodeIds.size }})
-          button.ctx-item(
-            *ngIf='selectedNodeIds.size >= 2',
-            type='button',
-            (click)='$event.stopPropagation(); groupSelectedNodes(); closeCtxMenu()'
-          ) Group Selected ({{ selectedNodeIds.size }})
-          .ctx-sep
-          //- Align tools (when multiple nodes selected)
+
+          //- ── Multi-select tools (conditional) ──────────────────────────
+          ng-container(*ngIf='selectedNodeIds.size > 1')
+            .ctx-sep
+            .ctx-sub-header Selection ({{ selectedNodeIds.size }} nodes)
+            button.ctx-item(
+              type='button',
+              (click)='$event.stopPropagation(); openBulkCredDialog()'
+            ) Set SSH Credentials
+            button.ctx-item(
+              *ngIf='selectedNodeIds.size >= 2',
+              type='button',
+              (click)='$event.stopPropagation(); groupSelectedNodes(); closeCtxMenu()'
+            ) Group Selected
+          //- ── Align tools (conditional, multi-select) ──────────────────
+          //- Pure UI affordance — no device interaction at all.
           ng-container(*ngIf='selectedNodeIds.size > 1')
             .ctx-sep
             .ctx-sub-header Align
@@ -2139,6 +2239,8 @@
             .ctx-style-row((mousedown)='$event.stopPropagation()')
               button.ctx-dash-btn(title='Distribute Horizontally', (click)='$event.stopPropagation(); distributeNodes("h")') ⫴H
               button.ctx-dash-btn(title='Distribute Vertically', (click)='$event.stopPropagation(); distributeNodes("v")') ⫴V
+
+          //- ── Delete (most destructive) ─────────────────────────────────
           .ctx-sep
           button.ctx-item.ctx-danger(type='button', (click)='$event.stopPropagation(); ctxDelete(ctxNodeId!)') Delete Node
           button.ctx-item.ctx-close(type='button', (click)='$event.stopPropagation(); closeCtxMenu()') Cancel
@@ -4673,6 +4775,15 @@
 
       .auto-ip-actions
         button.btn-tool(type='button', (click)='showPushStagingDialog = false', [disabled]='pushStagingBusy') Cancel
+        //- Retry Failed — only after a real run with ≥1 failure. Re-pushes
+        //- the same staging block to JUST those failed nodes (scope dropdown
+        //- + canvas selection are preserved). Amber to distinguish from Push.
+        button.btn-tool.btn-retry-staging(
+          *ngIf='canRetryStagingFailed',
+          type='button',
+          [title]='"Re-push staging to the " + lastStagingFailedNodeIds.length + " device(s) that failed in the previous run"',
+          (click)='retryStagingFailed()'
+        ) ↻ Retry Failed ({{ lastStagingFailedNodeIds.length }})
         button.btn-tool.btn-primary(type='button', [disabled]='pushStagingBusy', (click)='runPushStaging()')
           | {{ pushStagingBusy ? 'Pushing…' : (pushStagingMode === "preview" ? "Preview" : "Push") }}
 

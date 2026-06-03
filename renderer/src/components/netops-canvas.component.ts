@@ -22,6 +22,7 @@ import { asnToAsdot, is4ByteAsn, generateTelemetryPipeline } from '../services/v
 import { TopologyGraphService } from '../services/topology-graph.service'
 import { getVendorCommands } from '../services/vendor-command-map'
 import { mergeStaging, renderStagingConfig, buildStagingPushCommands, isSupportedStagingVendor } from '../services/vendor-staging-builder'
+import { validateConfig, ValidationResult, smokeTestForVendor } from '../services/config-validator'
 import { loadDeviceInventory, resolveSshCredentials, InventoryRecord } from '../services/inventory-creds'
 import { deriveDeletesFromConfig, detectMgmtInterfaces } from '../services/delete-heuristic'
 import { parseRouteTable, parseInterfaceCounters, ParsedRouteEntry, ParsedInterfaceCounters } from '../services/vendor-output-parser'
@@ -485,6 +486,14 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
      *  config untouched. Independent of pushAllConfigs. */
     showPushStagingDialog = false
     pushStagingScope: 'all' | 'selected' | 'unmapped' = 'all'
+    /** Node IDs that failed in the last staging push. Populated when a run
+     *  ends with ≥1 failure; consumed by `retryStagingFailed()` which
+     *  re-runs against only those IDs without touching the user's canvas
+     *  selection or the scope dropdown. */
+    lastStagingFailedNodeIds: string[] = []
+    /** When non-empty, _stagingPushTargets honors this list as the active
+     *  filter (overriding `pushStagingScope`). Cleared after the retry run. */
+    private _stagingRetryFilter: Set<string> | null = null
     pushStagingMode:  'real' | 'preview' = 'preview'
     pushStagingCommitAfter = true
     pushStagingSequential  = true       // default sequential — staging push is fast, lock contention isn't worth it
@@ -3285,6 +3294,126 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.pushEditDeleteText = this._pushEditDeletesByNode.get(nodeId) ?? ''
         this.pushEditSaveToNode = true
         this.showPushEditDialog = true
+        this.cdr.markForCheck()
+    }
+
+    /**
+     * Right-click → Reboot Device. Sends the vendor-appropriate reboot command
+     * over SSH after a confirm dialog.
+     *
+     * Reboot is destructive (device unreachable for several minutes, traffic
+     * loss). We hard-confirm before executing and surface the device's response
+     * so the user knows whether the request was accepted (most platforms ack
+     * the reboot before disconnecting the SSH session).
+     *
+     * Credentials follow the same fallback as the rest of the push pipeline:
+     * node Info-tab fields → Device Mapper inventory match.
+     */
+    async ctxRebootDevice (nodeId: string): Promise<void> {
+        this.closeCtxMenu()
+        const node = this.topology.nodes.find(n => n.id === nodeId)
+        if (!node) { return }
+        if (!node.vendor) {
+            this.statusMsg = `${node.label}: vendor not set — cannot pick reboot command`
+            this.cdr.markForCheck()
+            return
+        }
+        const host = (node.mgmtIp ?? '').split('/')[0].trim()
+        if (!host) {
+            this.statusMsg = `${node.label}: no mgmt IP set`
+            this.cdr.markForCheck()
+            return
+        }
+
+        // Vendor-specific reboot commands. These are the non-interactive
+        // forms (don't prompt for confirmation) so they survive an SSH session
+        // that's about to terminate. For platforms where the reboot prompts a
+        // 'confirm' question, we use the variant that skips it.
+        const v = node.vendor.toLowerCase()
+        const cmds: string[] | null =
+            /^juniper/.test(v)              ? ['cli -c "request system reboot in 0"']
+          : /^cisco|^nxos|^iosxr/.test(v)   ? ['terminal length 0', 'reload in 0\n', '\n']  // \n auto-confirms
+          : /^arista/.test(v)               ? ['enable', 'reload now']
+          : /^hpe/.test(v)                  ? ['reboot fast force']     // Comware
+          : /^dell/.test(v)                 ? ['reload now', 'yes']     // OS10
+          : /^huawei/.test(v)               ? ['reboot fast']
+          : /^nokia/.test(v)                ? ['admin reboot now']
+          : /^sonic/.test(v)                ? ['sudo reboot']
+          : /^mikrotik/.test(v)             ? ['/system reboot']
+          : /^extreme/.test(v)              ? ['reboot now']
+          : /^fortinet/.test(v)             ? ['execute reboot', 'y']
+          : /^paloalto|^panos/.test(v)      ? ['request restart system']
+          : null
+
+        if (!cmds) {
+            this.statusMsg = `${node.label}: no reboot command known for vendor "${node.vendor}"`
+            this.cdr.markForCheck()
+            return
+        }
+
+        const ok = window.confirm(
+            `Reboot ${node.label} (${host})?\n\n` +
+            `This will send the vendor "${node.vendor}" reboot command over SSH.\n\n` +
+            `⚠ The device will be unreachable for several minutes during reboot. ` +
+            `Active sessions and traffic will be interrupted. Make sure the running ` +
+            `config has been saved if you want to keep recent changes.`
+        )
+        if (!ok) { return }
+
+        // Resolve credentials with inventory fallback.
+        const inventory = await loadDeviceInventory()
+        const creds = resolveSshCredentials(node, inventory)
+        if (creds.source === 'none') {
+            this.statusMsg = `${node.label}: no SSH credentials (set on Info tab or in Device Mapper inventory)`
+            this.cdr.markForCheck()
+            return
+        }
+
+        const api = (window as any).netopsAPI
+        if (!api?.sshShellSession) {
+            this.statusMsg = `${node.label}: SSH backend unavailable`
+            this.cdr.markForCheck()
+            return
+        }
+
+        this.statusMsg = `Sending reboot to ${node.label}…`
+        this.cdr.markForCheck()
+        console.log(`[reboot] ${node.label} → ${host}:${node.sshPort ?? 22} vendor=${node.vendor} cmds=${cmds.length}`)
+
+        try {
+            const result = await api.sshShellSession({
+                host,
+                port: node.sshPort ?? 22,
+                username: creds.username,
+                password: creds.password,
+                // Reboot commands often kill the SSH session as soon as the
+                // platform begins shutting down — short timeout is fine, the
+                // command was issued the moment we saw any echo.
+                timeoutMs: 15_000,
+                commands: cmds,
+                delayMs: 500,
+            })
+            // Many platforms drop the connection mid-reboot, which surfaces as
+            // ok=false with a "session ended" or "connection closed" message.
+            // That's actually the success case here — the device IS rebooting.
+            const out = String(result.output ?? '').toLowerCase()
+            const acceptedMarkers = [
+                'shutdown in progress', 'rebooting', 'system going down',
+                'going down for reboot', 'connection closed', 'connection reset',
+                'connection to .* closed', 'request accepted',
+            ]
+            const accepted = acceptedMarkers.some(m => new RegExp(m).test(out))
+            if (result.ok || accepted) {
+                this.statusMsg = `✓ Reboot command sent to ${node.label} — device may take several minutes to come back online.`
+                console.log(`[reboot] ${node.label} ✓ accepted`, result.output)
+            } else {
+                this.statusMsg = `✗ Reboot may not have applied to ${node.label}: ${result.message ?? 'unknown error'}`
+                console.warn(`[reboot] ${node.label} ✗`, result)
+            }
+        } catch (err) {
+            this.statusMsg = `✗ Reboot of ${node.label} failed: ${(err as Error).message}`
+            console.warn(`[reboot] ${node.label} threw:`, err)
+        }
         this.cdr.markForCheck()
     }
 
@@ -9455,6 +9584,57 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         return !!((node.mgmtIp ?? '').trim() && (node.sshUsername ?? '').trim())
     }
 
+    /** Whether the right-click menu's Reboot Device option is enabled.
+     *  Requires a mgmtIp + vendor + (resolved) SSH credentials. The actual
+     *  credential resolution (with inventory fallback) happens at click time
+     *  to avoid an async getter; here we only require the per-node fields. */
+    get ctxNodeCanReboot (): boolean {
+        if (!this.ctxNodeId) { return false }
+        const node = this.topology?.nodes.find(n => n.id === this.ctxNodeId)
+        if (!node) { return false }
+        const host = (node.mgmtIp ?? '').trim()
+        const vendor = (node.vendor ?? '').trim()
+        // Allow clicking even if creds aren't on the node — inventory fallback
+        // resolves at click time. mgmtIp + vendor are the hard requirements.
+        return !!(host && vendor)
+    }
+
+    /** True when the right-clicked node has a running clab container we can
+     *  drive via docker exec / start / stop / pause. The Start/Suspend/Stop
+     *  lifecycle buttons execute real operations against this container. */
+    get ctxNodeIsContainer (): boolean {
+        if (!this.ctxNodeId) { return false }
+        const node = this.topology?.nodes.find(n => n.id === this.ctxNodeId)
+        if (!node) { return false }
+        return !!this._findContainerForNode(node)
+    }
+
+    /** True when the right-clicked node is mapped to a real physical device
+     *  (has mgmtIp + a mapped/credentials marker) AND is NOT a clab container.
+     *  In this case Start/Suspend/Stop have no remote-power equivalent — they
+     *  would only flip the status pill in the topology JSON without touching
+     *  the device. We disable those buttons and point the user to **Reboot
+     *  Device** instead, which actually issues an SSH command. */
+    get ctxNodeIsMappedPhysical (): boolean {
+        if (!this.ctxNodeId) { return false }
+        const node = this.topology?.nodes.find(n => n.id === this.ctxNodeId)
+        if (!node) { return false }
+        if (this._findContainerForNode(node)) { return false }
+        const host = (node.mgmtIp ?? '').trim()
+        // "Mapped physical" = anything that points at a real address +
+        // looks like it's a managed device (has SSH user OR was mapped via
+        // Device Mapper). Pure-canvas drawings (no host) are not physical.
+        if (!host) { return false }
+        return !!(node.sshUsername || (node as any).mapped)
+    }
+
+    /** Tooltip text for Start/Suspend/Stop when they're disabled for a
+     *  mapped physical device. Surfaces the actionable alternative. */
+    get ctxLifecycleDisabledHint (): string {
+        return 'Lifecycle controls (Start/Suspend/Stop) only apply to containerlab nodes. ' +
+               'Use ⟳ Reboot Device below to send a vendor reboot over SSH.'
+    }
+
     get ctxNodeCanOpenConsole (): boolean {
         if (!this.ctxNodeId || !this.clabDeployed || !this.clabContainers.length) { return false }
         const node = this.topology?.nodes.find(n => n.id === this.ctxNodeId)
@@ -14189,6 +14369,100 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
      *  Toggled from the dry-run footer or push confirmation dialog. */
     sequentialPush = false
 
+    // ── Canary push preferences (Cluster D phase 2) ─────────────────────────
+    /** Enable multi-stage canary push: a percentage of devices first, bake
+     *  interval, smoke-test the pushed devices, then proceed to the next
+     *  wave. Default 10% → 50% → 100% with 60s bake. Aborts if any smoke
+     *  test fails during bake (saves you from blasting a bad config across
+     *  the whole fabric). */
+    canaryEnabled = false
+    /** Cumulative percentages defining wave boundaries. Each value is the
+     *  percent of TOTAL pushable nodes covered by that wave (NOT incremental).
+     *  Last value should be 100. Defaults to a 10/50/100 progression. */
+    canaryStages: number[] = [10, 50, 100]
+    /** Seconds to bake (with smoke tests) between waves. */
+    canaryBakeIntervalSec = 60
+    /** When true (default), any smoke-test failure during bake aborts the
+     *  remaining waves and offers a rollback. When false, the canary just
+     *  logs the failure and proceeds — useful in chaos-engineering labs. */
+    canaryAbortOnBakeFailure = true
+
+    /** Post-push health-degradation check (Cluster D item 18). When the delta
+     *  in active alarms across pushed nodes exceeds `healthAlarmThreshold`
+     *  within `healthCheckDelaySec`, the push summary flags the regression
+     *  and, if ≥30% of nodes look impacted, the existing auto-rollback path
+     *  kicks in. */
+    healthCheckEnabled = false
+    healthCheckDelaySec = 90
+    healthAlarmThreshold = 2
+
+    /** Count active (non-cleared) alarms whose nodeId is in the given set.
+     *  Used by the post-push health check to compute alarm-deltas across
+     *  exactly the nodes we just touched (not the whole topology). */
+    private _countActiveAlarmsForNodes (nodeIds: Set<string>): number {
+        const alarms = this.invSvc.store.alarms ?? []
+        return alarms.filter((a: any) => !a.clearedAt && nodeIds.has(a.nodeId)).length
+    }
+
+    /** Toggle helpers for the Devices menu. */
+    toggleCanary       (): void { this.canaryEnabled       = !this.canaryEnabled;       this.cdr.markForCheck() }
+    toggleHealthCheck  (): void { this.healthCheckEnabled  = !this.healthCheckEnabled;  this.cdr.markForCheck() }
+    /** Prompt-driven canary stage editor. Bare-bones; anything more elaborate
+     *  belongs in a proper settings dialog. */
+    editCanaryStages (): void {
+        const cur = this.canaryStages.join(',')
+        const next = window.prompt(
+            'Canary stage percentages (cumulative, comma-separated, last must be 100):\n' +
+            'e.g. "10,50,100" or "5,25,75,100"',
+            cur,
+        )
+        if (!next) { return }
+        const parsed = next.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0 && n <= 100)
+        if (!parsed.length || parsed[parsed.length - 1] !== 100) {
+            window.alert('Invalid stages. Must be ascending positive integers ending in 100.')
+            return
+        }
+        // Enforce ascending
+        for (let i = 1; i < parsed.length; i++) {
+            if (parsed[i] <= parsed[i - 1]) {
+                window.alert('Stages must be strictly ascending.')
+                return
+            }
+        }
+        this.canaryStages = parsed
+        this.cdr.markForCheck()
+    }
+    editCanaryBakeInterval (): void {
+        const cur = String(this.canaryBakeIntervalSec)
+        const next = window.prompt('Bake interval between canary waves (seconds, 10–600):', cur)
+        if (!next) { return }
+        const n = parseInt(next, 10)
+        if (!Number.isFinite(n) || n < 10 || n > 600) {
+            window.alert('Bake interval must be between 10 and 600 seconds.')
+            return
+        }
+        this.canaryBakeIntervalSec = n
+        this.cdr.markForCheck()
+    }
+    editHealthCheckDelay (): void {
+        const cur = String(this.healthCheckDelaySec)
+        const next = window.prompt('Post-push health check delay (seconds, 30–600):', cur)
+        if (!next) { return }
+        const n = parseInt(next, 10)
+        if (!Number.isFinite(n) || n < 30 || n > 600) { window.alert('Must be 30–600.'); return }
+        this.healthCheckDelaySec = n
+        this.cdr.markForCheck()
+    }
+    editHealthAlarmThreshold (): void {
+        const cur = String(this.healthAlarmThreshold)
+        const next = window.prompt('Auto-rollback alarm-delta threshold (1–10):', cur)
+        if (!next) { return }
+        const n = parseInt(next, 10)
+        if (!Number.isFinite(n) || n < 1 || n > 10) { window.alert('Must be 1–10.'); return }
+        this.healthAlarmThreshold = n
+        this.cdr.markForCheck()
+    }
+
     // ── Day-0 Staging push (independent of fabric config push) ───────────────
 
     openPushStagingDialog (): void {
@@ -14213,12 +14487,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         const wantsAll = this.pushStagingScope === 'all'
         const wantsSel = this.pushStagingScope === 'selected'
         const wantsUnm = this.pushStagingScope === 'unmapped'
+        // The retry-failed override takes precedence over the scope dropdown
+        // so retry runs always target the exact failed subset.
+        const retryFilter = this._stagingRetryFilter
 
         return this.topology.nodes
             .filter(n => {
-                if (wantsSel && !this.selectedNodeIds.has(n.id)) { return false }
-                if (wantsUnm && (n as any).mapped) { return false }
-                if (!wantsAll && !wantsSel && !wantsUnm) { return false }
+                if (retryFilter && !retryFilter.has(n.id)) { return false }
+                if (!retryFilter && wantsSel && !this.selectedNodeIds.has(n.id)) { return false }
+                if (!retryFilter && wantsUnm && (n as any).mapped) { return false }
+                if (!retryFilter && !wantsAll && !wantsSel && !wantsUnm) { return false }
                 if (!n.vendor) { return false }
                 // Skip hosts/bridges — staging only applies to network devices.
                 if (n.type === 'host' || n.type === 'bridge') { return false }
@@ -14274,6 +14552,50 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             this.pushStagingBusy = false
             this.cdr.markForCheck()
             return
+        }
+
+        // ── Pre-push validation ──────────────────────────────────────────
+        // For staging, validate the rendered fabric block against each
+        // pushable device's vendor. Aggregate counts and require explicit
+        // confirmation if any errors are found (real-push only — preview
+        // is read-only so we don't block).
+        if (this.pushStagingMode === 'real') {
+            const fabricStaging = (this.topology as any).staging
+            const stagingValidation: Array<{ label: string; result: ValidationResult }> = []
+            for (const t of pushable) {
+                const node = this.topology.nodes.find(n => n.id === t.id)
+                if (!node) { continue }
+                const merged = mergeStaging(fabricStaging, (node as any).staging)
+                const block = renderStagingConfig(t.vendor, merged)
+                if (!block.trim()) { continue }
+                const r = validateConfig(t.vendor, block)
+                if (r.errors > 0 || r.warnings > 0) {
+                    stagingValidation.push({ label: t.label, result: r })
+                }
+            }
+            const stgErrors   = stagingValidation.reduce((s, v) => s + v.result.errors, 0)
+            const stgWarnings = stagingValidation.reduce((s, v) => s + v.result.warnings, 0)
+            if (stgErrors > 0 || stgWarnings > 0) {
+                const sample = stagingValidation.slice(0, 3).map(v =>
+                    `  - ${v.label}: ${v.result.summary}`,
+                ).join('\n')
+                this.pushStagingLog += `\n${stgErrors > 0 ? '🛑' : '⚠'} Pre-push validation: ` +
+                    `${stgErrors} error(s), ${stgWarnings} warning(s) in ${stagingValidation.length} device(s):\n` +
+                    `${sample}\n`
+                console.warn('[push-staging] pre-push validation:', stagingValidation)
+                if (stgErrors > 0) {
+                    const ok = window.confirm(
+                        `🛑 Day-0 staging has ${stgErrors} error(s) across ${stagingValidation.length} device(s).\n\n` +
+                        `Push anyway? (full per-device detail in DevTools console)`,
+                    )
+                    if (!ok) {
+                        this.pushStagingLog += `[push-staging] aborted by user (validation errors)\n`
+                        this.pushStagingBusy = false
+                        this.cdr.markForCheck()
+                        return
+                    }
+                }
+            }
         }
 
         // Load device inventory once for credential fallback (matches by mgmtIp / hostname).
@@ -14384,6 +14706,18 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.pushStagingLog += `\n[push-staging] done — `
             + `${pushable.length} pushed, ${unsupported.length} unsupported, ${noStaging.length} no-staging.\n`
 
+        // Capture the failed node IDs so the user can click "Retry Failed" and
+        // re-push to just those nodes without touching scope or canvas selection.
+        // Only meaningful for real pushes; preview/dry-run results are advisory.
+        if (this.pushStagingMode === 'real') {
+            this.lastStagingFailedNodeIds = stagingPushResults
+                .filter(r => !r.ok)
+                .map(r => r.nodeId)
+        }
+        // Clear the retry-filter override once the run completes so subsequent
+        // ad-hoc pushes default back to the scope dropdown.
+        this._stagingRetryFilter = null
+
         // Record this batch in the persistent push history (real push only).
         if (this.pushStagingMode === 'real' && stagingPushResults.length > 0) {
             this.pushHistorySvc.record({
@@ -14402,6 +14736,31 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    /**
+     * Re-run the staging push against ONLY the nodes that failed in the most
+     * recent run. Closes the partial-fail loop without re-pushing to working
+     * devices. Triggered by the "Retry Failed (N)" button in the Push Day-0
+     * Staging dialog log pane.
+     *
+     * Sets the per-run override `_stagingRetryFilter` which `_stagingPushTargets`
+     * honors above the scope dropdown — so the canvas selection and the user's
+     * Scope choice are preserved untouched.
+     */
+    async retryStagingFailed (): Promise<void> {
+        if (!this.lastStagingFailedNodeIds.length) { return }
+        // Snapshot before the run starts populating new results.
+        const retrySet = new Set(this.lastStagingFailedNodeIds)
+        this._stagingRetryFilter = retrySet
+        this.pushStagingLog += `\n[push-staging] retrying ${retrySet.size} failed device(s)…\n`
+        this.cdr.markForCheck()
+        await this.runPushStaging()
+        // _stagingRetryFilter is cleared at the end of runPushStaging.
+    }
+
+    /** Whether the retry-failed button should be visible right now. */
+    get canRetryStagingFailed (): boolean {
+        return !this.pushStagingBusy && this.lastStagingFailedNodeIds.length > 0
+    }
 
     async pushAllConfigs (opts?: {
         skipConfirm?: boolean;
@@ -14475,6 +14834,21 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             return
         }
 
+        // ── Pre-push validation ──────────────────────────────────────────
+        // Lint each pushable node's config and aggregate counts. Errors
+        // require an explicit "push anyway" confirmation; warnings are just
+        // surfaced in the confirm dialog so the user notices.
+        const validationByNode: Array<{ label: string; result: ValidationResult }> = []
+        for (const n of [...containerNodes, ...sshNodes]) {
+            if (!n.startupConfig) { continue }
+            const r = validateConfig(n.vendor || '', n.startupConfig)
+            if (r.errors > 0 || r.warnings > 0) {
+                validationByNode.push({ label: n.label, result: r })
+            }
+        }
+        const totalErrors = validationByNode.reduce((s, v) => s + v.result.errors, 0)
+        const totalWarnings = validationByNode.reduce((s, v) => s + v.result.warnings, 0)
+
         if (!opts?.skipConfirm) {
             const deleteBlurb = autoDeletes
                 ? `\n⚠  Auto-delete enabled: each node will first WIPE top-of-hierarchy\n` +
@@ -14486,11 +14860,40 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             const seqHint = initSeq
                 ? '\n⏱  Sequential mode: one device at a time (slower but avoids Junos lock contention).'
                 : '\n⚡ Parallel mode: all devices simultaneously. Toggle "Sequential push" in Devices menu to change.'
+
+            // Validation summary — always shown when there's anything to say.
+            // Lists up to the first 3 nodes with issues so the user can see
+            // a sample without a wall of text. Full per-line detail goes to
+            // the DevTools console for triage.
+            let validationBlurb = ''
+            if (totalErrors > 0 || totalWarnings > 0) {
+                const sample = validationByNode.slice(0, 3).map(v =>
+                    `  - ${v.label}: ${v.result.summary}` +
+                    (v.result.issues[0]
+                        ? ` (e.g. line ${v.result.issues[0].line}: ${v.result.issues[0].message.slice(0, 80)})`
+                        : ''),
+                ).join('\n')
+                const more = validationByNode.length > 3
+                    ? `\n  …and ${validationByNode.length - 3} more node(s) with issues`
+                    : ''
+                validationBlurb =
+                    `\n\n${totalErrors > 0 ? '🛑' : '⚠'} Pre-push validation: ` +
+                    `${totalErrors} error(s), ${totalWarnings} warning(s) across ${validationByNode.length} node(s):\n` +
+                    `${sample}${more}\n` +
+                    `(full per-line detail in DevTools console)\n`
+                console.warn('[push] pre-push validation found issues:', validationByNode)
+            }
+
+            const errorPrefix = totalErrors > 0
+                ? `🛑 ${totalErrors} ERROR(s) detected in staged config — pushing anyway is risky.\n\n`
+                : ''
             const confirmed = window.confirm(
+                errorPrefix +
                 `Push configs to ${pushableCount} node(s)?\n\n` +
                 `• ${containerNodes.length} via container (docker exec)\n` +
-                `• ${sshNodes.length} via SSH${deleteBlurb}${seqHint}\n\n` +
-                `This will apply startup configs to running devices.`
+                `• ${sshNodes.length} via SSH${deleteBlurb}${seqHint}` +
+                validationBlurb +
+                `\nThis will apply startup configs to running devices.`
             )
             if (!confirmed) { return }
         }
@@ -14737,16 +15140,61 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                         console.warn(`[push] ${node.label} ✗ no commit-complete confirmation`, result.output)
                         pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: false, message: 'Junos: no "commit complete" confirmation' })
                     } else {
+                        // ── Post-push smoke test ────────────────────────
+                        // The push reports OK, but did SSH survive the change?
+                        // Run a tiny vendor-specific read-only command and
+                        // verify (a) we can still reach the device and (b) the
+                        // output looks plausible. Catches the case where the
+                        // pushed config breaks SSH access (ACL self-block, AAA
+                        // misconfig, mgmt iface shut, etc.).
+                        const smoke = smokeTestForVendor(vendorKey)
+                        let smokeOk = true
+                        let smokeMsg = ''
+                        if (smoke) {
+                            try {
+                                const smokeRes: any = this.invSvc.hasBackend
+                                    ? await withTimeout(
+                                        this.invSvc.backendClient.runCommand(host, node.sshPort ?? 22, username, password, smoke.command),
+                                        15_000, `${node.label} smoke-test`,
+                                    )
+                                    : await withTimeout(
+                                        api.sshShellSession({
+                                            host, port: node.sshPort ?? 22,
+                                            username, password,
+                                            timeoutMs: 12_000,
+                                            commands: [smoke.command],
+                                        }),
+                                        15_000, `${node.label} smoke-test`,
+                                    )
+                                const out = String(smokeRes?.output ?? '')
+                                if (!smokeRes?.ok || !smoke.expectPattern.test(out)) {
+                                    smokeOk = false
+                                    smokeMsg = `post-push smoke test failed (${smoke.label}) — device reachable but response didn't match expected pattern; config may have broken SSH`
+                                    console.warn(`[push] ${node.label} ⚠ smoke-test failed:`, out.slice(-300))
+                                }
+                            } catch (e) {
+                                smokeOk = false
+                                smokeMsg = `post-push smoke test threw: ${(e as Error).message}`
+                                console.warn(`[push] ${node.label} ⚠ smoke-test threw:`, e)
+                            }
+                        }
+
                         success++
                         succeededNodeIds.push(node.id)
-                        // Log a short preview of the device transcript so
-                        // the user can confirm what actually ran.
                         const preview = String(result.output ?? '').trim().slice(-200)
                         console.log(
                             `[push] ${node.label} ✓ ${result.message ?? ''}` +
-                            (preview ? ` · last output: …${preview}` : ''),
+                            (preview ? ` · last output: …${preview}` : '') +
+                            (smoke ? (smokeOk ? ` · smoke-test ✓` : ` · smoke-test ⚠`) : ''),
                         )
-                        pushHistoryResults.push({ nodeId: node.id, nodeLabel: node.label, ok: true, message: '' })
+                        // Smoke-test failure doesn't downgrade the success
+                        // count (the config DID apply) — but we record a
+                        // warning message in push history so the user notices.
+                        pushHistoryResults.push({
+                            nodeId: node.id, nodeLabel: node.label,
+                            ok: true,
+                            message: smokeOk ? '' : smokeMsg.slice(0, 200),
+                        })
                     }
                 } else {
                     failed++
@@ -14777,7 +15225,143 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         //   • SSH-rate-limit lockouts on shared bastions
         //   • Watching N devices commit in interleaved log lines
         const useSequential = opts?.sequential ?? this.sequentialPush
-        if (useSequential) {
+
+        // ── Pre-push health snapshot (item 18) ───────────────────────────
+        // Captures the current active-alarm count for the soon-to-be-pushed
+        // node IDs so we can compute a delta after the post-push delay and
+        // tee into auto-rollback if alarms spike.
+        const willPushIds = new Set<string>([
+            ...containerNodes.map(n => n.id),
+            ...sshReady.map(e => e.node.id),
+        ])
+        const preAlarms = this.healthCheckEnabled
+            ? this._countActiveAlarmsForNodes(willPushIds)
+            : 0
+
+        // ── Canary push (item 17) ────────────────────────────────────────
+        // When enabled, divide the push queue into N waves based on cumulative
+        // percentages, push each wave, bake (smoke-test), then proceed. Sticky
+        // preferences come from the Devices menu. Aborts on bake failure when
+        // canaryAbortOnBakeFailure is set.
+        let canaryAborted = false
+        let canaryAbortedAtWave = -1
+        if (this.canaryEnabled) {
+            // Combined queue with deterministic ordering (alphabetical by label)
+            // so the SAME canary divides the same way on retry. Containers and
+            // SSH targets are mixed; the wave division is by total count.
+            type Target =
+                | { kind: 'container'; node: typeof containerNodes[0] }
+                | { kind: 'ssh';       entry: typeof sshReady[0] }
+            const allTargets: Target[] = [
+                ...containerNodes.map(n => ({ kind: 'container' as const, node: n })),
+                ...sshReady.map(e => ({ kind: 'ssh' as const, entry: e })),
+            ].sort((a, b) => {
+                const la = a.kind === 'container' ? a.node.label : a.entry.node.label
+                const lb = b.kind === 'container' ? b.node.label : b.entry.node.label
+                return la.localeCompare(lb)
+            })
+
+            const N = allTargets.length
+            // Compute wave boundaries from the cumulative stages array.
+            // [10,50,100] over 20 nodes → [2, 10, 20] → waves of [0..2), [2..10), [10..20)
+            const boundaries: number[] = this.canaryStages.map(p => Math.max(1, Math.ceil((p / 100) * N)))
+            // De-dup adjacent equals (e.g. when N=2 and stages=[10,50,100] → [1,1,2] becomes [1,2])
+            const uniqueBoundaries: number[] = []
+            for (const b of boundaries) {
+                if (uniqueBoundaries[uniqueBoundaries.length - 1] !== b) { uniqueBoundaries.push(b) }
+            }
+            // Ensure last boundary covers everyone
+            if (uniqueBoundaries[uniqueBoundaries.length - 1] !== N) { uniqueBoundaries.push(N) }
+
+            console.log(`[push] canary: ${N} targets, waves=${uniqueBoundaries.join(',')}, bake=${this.canaryBakeIntervalSec}s, abortOnBakeFail=${this.canaryAbortOnBakeFailure}`)
+
+            let prevBoundary = 0
+            for (let waveIdx = 0; waveIdx < uniqueBoundaries.length; waveIdx++) {
+                if (canaryAborted) { break }
+                const upTo = uniqueBoundaries[waveIdx]
+                const wave = allTargets.slice(prevBoundary, upTo)
+                prevBoundary = upTo
+
+                this.operationProgress =
+                    `Canary wave ${waveIdx + 1}/${uniqueBoundaries.length}: pushing ${wave.length} device(s)…`
+                this.cdr.markForCheck()
+                console.log(`[push] canary wave ${waveIdx + 1}/${uniqueBoundaries.length}: ${wave.length} target(s)`)
+
+                // Within a wave: same sequential-vs-parallel choice as before.
+                if (useSequential) {
+                    for (const t of wave) {
+                        if (t.kind === 'container') { await pushContainer(t.node) }
+                        else                        { await pushSsh(t.entry) }
+                    }
+                } else {
+                    await Promise.all(wave.map(t =>
+                        t.kind === 'container' ? pushContainer(t.node) : pushSsh(t.entry),
+                    ))
+                }
+
+                // Last wave skips bake (no point waiting after the final push).
+                if (waveIdx === uniqueBoundaries.length - 1) { break }
+
+                // Bake interval — countdown visible in the progress banner.
+                const bakeMs = this.canaryBakeIntervalSec * 1000
+                const bakeEnd = Date.now() + bakeMs
+                while (Date.now() < bakeEnd) {
+                    const remain = Math.ceil((bakeEnd - Date.now()) / 1000)
+                    this.operationProgress =
+                        `Canary wave ${waveIdx + 1}/${uniqueBoundaries.length} done — baking ${remain}s before next wave…`
+                    this.cdr.markForCheck()
+                    // Tick every second so the user sees countdown progress.
+                    await new Promise(r => setTimeout(r, Math.min(1000, bakeEnd - Date.now())))
+                }
+
+                // Smoke-test the wave we just pushed. Any failures are taken
+                // as evidence the new config is unhealthy. The push pipeline
+                // already ran a smoke test on each device's success path; the
+                // bake re-check is a safety net for delayed effects (e.g.
+                // BGP timers, AAA propagation).
+                const waveFailedDuringBake: string[] = []
+                for (const t of wave) {
+                    const node = t.kind === 'container' ? t.node : t.entry.node
+                    if (!succeededNodeIds.includes(node.id)) {
+                        // Already failed during push — counts toward bake fail.
+                        waveFailedDuringBake.push(node.label)
+                        continue
+                    }
+                    const smoke = smokeTestForVendor((node.vendor ?? '').toLowerCase())
+                    if (!smoke || t.kind !== 'ssh') { continue }
+                    try {
+                        const r: any = this.invSvc.hasBackend
+                            ? await withTimeout(
+                                this.invSvc.backendClient.runCommand(t.entry.host, node.sshPort ?? 22, t.entry.username, t.entry.password, smoke.command),
+                                15_000, `${node.label} bake-smoke`,
+                            )
+                            : await withTimeout(
+                                api.sshShellSession({ host: t.entry.host, port: node.sshPort ?? 22, username: t.entry.username, password: t.entry.password, timeoutMs: 12_000, commands: [smoke.command] }),
+                                15_000, `${node.label} bake-smoke`,
+                            )
+                        const out = String(r?.output ?? '')
+                        if (!r?.ok || !smoke.expectPattern.test(out)) {
+                            waveFailedDuringBake.push(node.label)
+                            console.warn(`[push] canary bake — ${node.label} smoke FAILED: ${out.slice(-200)}`)
+                        }
+                    } catch (e) {
+                        waveFailedDuringBake.push(node.label)
+                        console.warn(`[push] canary bake — ${node.label} smoke threw:`, e)
+                    }
+                }
+
+                if (waveFailedDuringBake.length > 0 && this.canaryAbortOnBakeFailure) {
+                    canaryAborted = true
+                    canaryAbortedAtWave = waveIdx + 1
+                    console.warn(`[push] canary ABORTED at wave ${waveIdx + 1}: ${waveFailedDuringBake.length} bake failure(s) — ${waveFailedDuringBake.join(', ')}`)
+                    errors.push(
+                        `Canary aborted at wave ${waveIdx + 1}/${uniqueBoundaries.length} — ` +
+                        `${waveFailedDuringBake.length} device(s) failed smoke test during bake: ${waveFailedDuringBake.slice(0, 3).join(', ')}` +
+                        (waveFailedDuringBake.length > 3 ? `, +${waveFailedDuringBake.length - 3} more` : ''),
+                    )
+                }
+            }
+        } else if (useSequential) {
             console.log('[push] sequential mode — one device at a time')
             // Containers first (they're typically faster), then SSH.
             for (const n of containerNodes) { await pushContainer(n) }
@@ -14793,6 +15377,39 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         // Show final progress before clearing the banner
         this.operationProgress = `Push complete: ${success} ✓, ${failed} ✗`
         this.cdr.detectChanges()
+
+        // ── Post-push health check (item 18) ──────────────────────────────
+        // Wait the configured delay, then re-snapshot active alarms for the
+        // pushed nodes. Compute delta. If it crosses the threshold, append
+        // a regression warning to errors[] so the post-push summary surfaces
+        // it. The existing 30%-rule auto-rollback path then sees an inflated
+        // failure count and offers rollback as usual.
+        let healthRegressionCount = 0
+        if (this.healthCheckEnabled && willPushIds.size > 0) {
+            this.operationProgress = `Health check: waiting ${this.healthCheckDelaySec}s for alarms to settle…`
+            this.cdr.detectChanges()
+            // Tick every second so the user sees the countdown and the app
+            // doesn't appear hung during the delay.
+            const deadline = Date.now() + this.healthCheckDelaySec * 1000
+            while (Date.now() < deadline) {
+                const remain = Math.ceil((deadline - Date.now()) / 1000)
+                this.operationProgress = `Health check: ${remain}s remaining…`
+                this.cdr.detectChanges()
+                await new Promise(r => setTimeout(r, Math.min(1000, deadline - Date.now())))
+            }
+            const postAlarms = this._countActiveAlarmsForNodes(willPushIds)
+            const delta = postAlarms - preAlarms
+            console.log(`[push] health check: pre=${preAlarms} post=${postAlarms} delta=${delta} (threshold=${this.healthAlarmThreshold})`)
+            if (delta >= this.healthAlarmThreshold) {
+                healthRegressionCount = delta
+                errors.push(
+                    `🩺 Health-check regression: alarm count on pushed nodes rose by ${delta} ` +
+                    `(${preAlarms} → ${postAlarms}) within ${this.healthCheckDelaySec}s of push — ` +
+                    `the new config may be triggering issues. Consider rolling back.`,
+                )
+                console.warn(`[push] health-check regression — delta ${delta} ≥ threshold ${this.healthAlarmThreshold}`)
+            }
+        }
 
         // Small delay so the user can see the final progress
         await new Promise(r => setTimeout(r, 600))
@@ -14842,11 +15459,24 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             //     forgets to set suppressRollbackOffer
             const total = success + failed
             const failureFrac = total ? failed / total : 0
+            // Auto-rollback triggers on any of:
+            //   • ≥30% of the batch failed (existing rule)
+            //   • canary aborted mid-stream (we pushed a partial fabric — bake
+            //     test caught a problem, rollback the successes to keep the
+            //     fabric homogeneous)
+            //   • health regression (alarm spike across pushed nodes — the new
+            //     config triggered enough new alarms to cross the threshold)
             const offerRollback = success > 0
-                && failureFrac >= 0.30
+                && (failureFrac >= 0.30 || canaryAborted || healthRegressionCount > 0)
                 && !opts?.suppressRollbackOffer
                 && !this._rollbackInProgress
             if (offerRollback) {
+                if (canaryAborted) {
+                    console.warn(`[push] auto-rollback offer triggered by canary abort at wave ${canaryAbortedAtWave}`)
+                }
+                if (healthRegressionCount > 0) {
+                    console.warn(`[push] auto-rollback offer triggered by health regression: +${healthRegressionCount} alarms`)
+                }
                 await this._offerAutoRollback(succeededNodeIds, success, failed)
             }
         } else {

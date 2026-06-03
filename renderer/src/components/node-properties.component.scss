@@ -2217,3 +2217,67 @@ $radius:      6px;
     align-items: center;
 }
 
+
+// ─── Pre-push validation panel (shown in the inline confirm UI) ─────────────
+.config-push-validation {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.06);
+  font-size: 11px;
+
+  &.has-errors {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.06);
+  }
+}
+.config-push-validation-header {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #fde68a;
+
+  .has-errors & { color: #fecaca; }
+}
+.config-push-validation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.config-push-validation-issue {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 1px 0;
+  font-family: 'SF Mono', monospace;
+  font-size: 10.5px;
+  line-height: 1.4;
+
+  &.sev-error   { color: #fca5a5; }
+  &.sev-warning { color: #fcd34d; }
+  &.sev-info    { color: var(--text-muted, #9ca3af); }
+}
+.config-push-validation-line {
+  color: var(--text-muted);
+  min-width: 60px;
+  font-family: 'SF Mono', monospace;
+}
+.config-push-validation-msg { flex: 1; }
+.config-push-validation-more {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+// Push-go button when staged config has errors — extra-loud styling.
+.btn-push-go.has-errors {
+  border-color: #ef4444 !important;
+  color: #ef4444 !important;
+  &:hover:not(:disabled) {
+    background: #ef4444 !important;
+    color: #fff !important;
+  }
+}

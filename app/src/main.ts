@@ -22,6 +22,43 @@ const windows = new Map<number, BrowserWindow>()
 
 const htmlPath = path.join(__dirname, '../../index.html')
 
+// ─── Global SSH-error backstop ──────────────────────────────────────────────
+// Defence-in-depth: any `ssh2`-related error that escapes a per-call-site
+// handler (e.g. a 'close'/'error' fired AFTER our promise resolved, a stale
+// connection that the server reset, a handshake torn down at the wrong
+// moment) would otherwise bubble up to Node as an Uncaught Exception and
+// take down the entire Electron main process, killing the user's session.
+//
+// Filter for SSH-shaped errors and log-and-continue. Real bugs in our own
+// code still surface (we re-throw anything that doesn't match a known SSH
+// error pattern).
+process.on('uncaughtException', (err: Error) => {
+    const msg = err?.message ?? String(err)
+    const stack = err?.stack ?? ''
+    const isSsh2 =
+        /Connection lost before handshake|Handshake failed|All configured authentication methods failed|Keepalive timeout|read ECONNRESET/i.test(msg) ||
+        /node_modules\/ssh2\//.test(stack) ||
+        (err && (err as any).level === 'client-socket')
+    if (isSsh2) {
+        console.warn('[ssh] swallowed stray ssh2 error after caller returned:', msg)
+        return  // do not crash the app
+    }
+    // Not an SSH error — re-emit so legitimate bugs aren't silently hidden.
+    console.error('[uncaughtException]', err)
+    throw err
+})
+
+// Same shape for unhandled promise rejections — ssh2 sometimes wraps async
+// flows whose rejection escapes when the consumer has already moved on.
+process.on('unhandledRejection', (reason: any) => {
+    const msg = reason?.message ?? String(reason)
+    if (/ssh2|ssh\b|handshake|ECONNRESET/i.test(msg)) {
+        console.warn('[ssh] swallowed unhandled rejection:', msg)
+        return
+    }
+    console.error('[unhandledRejection]', reason)
+})
+
 function _testSshConnection (payload: SshPayload): Promise<SshResult> {
     return new Promise(resolve => {
         const conn = new Client()

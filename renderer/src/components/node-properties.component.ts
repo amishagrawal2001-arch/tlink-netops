@@ -22,6 +22,7 @@ import { NetopsSshRequest } from '../api/netops-api'
 import { buildVendorStartupConfig, VendorConfigContext, asnToAsdot, is4ByteAsn } from '../services/vendor-config-builder'
 import { getVendorCommands } from '../services/vendor-command-map'
 import { mergeStaging, renderStagingConfig, buildStagingPushCommands, isSupportedStagingVendor } from '../services/vendor-staging-builder'
+import { validateConfig, ValidationResult, smokeTestForVendor } from '../services/config-validator'
 import { loadDeviceInventory, resolveSshCredentials } from '../services/inventory-creds'
 
 type PanelTab = 'info' | 'ports' | 'vlans' | 'config' | 'staging' | 'notes' | 'links' | 'inv'
@@ -3350,7 +3351,21 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         return 'Push to Device'
     }
 
+    /** Validation result for the staged config — recomputed when the user
+     *  hits Push so the inline confirmation panel can show issues. */
+    pushValidation: ValidationResult | null = null
+
     confirmPushConfig (): void {
+        // Lint the config first so the confirmation panel shows any issues
+        // before the user clicks "Confirm Push".
+        if (this.node?.vendor && this.draft.startupConfig) {
+            this.pushValidation = validateConfig(this.node.vendor, this.draft.startupConfig)
+            if (this.pushValidation.errors > 0 || this.pushValidation.warnings > 0) {
+                console.warn(`[push] ${this.node.label} pre-push validation:`, this.pushValidation)
+            }
+        } else {
+            this.pushValidation = null
+        }
         this.configPushConfirm = true
         this.configPushOutput = null
         this.cdr.markForCheck()

@@ -1618,6 +1618,20 @@ netops-3d-canvas {
   padding: 4px 10px 2px;
 }
 
+// Inline note shown under the Start/Suspend/Stop block when the right-clicked
+// node is a mapped physical device. Explains why those three are disabled
+// (they only flip the status pill — no real-world effect) and points to the
+// Reboot Device action which actually issues an SSH command.
+.ctx-physical-hint {
+  font-size: 10px;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 2px 10px 6px;
+  line-height: 1.35;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.18);
+  margin: 0 4px 2px;
+}
+
 .ctx-style-row {
   display: flex;
   gap: 4px;
@@ -1873,6 +1887,17 @@ netops-3d-canvas {
   &.ctx-suspend:not(:disabled):hover { color: var(--warning) }
   &.ctx-stop:not(:disabled):hover    { color: var(--danger)  }
   &:disabled { opacity: 0.4; cursor: not-allowed }
+
+  // Destructive items (Reboot Device …) — orange tint to flag risk, intensifies
+  // on hover. Subtle so the menu doesn't feel cluttered, prominent enough that
+  // a click never feels accidental.
+  &.ctx-destructive:not(:disabled) {
+    color: #f59e0b;
+    &:hover {
+      color: #fff;
+      background: rgba(245, 158, 11, 0.18);
+    }
+  }
 }
 
 .ctx-sep {
@@ -9004,4 +9029,15 @@ netops-3d-canvas {
   cursor: pointer;
   transition: background 0.15s;
   &:hover { background: rgba(239,68,68,0.2); }
+}
+
+// Retry-failed button on the Push Day-0 Staging dialog. Amber so it doesn't
+// blend with the green Push button or the neutral Cancel.
+.btn-retry-staging {
+  border-color: #f97316 !important;
+  color: #f97316 !important;
+  &:hover:not(:disabled) {
+    background: #f97316 !important;
+    color: #fff !important;
+  }
 }
