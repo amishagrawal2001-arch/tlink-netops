@@ -7,7 +7,7 @@
     "email": "support@tlink.io"
   },
   "homepage": "https://github.com/amishagrawal2001-arch/tlink-netops",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "main": "app/dist/main.js",
   "type": "commonjs",
   "private": true,
