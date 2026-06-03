@@ -694,7 +694,12 @@ export class TopologyService {
                 srgbEnd: def.srgbEnd,
                 srv6Locator: def.srv6Locator,
                 mplsLdp: def.mplsLdp,
-            }
+                // R2: propagate per-node template fields added in Round 2.
+                description: def.description,
+                image: def.image,
+                // Per-node staging; deep-copied so user edits don't mutate the template.
+                ...(def.staging ? { staging: JSON.parse(JSON.stringify(def.staging)) } : {}),
+            } as TopologyNode
 
             return node
         })
@@ -733,6 +738,14 @@ export class TopologyService {
             oismEnabled: tpl.oismEnabled,
             macVrfEnabled: tpl.macVrfEnabled,
             telemetryEnabled: tpl.telemetryEnabled,
+            // R2: fabric-wide staging defaults + annotations from template.
+            // Deep-copied so user edits don't mutate the template object.
+            ...(tpl.staging ? { staging: JSON.parse(JSON.stringify(tpl.staging)) } : {}),
+            ...(tpl.annotations?.length ? { annotations: tpl.annotations.map(a => ({ ...a })) } : {}),
+            // RLI 52387: carry IP-VRF / EVPN T5 stitching definitions into the
+            // live topology. Deep-cloned (nested objects/arrays) so canvas
+            // edits never mutate the source template.
+            ...(tpl.vrfs?.length ? { vrfs: JSON.parse(JSON.stringify(tpl.vrfs)) } : {}),
         })
         this._selectedNode$.next(null)
         this._selectedLink$.next(null)

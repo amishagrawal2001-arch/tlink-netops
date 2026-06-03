@@ -1,10 +1,10 @@
 import {
-    ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, OnDestroy, Output,
+    ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, OnDestroy, OnInit, Output,
 } from '@angular/core'
 import { TopologyService } from '../services/topology.service'
 import {
     TOPOLOGY_TEMPLATES, TopologyTemplate, TemplateCategory,
-    DEFAULT_PORTS, TemplateNodeDef, NodePort,
+    DEFAULT_PORTS, TemplateNodeDef, TemplateLinkDef, NodePort,
 } from '../api/interfaces'
 import { buildVendorStartupConfig, VendorConfigContext, BgpNeighbor, OspfInterface, IsisInterface } from '../services/vendor-config-builder'
 
@@ -16,7 +16,7 @@ type FilterTab = 'all' | TemplateCategory
     styleUrls: ['./templates.component.scss'],
     changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TemplatesComponent implements OnDestroy {
+export class TemplatesComponent implements OnInit, OnDestroy {
 
     @Output() closed = new EventEmitter<void>()
     @Output() switchToBuilder = new EventEmitter<void>()
@@ -28,6 +28,71 @@ export class TemplatesComponent implements OnDestroy {
     searchQuery = ''
 
     private _hoverTimer: any
+    private _api = (window as any).netopsAPI
+
+    /** R3: User-saved templates persisted under prefs key 'user-topology-templates'.
+     *  Merged with built-ins via `userAndAllTemplates`. Loaded in ngOnInit. */
+    userTemplates: TopologyTemplate[] = []
+
+    /** R3: Last 5 template IDs the user loaded, newest-first. Persisted under
+     *  prefs key 'recently-used-templates'. Surfaced as a Recents strip
+     *  above the main grid when no search/filter is active. */
+    recentTemplateIds: string[] = []
+
+    /** Save-as-template dialog state. */
+    showSaveDialog = false
+    saveDialogName = ''
+    saveDialogDescription = ''
+    saveDialogCategory: TemplateCategory = 'general'
+    saveDialogIcon = '📐'
+    saveDialogError = ''
+    /** When set, the save dialog is editing an existing user template
+     *  rather than capturing the current topology. */
+    private _editingUserTemplateId: string | null = null
+
+    // ── Memoization caches (R1.1 + R1.2) ────────────────────────────────────
+    // The templates getter + countFor used to run the full filter pipeline on
+    // every change-detection cycle — 13 invocations per render (one per tab
+    // plus the visible grid), each iterating all 172 templates. Caches keyed
+    // on (searchQuery, activeFilter) so the work happens once per state change.
+    private _filterCacheKey = ''
+    private _filteredCache: TopologyTemplate[] = []
+    private _searchFilteredCache: TopologyTemplate[] = []   // search applied, no category filter
+    private _countCacheKey = ''
+    private _countCache: Map<FilterTab, number> = new Map()
+
+    /** Build the searchable haystack for one template. Extended in R1.3 to
+     *  include node-level model / role / switchFamily / label so that searching
+     *  for a model like "QFX5120" or role like "spine-leaf" hits templates
+     *  that use those only at the node level. */
+    private _haystackFor (t: TopologyTemplate): string {
+        const nodeBits: string[] = []
+        for (const n of t.nodes) {
+            if (n.vendor)       { nodeBits.push(n.vendor) }
+            if (n.model)        { nodeBits.push(n.model) }
+            if (n.role)         { nodeBits.push(n.role) }
+            if (n.switchFamily) { nodeBits.push(n.switchFamily) }
+            if (n.label)        { nodeBits.push(n.label) }
+        }
+        // tags joined too so a multi-category template can be searched by any tag.
+        const tagBits = (t.tags ?? []).join(' ')
+        // VRF metadata: name, id, RD, RT, VNI (DC + interconnect) + interco
+        // domain-id. Lets an operator find a stitching template by typing
+        // "70104", "T5-VRF-A", "target:1:80104", etc.
+        const vrfBits: string[] = []
+        for (const v of (t.vrfs ?? [])) {
+            if (v.id)                vrfBits.push(v.id)
+            if (v.name)              vrfBits.push(v.name)
+            if (v.routeDistinguisher) vrfBits.push(v.routeDistinguisher)
+            if (v.vrfTarget)         vrfBits.push(v.vrfTarget)
+            if (v.routingVni)        vrfBits.push(String(v.routingVni))
+            if (v.domainId)          vrfBits.push(v.domainId)
+            if (v.interconnect?.routingVni) vrfBits.push(String(v.interconnect.routingVni))
+            if (v.interconnect?.vrfTarget)  vrfBits.push(v.interconnect.vrfTarget)
+            if (v.interconnect?.domainId)   vrfBits.push(v.interconnect.domainId)
+        }
+        return `${t.name} ${t.description} ${t.category} ${t.id} ${tagBits} ${nodeBits.join(' ')} ${vrfBits.join(' ')}`.toLowerCase()
+    }
 
     constructor (
         private svc: TopologyService,
@@ -50,20 +115,28 @@ export class TemplatesComponent implements OnDestroy {
     ]
 
 
+    /** Memoized: filtered template list for the active filter + search query.
+     *  Recomputes only when the (searchQuery, activeFilter) tuple changes. */
     get templates (): TopologyTemplate[] {
-        let list = this.allTemplates
-        if (this.activeFilter !== 'all') {
-            list = list.filter(t => t.category === this.activeFilter)
-        }
-        if (this.searchQuery.trim()) {
-            const q = this.searchQuery.trim().toLowerCase()
-            list = list.filter(t => {
-                const vendorNames = t.nodes.map(n => (n.vendor ?? '').toLowerCase()).join(' ')
-                const haystack = `${t.name} ${t.description} ${t.category} ${vendorNames} ${t.id}`.toLowerCase()
-                return haystack.includes(q)
-            })
-        }
-        return list
+        const key = `${this.searchQuery.trim().toLowerCase()}|${this.activeFilter}`
+        if (this._filterCacheKey === key) { return this._filteredCache }
+
+        // Apply search first so the cache helper for countFor can reuse it.
+        const q = this.searchQuery.trim().toLowerCase()
+        const searchFiltered = q
+            ? this.userAndAllTemplates.filter(t => this._haystackFor(t).includes(q))
+            : this.userAndAllTemplates
+        this._searchFilteredCache = searchFiltered
+
+        // Then category.
+        const result = this.activeFilter === 'all'
+            ? searchFiltered
+            : searchFiltered.filter(t => t.category === this.activeFilter || (t.tags ?? []).includes(this.activeFilter))
+        this._filterCacheKey = key
+        this._filteredCache = result
+        // Counts depend on the same search-filtered list — invalidate.
+        this._countCacheKey = ''
+        return result
     }
 
     setFilter (f: FilterTab): void { this.activeFilter = f }
@@ -72,24 +145,57 @@ export class TemplatesComponent implements OnDestroy {
 
     clearSearch (): void { this.searchQuery = '' }
 
+    /** Memoized per-tab count. Pre-computes all tabs on first call per search
+     *  state so we don't iterate the full template list once per tab. */
     countFor (f: FilterTab): number {
-        let list = this.allTemplates
-        if (this.searchQuery.trim()) {
-            const q = this.searchQuery.trim().toLowerCase()
-            list = list.filter(t => {
-                const vendorNames = t.nodes.map(n => (n.vendor ?? '').toLowerCase()).join(' ')
-                const haystack = `${t.name} ${t.description} ${t.category} ${vendorNames} ${t.id}`.toLowerCase()
-                return haystack.includes(q)
-            })
+        const searchKey = this.searchQuery.trim().toLowerCase()
+        if (this._countCacheKey !== searchKey) {
+            // Make sure the search-filtered cache is fresh — accessing the
+            // templates getter populates _searchFilteredCache as a side-effect.
+            const _ = this.templates  // eslint-disable-line @typescript-eslint/no-unused-vars
+            const list = this._searchFilteredCache
+            this._countCache.clear()
+            this._countCache.set('all', list.length)
+            for (const t of list) {
+                this._countCache.set(t.category, (this._countCache.get(t.category) ?? 0) + 1)
+                for (const tag of (t.tags ?? [])) {
+                    // tags vs categories sit in the same FilterTab union, so
+                    // a tag matching a known tab boosts that tab's count.
+                    this._countCache.set(tag as FilterTab, (this._countCache.get(tag as FilterTab) ?? 0) + 1)
+                }
+            }
+            this._countCacheKey = searchKey
         }
-        if (f === 'all') { return list.length }
-        return list.filter(t => t.category === f).length
+        return this._countCache.get(f) ?? 0
+    }
+
+    /** R3: replace-topology confirm now reports the cost — node count, link
+     *  count, annotations, and how many nodes carry a manual / pulled startup
+     *  config that would be discarded. */
+    private _confirmReplaceMessage (newTpl: TopologyTemplate): string {
+        const t = this.svc.topology
+        const nodeCount = t.nodes.length
+        const linkCount = t.links.length
+        const annoCount = (t.annotations ?? []).length
+        const manualConfigCount = t.nodes.filter(n =>
+            (n as any).configSource === 'manual' || (n as any).configSource === 'pulled',
+        ).length
+        const bits = [
+            `${nodeCount} node${nodeCount === 1 ? '' : 's'}`,
+            `${linkCount} link${linkCount === 1 ? '' : 's'}`,
+        ]
+        if (annoCount > 0)         { bits.push(`${annoCount} annotation${annoCount === 1 ? '' : 's'}`) }
+        if (manualConfigCount > 0) { bits.push(`${manualConfigCount} manual/pulled config${manualConfigCount === 1 ? '' : 's'}`) }
+        return `Replace the current topology with "${newTpl.name}"?\n\n` +
+               `This will discard:\n  • ${bits.join('\n  • ')}\n\n` +
+               `Continue?`
     }
 
     load (tpl: TopologyTemplate): void {
         const hasNodes = this.svc.topology.nodes.length > 0
-        if (hasNodes && !confirm(`Replace current topology with "${tpl.name}"?`)) { return }
+        if (hasNodes && !confirm(this._confirmReplaceMessage(tpl))) { return }
         this.svc.loadTemplate(tpl)
+        this._trackRecent(tpl.id)
         this.closed.emit()
     }
 
@@ -97,8 +203,174 @@ export class TemplatesComponent implements OnDestroy {
         $event.stopPropagation()
         if (!confirm(`Deploy "${tpl.name}" as a containerlab lab? This will load the template and start deployment.`)) { return }
         this.svc.loadTemplate(tpl)
+        this._trackRecent(tpl.id)
         this.closed.emit()
         this.deployRequested.emit()
+    }
+
+    // ── R3: Save / Fork / Delete user templates ─────────────────────────────
+
+    /** Open the save dialog capturing the CURRENT canvas as a new user template.
+     *  No template loaded; this snapshots whatever the user has built. */
+    openSaveCurrentDialog (): void {
+        if (this.svc.topology.nodes.length === 0) {
+            window.alert('Nothing on the canvas to save — add at least one node first.')
+            return
+        }
+        this._editingUserTemplateId = null
+        this.saveDialogName = this.svc.topology.name || 'My Template'
+        this.saveDialogDescription = this.svc.topology.description || ''
+        this.saveDialogCategory = 'general'
+        this.saveDialogIcon = '📐'
+        this.saveDialogError = ''
+        this.showSaveDialog = true
+        this.cdr.markForCheck()
+    }
+
+    /** Fork: load the template, then immediately open the save dialog so the
+     *  user can save edits-as-a-new template after tweaking. Implemented by
+     *  loading the template and emitting `switchToBuilder` so the user lands
+     *  in the builder with the forked content. The save action is then a
+     *  separate explicit "Save current as template" from the Templates dialog
+     *  next time they open it. */
+    forkTemplate (tpl: TopologyTemplate, $event: Event): void {
+        $event.stopPropagation()
+        const hasNodes = this.svc.topology.nodes.length > 0
+        if (hasNodes && !confirm(this._confirmReplaceMessage(tpl))) { return }
+        this.svc.loadTemplate(tpl)
+        this._trackRecent(tpl.id)
+        // Append " (copy)" to the topology name as a hint that this is a derivative.
+        try { (this.svc as any).rename?.(`${tpl.name} (copy)`) } catch { /* ignore */ }
+        this.closed.emit()
+        this.switchToBuilder.emit()
+    }
+
+    cancelSaveDialog (): void {
+        this.showSaveDialog = false
+        this._editingUserTemplateId = null
+        this.saveDialogError = ''
+        this.cdr.markForCheck()
+    }
+
+    confirmSaveDialog (): void {
+        const name = this.saveDialogName.trim()
+        if (!name) { this.saveDialogError = 'Name is required'; this.cdr.markForCheck(); return }
+        // Reject duplicate user-template names so the catalog list stays
+        // readable (built-ins are exempted because they can't be renamed).
+        const dupe = this.userTemplates.some(t =>
+            t.id !== this._editingUserTemplateId &&
+            t.name.toLowerCase() === name.toLowerCase(),
+        )
+        if (dupe) { this.saveDialogError = `A user template named "${name}" already exists`; this.cdr.markForCheck(); return }
+
+        const snapshot = this._buildTemplateFromTopology(name)
+        if (this._editingUserTemplateId) {
+            this.userTemplates = this.userTemplates.map(t =>
+                t.id === this._editingUserTemplateId
+                    ? { ...t, ...snapshot, id: t.id, createdAt: t.createdAt, updatedAt: new Date().toISOString() }
+                    : t,
+            )
+        } else {
+            this.userTemplates = [snapshot, ...this.userTemplates]
+        }
+        this._persistUserTemplates()
+        this._invalidateCaches()
+        this.showSaveDialog = false
+        this._editingUserTemplateId = null
+        this.cdr.markForCheck()
+    }
+
+    deleteUserTemplate (tpl: TopologyTemplate, $event: Event): void {
+        $event.stopPropagation()
+        if (!tpl.userCreated) { return }
+        if (!confirm(`Delete saved template "${tpl.name}"? This cannot be undone.`)) { return }
+        this.userTemplates = this.userTemplates.filter(t => t.id !== tpl.id)
+        this.recentTemplateIds = this.recentTemplateIds.filter(id => id !== tpl.id)
+        this._persistUserTemplates()
+        this._persistRecents()
+        this._invalidateCaches()
+        this.cdr.markForCheck()
+    }
+
+    /** Capture the current `TopologyService.topology` as a TopologyTemplate.
+     *  Strips runtime state (status, mapped, alarms) and node IDs (templates
+     *  use array indices). */
+    private _buildTemplateFromTopology (name: string): TopologyTemplate {
+        const t = this.svc.topology
+        const idIndex = new Map<string, number>()
+        t.nodes.forEach((n, i) => idIndex.set(n.id, i))
+
+        const nodeDefs: TemplateNodeDef[] = t.nodes.map(n => {
+            const def: TemplateNodeDef = {
+                type: n.type,
+                label: n.label,
+                x: n.x,
+                y: n.y,
+                vendor: n.vendor,
+                model: n.model,
+                switchFamily: n.switchFamily,
+                mgmtIp: n.mgmtIp,
+                loopbackIp: n.loopbackIp,
+                loopbackIpv6: n.loopbackIpv6,
+                vlans: n.vlans ? n.vlans.map(v => ({ ...v })) : undefined,
+                ports: n.ports.map(p => ({ ...p })),
+                asn: n.asn,
+                role: n.role,
+                ospfArea: n.ospfArea,
+                isisLevel: n.isisLevel,
+                nodeSid: n.nodeSid,
+                srgbStart: (n as any).srgbStart,
+                srgbEnd:   (n as any).srgbEnd,
+                srv6Locator: (n as any).srv6Locator,
+                mplsLdp: (n as any).mplsLdp,
+                description: n.description,
+                image: (n as any).image,
+            }
+            // Per-node staging override (deep-copied).
+            const staging = (n as any).staging
+            if (staging) { (def as any).staging = JSON.parse(JSON.stringify(staging)) }
+            return def
+        })
+
+        const linkDefs: TemplateLinkDef[] = t.links.flatMap(l => {
+            const s = idIndex.get(l.sourceNodeId)
+            const tgt = idIndex.get(l.targetNodeId)
+            if (s == null || tgt == null) { return [] }
+            return [{ sourceNode: s, sourcePort: l.sourcePortId, targetNode: tgt, targetPort: l.targetPortId }]
+        })
+
+        const now = new Date().toISOString()
+        const hasVendor = nodeDefs.some(n => !!n.vendor)
+        const fabric = (t as any).staging
+        return {
+            id: `user-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+            name,
+            description: this.saveDialogDescription.trim(),
+            icon: this.saveDialogIcon || (hasVendor ? '🐳' : '📐'),
+            category: this.saveDialogCategory,
+            nodes: nodeDefs,
+            links: linkDefs,
+            underlayProtocol: t.underlayProtocol,
+            overlayEnabled: t.overlayEnabled,
+            vniBase: t.vniBase,
+            irbEnabled: t.irbEnabled,
+            irbGatewayBase: t.irbGatewayBase,
+            irbMode: t.irbMode,
+            oismEnabled: t.oismEnabled,
+            macVrfEnabled: t.macVrfEnabled,
+            telemetryEnabled: t.telemetryEnabled,
+            kind: hasVendor ? 'container' : 'design',
+            createdAt: now,
+            updatedAt: now,
+            userCreated: true,
+            ...(fabric ? { staging: JSON.parse(JSON.stringify(fabric)) } : {}),
+            ...(t.annotations?.length ? { annotations: t.annotations.map(a => ({ ...a })) } : {}),
+            // Preserve VRF definitions across fork → save (RLI 52387). Deep-
+            // cloned because VrfDefinition has nested arrays (memberNodes,
+            // interconnectNodes) and an inline interconnect{} object — a
+            // shallow .map would share those references with the live topology.
+            ...((t as any).vrfs?.length ? { vrfs: JSON.parse(JSON.stringify((t as any).vrfs)) } : {}),
+        }
     }
 
     close (): void { this.closed.emit() }
@@ -118,8 +390,63 @@ export class TemplatesComponent implements OnDestroy {
         this.hovered = null
     }
 
+    async ngOnInit (): Promise<void> {
+        // Load user templates + recents from prefs before first render so they
+        // show up immediately in the catalog (no flash-of-builtins-only).
+        try {
+            const saved = await this._api?.prefGet?.('user-topology-templates')
+            if (Array.isArray(saved)) {
+                this.userTemplates = saved.map(t => ({ ...t, userCreated: true }))
+            }
+            const recents = await this._api?.prefGet?.('recently-used-templates')
+            if (Array.isArray(recents)) {
+                this.recentTemplateIds = recents.filter(x => typeof x === 'string').slice(0, 5)
+            }
+        } catch { /* prefs unavailable — start with empty lists */ }
+        this._invalidateCaches()
+        this.cdr.markForCheck()
+    }
+
     ngOnDestroy (): void {
         clearTimeout(this._hoverTimer)
+    }
+
+    /** Built-ins + user templates, user-first so they appear at the top of
+     *  the relevant category. */
+    get userAndAllTemplates (): TopologyTemplate[] {
+        return this.userTemplates.length
+            ? [...this.userTemplates, ...this.allTemplates]
+            : this.allTemplates
+    }
+
+    /** Recently used templates, oldest filtered out. Shown only on the All
+     *  filter with an empty search query — so users see them as a quick-launch
+     *  strip, not interleaved with active filter results. */
+    get recentTemplates (): TopologyTemplate[] {
+        if (this.searchQuery.trim() || this.activeFilter !== 'all') { return [] }
+        const byId = new Map(this.userAndAllTemplates.map(t => [t.id, t]))
+        return this.recentTemplateIds
+            .map(id => byId.get(id))
+            .filter((t): t is TopologyTemplate => !!t)
+            .slice(0, 5)
+    }
+
+    private _persistRecents (): void {
+        try { this._api?.prefSet?.('recently-used-templates', this.recentTemplateIds) } catch { /* ignore */ }
+    }
+
+    private _persistUserTemplates (): void {
+        try { this._api?.prefSet?.('user-topology-templates', this.userTemplates) } catch { /* ignore */ }
+    }
+
+    private _trackRecent (id: string): void {
+        this.recentTemplateIds = [id, ...this.recentTemplateIds.filter(x => x !== id)].slice(0, 5)
+        this._persistRecents()
+    }
+
+    private _invalidateCaches (): void {
+        this._filterCacheKey = ''
+        this._countCacheKey = ''
     }
 
     openBuilder (): void {
@@ -127,9 +454,22 @@ export class TemplatesComponent implements OnDestroy {
         this.switchToBuilder.emit()
     }
 
-    /** True when at least one node in the template has a vendor set */
+    /** True when the template is a container-deployable (clab) lab.
+     *  Honors the explicit `kind` field added in R1.3; falls back to the
+     *  legacy hasVendorNodes heuristic for the ~170 built-in templates
+     *  that pre-date the field. */
     hasVendorNodes (tpl: TopologyTemplate): boolean {
+        if (tpl.kind === 'container' || tpl.kind === 'hybrid') { return true }
+        if (tpl.kind === 'design') { return false }
         return tpl.nodes.some(n => !!n.vendor)
+    }
+
+    /** Short label for the card type-badge. R1.3 promotes `hybrid` to its own
+     *  badge so users see it as distinct from container-only templates. */
+    templateKindLabel (tpl: TopologyTemplate): string {
+        if (tpl.kind === 'hybrid')                                       { return '🪢 Hybrid' }
+        if (tpl.kind === 'design' || !this.hasVendorNodes(tpl))          { return '📐 Design' }
+        return '🐳 Container'
     }
 
     /** Return the primary vendor(s) used in a template, e.g. "SONiC" or "Juniper · Arista" */

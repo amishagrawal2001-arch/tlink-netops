@@ -10,6 +10,12 @@
       span Choose a preset to instantly populate the canvas.
       span.tpl-or  or
       button.tpl-builder-link(type='button', (click)='openBuilder()') Build Custom
+      span.tpl-or  ·
+      button.tpl-builder-link(
+        type='button',
+        title='Snapshot the current canvas as a saved template (appears in My Templates)',
+        (click)='openSaveCurrentDialog()'
+      ) ⭐ Save Current as Template
 
     .tpl-search
       input.tpl-search-input(
@@ -34,6 +40,21 @@
         span {{ tab.label }}
         span.tpl-filter-count {{ countFor(tab.id) }}
 
+    //- Recents strip — quick-launch for the user's last 5 loaded templates.
+    //- Only visible when there's no active search and the All filter is on,
+    //- so it stays out of the way once the user is hunting for something specific.
+    .tpl-recents(*ngIf='recentTemplates.length > 0')
+      .tpl-recents-label Recently used
+      .tpl-recents-row
+        button.tpl-recent-chip(
+          *ngFor='let tpl of recentTemplates',
+          type='button',
+          [title]='tpl.description || tpl.name',
+          (click)='load(tpl)'
+        )
+          span.tpl-recent-chip-icon {{ tpl.icon }}
+          span.tpl-recent-chip-name {{ tpl.name }}
+
     .tpl-no-results(*ngIf='templates.length === 0')
       span(*ngIf='searchQuery') No templates found for "{{ searchQuery }}"
       span(*ngIf='!searchQuery') No templates in this category
@@ -49,9 +70,12 @@
         .tpl-card-top
           .tpl-card-icon {{ tpl.icon }}
           span.tpl-type-badge(
-            [class.tpl-type-container]='hasVendorNodes(tpl)',
+            [class.tpl-type-container]='hasVendorNodes(tpl) && tpl.kind !== "hybrid"',
+            [class.tpl-type-hybrid]='tpl.kind === "hybrid"',
             [class.tpl-type-design]='!hasVendorNodes(tpl)'
-          ) {{ hasVendorNodes(tpl) ? '🐳 Container' : '📐 Design' }}
+          ) {{ templateKindLabel(tpl) }}
+          //- Show ⭐ flag on user-created templates so they're scannable.
+          span.tpl-user-flag(*ngIf='tpl.userCreated', title='Your saved template') ⭐
         .tpl-card-name {{ tpl.name }}
         .tpl-card-vendor(*ngIf='vendorLabel(tpl)') {{ vendorLabel(tpl) }}
         .tpl-card-desc {{ tpl.description }}
@@ -70,7 +94,70 @@
             title='Download startup configs',
             (click)='downloadConfig(tpl, $event)'
           ) ⬇ Config
+          button.tpl-fork-btn(
+            type='button',
+            title='Fork: load this template into the builder so you can edit and save as your own',
+            (click)='forkTemplate(tpl, $event)'
+          ) 🍴 Fork
+          //- Delete only on user-created templates (built-ins can't be deleted).
+          button.tpl-delete-btn(
+            *ngIf='tpl.userCreated',
+            type='button',
+            title='Delete this saved template',
+            (click)='deleteUserTemplate(tpl, $event)'
+          ) ✕
         template-preview.tpl-preview-container(
           *ngIf='hovered === tpl.id',
           [template]='tpl'
         )
+
+  //- ── Save-as-template dialog ────────────────────────────────────────────
+  //- Shown when the user clicks ⭐ Save Current as Template (or future "edit
+  //- user template" entry points). Captures the current topology as a
+  //- TopologyTemplate snapshot and persists to user-prefs.
+  .tpl-save-overlay(*ngIf='showSaveDialog', (click)='cancelSaveDialog()')
+    .tpl-save-dialog((click)='$event.stopPropagation()')
+      .tpl-save-title ⭐ Save Current Topology as Template
+      .tpl-save-hint
+        | Captures the current canvas as a reusable template. Saved templates appear at the top of the catalog and persist across sessions.
+      .tpl-save-row
+        label.tpl-save-label Name
+        input.tpl-save-input(
+          type='text',
+          [(ngModel)]='saveDialogName',
+          placeholder='e.g. Spine-Leaf with custom EVPN',
+          autofocus
+        )
+      .tpl-save-row
+        label.tpl-save-label Description
+        input.tpl-save-input(
+          type='text',
+          [(ngModel)]='saveDialogDescription',
+          placeholder='Optional — describe when to use it'
+        )
+      .tpl-save-row
+        label.tpl-save-label Category
+        select.tpl-save-input([(ngModel)]='saveDialogCategory')
+          option(value='general') General
+          option(value='datacenter') Datacenter
+          option(value='enterprise') Enterprise
+          option(value='service-provider') Service Provider
+          option(value='dci') DCI
+          option(value='ipv6') IPv6
+          option(value='segment-routing') Segment Routing
+          option(value='routing') Routing
+          option(value='security') Security
+          option(value='wan') WAN
+          option(value='multi-vendor') Multi-Vendor
+      .tpl-save-row
+        label.tpl-save-label Icon
+        input.tpl-save-input(
+          type='text',
+          [(ngModel)]='saveDialogIcon',
+          placeholder='📐',
+          style='max-width:80px'
+        )
+      .tpl-save-error(*ngIf='saveDialogError') ⚠ {{ saveDialogError }}
+      .tpl-save-actions
+        button.tpl-save-btn(type='button', (click)='cancelSaveDialog()') Cancel
+        button.tpl-save-btn.tpl-save-btn-primary(type='button', (click)='confirmSaveDialog()') Save

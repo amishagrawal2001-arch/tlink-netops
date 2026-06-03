@@ -362,6 +362,64 @@ export interface Topology {
     /** Day-0 staging defaults applied to every node (NTP, SNMP, LLDP, syslog,
      *  DNS, AAA users, banner). Per-node overrides live on TopologyNode.staging. */
     staging?: DeviceStagingConfig
+
+    /** First-class IP-VRF / EVPN T5 routing-instance definitions. Lets a
+     *  template (or an authored topology) describe per-VRF VNI, RD, RT and
+     *  interconnect-stitching parameters that downstream config-gen can lower
+     *  into Junos `ip-vrf { protocols evpn { interconnect { ... } } }` or
+     *  equivalent stanzas on other vendors. Introduced for RLI 52387
+     *  (Pure T5↔T5 EVPN-VXLAN seamless stitching). */
+    vrfs?: VrfDefinition[]
+}
+
+/**
+ * IP-VRF definition for EVPN-VXLAN T5 fabrics, with optional interconnect
+ * stanza for seamless T5↔T5 stitching (RLI 52387 / draft-bess-evpn-prefix-
+ * advertisement). One VRF can be applied to many member nodes; for N:1
+ * stitching multiple DC-side VRFs map to the same interconnect VRF on the iGW.
+ */
+export interface VrfDefinition {
+    /** Stable identifier within the topology/template. */
+    id: string
+    /** Display name, e.g. 'T5-VRF-A'. */
+    name: string
+    /** Instance type — currently only 'vrf' for IP-VRF; reserved for future. */
+    instanceType: 'vrf'
+    /** Routing VNI (L3 VNI) — e.g. 70104 on DC side, 80104 on interconnect. */
+    routingVni: number
+    /** Route distinguisher, e.g. '100.1.1.11:1'. */
+    routeDistinguisher: string
+    /** VRF target community, e.g. 'target:1:101'. */
+    vrfTarget: string
+    /** Indices into topology.nodes (or template.nodes) that participate
+     *  in this VRF — i.e. nodes that host the IP-VRF routing instance. */
+    memberNodes: number[]
+    /** Subset of `memberNodes` that additionally carry the
+     *  `protocols evpn { interconnect { ... } }` stanza (i.e. the iGWs that
+     *  re-originate T5 routes onto the DCI). When omitted, the `interconnect`
+     *  block — if present — is treated as applying to all `memberNodes`.
+     *  Use this to distinguish the 1:1 case (one VRF shared across leaves +
+     *  iGWs, but only iGWs re-originate) from N:1 (separate interco VRF
+     *  whose every member is an iGW). */
+    interconnectNodes?: number[]
+    /** EVPN domain-id for D_PATH loop prevention (RLI 50205 + RLI 52387),
+     *  e.g. '6500:1:evpn' or '6500:2:evpn-dci'. */
+    domainId?: string
+    /** Optional interconnect stanza — present on iGW-side VRFs that re-originate
+     *  T5 routes onto the DCI fabric. When `mapsToVrfId` is set, that's the
+     *  remote/interconnect VRF this one stitches into; for N:1, multiple
+     *  DC-side VRFs share the same `mapsToVrfId`. */
+    interconnect?: {
+        routeDistinguisher?: string
+        vrfTarget?: string
+        routingVni?: number
+        domainId?: string
+        mapsToVrfId?: string
+    }
+    /** Chassis MAC used as the router-mac community on re-originated T5 NLRI. */
+    chassisMac?: string
+    /** Free-form description (subnet list, tenant role, fabric position). */
+    description?: string
 }
 
 export interface TelemetryConfig {
@@ -855,6 +913,14 @@ export interface TemplateNodeDef {
     srgbEnd?: number            // SRGB end label (default 23999)
     srv6Locator?: string        // SRv6 locator prefix (e.g. fc00:0:1::/48)
     mplsLdp?: boolean           // enable MPLS LDP on this node
+    /** Per-node Day-0 staging overrides — merged over the template's
+     *  topology-level `staging` defaults at load time. */
+    staging?: DeviceStagingConfig
+    /** Free-form description / notes about the node's role in the template. */
+    description?: string
+    /** Container image tag (clab kind/image). When set, the deploy path can
+     *  request this specific image instead of relying on global mappings. */
+    image?: string
 }
 
 export interface TemplateLinkDef {
@@ -884,6 +950,30 @@ export interface TopologyTemplate {
     irbMode?: 'symmetric' | 'asymmetric'
     oismEnabled?: boolean
     telemetryEnabled?: boolean
+    /** Explicit template kind. When unset, callers should fall back to the
+     *  hasVendorNodes heuristic for backward compatibility with the existing
+     *  ~170 built-in templates that don't set this field. */
+    kind?: 'design' | 'container' | 'hybrid'
+    /** Free-form tags, in addition to the single `category`. Lets a template
+     *  surface under multiple filters — e.g. a Spine-Leaf with IPv6 EVPN
+     *  could carry `category: 'datacenter'` and `tags: ['ipv6', 'segment-routing']`. */
+    tags?: string[]
+    /** Semver-style version string for tracking template revisions. */
+    version?: string
+    /** ISO timestamp of when the template was created / last updated. */
+    createdAt?: string
+    updatedAt?: string
+    /** Fabric-wide Day-0 staging defaults seeded into Topology.staging on load. */
+    staging?: DeviceStagingConfig
+    /** Topology-level annotations (text labels, region notes, rack markers). */
+    annotations?: Annotation[]
+    /** True when the template is a saved user creation (vs a built-in).
+     *  Used to render the delete affordance in the templates browser. */
+    userCreated?: boolean
+    /** First-class IP-VRF / EVPN T5 definitions seeded into Topology.vrfs
+     *  on load. Used by EVPN-VXLAN templates (esp. T5↔T5 stitching, RLI 52387)
+     *  to carry per-VRF VNI/RD/RT/domain-id + interconnect mappings. */
+    vrfs?: VrfDefinition[]
 }
 
 export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
@@ -3036,6 +3126,530 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
             { sourceNode: 3, sourcePort: 'et0', targetNode: 4, targetPort: 'et1' },
             { sourceNode: 4, sourcePort: 'et0', targetNode: 5, targetPort: 'et0' },
             { sourceNode: 5, sourcePort: 'xe0', targetNode: 7, targetPort: 'eth0' },
+        ],
+    },
+
+    // ─── Juniper EVPN Pure T5↔T5 Seamless Stitching (RLI 52387) ──────────────────
+    //
+    // Two multi-pod EVPN-VXLAN templates that model the iGW (interconnect-gateway)
+    // stitching domain described in RLI 52387. Both share an identical physical
+    // topology — 2 PTX10001 super-spines, 4 QFX5130 iGW spines (2 per pod), 6
+    // QFX5120 server leaves (3 per pod) and 6 hosts — and differ only in how
+    // their IP-VRFs map across the DCI:
+    //
+    //   • 1:1 — every leaf carries a single T5-VRF-A (vni 70104), and the iGWs
+    //     re-originate it onto the interconnect routing-VNI 80104. One DC VRF
+    //     ↔ one interconnect VRF.
+    //
+    //   • N:1 — three tenant VRFs on the leaves (T5-VRF-A/B/C with vnis
+    //     70104/70105/70106) all collapse into a single interconnect VRF
+    //     (T5-VRF-D, vni 80104) on the iGWs. Demonstrates the route-aggregation
+    //     pattern in RLI section 2.2 (Figure 3/4).
+    //
+    // The new `vrfs[]` field on TopologyTemplate carries the per-VRF
+    // RD/RT/VNI/domain-id and `interconnect` stanza needed for future Junos
+    // `ip-vrf { protocols evpn { interconnect { ... } } }` config generation.
+
+    {
+        id: 'jnpr-evpn-t5-stitching-1to1',
+        name: 'Juniper EVPN Pure T5↔T5 Stitching (1:1)',
+        description: '2 PTX super-spines + 4 QFX5130 iGW spines (2/pod) + 6 QFX5120 leaves (3/pod) + 6 hosts. One DC T5-VRF (vni 70104) stitched 1:1 to interconnect VRF (vni 80104) at the iGWs. Models RLI 52387 Figure 2.',
+        icon: '🧵',
+        category: 'dci',
+        kind: 'container',
+        tags: ['evpn', 'vxlan', 'type-5', 'stitching', 'multi-pod', 'igw', 'dci', 'rli-52387'],
+        version: '1.0.0',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        macVrfEnabled: true,
+        vniBase: 10000,
+        nodes: [
+            // ── Super-spines (DCI core / EVPN signaling) ────────────────────────
+            {
+                type: 'switch', label: 'super-spine1', x: 380, y: 40,
+                vendor: 'Juniper', model: 'PTX10001-36MR', switchFamily: 'PTX',
+                mgmtIp: '172.16.0.10/24', loopbackIp: '10.0.0.1/32', asn: 65000, role: 'super-spine',
+                description: 'DCI super-spine / EVPN route-reflector for the pure-T5 interco domain (vni 80104).',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to spine1 (pod1 iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to spine2 (pod1 iGW)' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '400G', description: 'to spine3 (pod2 iGW)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '400G', description: 'to spine4 (pod2 iGW)' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '400G', description: 'to super-spine2 (peer)' },
+                ],
+            },
+            {
+                type: 'switch', label: 'super-spine2', x: 540, y: 40,
+                vendor: 'Juniper', model: 'PTX10001-36MR', switchFamily: 'PTX',
+                mgmtIp: '172.16.0.11/24', loopbackIp: '10.0.0.2/32', asn: 65000, role: 'super-spine',
+                description: 'DCI super-spine peer / EVPN route-reflector.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '400G', description: 'to spine3' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '400G', description: 'to spine4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '400G', description: 'to super-spine1 (peer)' },
+                ],
+            },
+
+            // ── Pod1 iGW spines (border-leaf / interconnect gateway) ───────────
+            {
+                type: 'switch', label: 'spine1 (iGW)', x: 180, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.1/24', loopbackIp: '1.1.1.1/32', asn: 65001, role: 'border-leaf',
+                description: 'Pod1 iGW — re-originates T5-VRF-A from leaves onto interco VNI 80104. chassis-mac1, iRD 1.1.1.1:2, iRT target:1:80104.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine2 (MH peer iGW)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf1' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf2' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf3' },
+                ],
+            },
+            {
+                type: 'switch', label: 'spine2 (iGW)', x: 300, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.2/24', loopbackIp: '1.1.1.4/32', asn: 65001, role: 'border-leaf',
+                description: 'Pod1 iGW MH peer — chassis-mac4, iRD 1.1.1.4:2, iRT target:1:80104.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine1 (MH peer iGW)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf1' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf2' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf3' },
+                ],
+            },
+
+            // ── Pod1 server leaves (ERB / T5-VRF-A) ─────────────────────────────
+            {
+                type: 'switch', label: 'leaf1', x: 80, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.11/24', loopbackIp: '10.1.1.1/32', asn: 65011, role: 'leaf',
+                description: 'Pod1 leaf — T5-VRF-A vni 70104, host subnet 192.168.1.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.1.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+            {
+                type: 'switch', label: 'leaf2', x: 200, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.12/24', loopbackIp: '10.1.1.2/32', asn: 65012, role: 'leaf',
+                description: 'Pod1 leaf — T5-VRF-A vni 70104, host subnet 192.168.2.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.2.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+            {
+                type: 'switch', label: 'leaf3', x: 320, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.13/24', loopbackIp: '10.1.1.3/32', asn: 65013, role: 'leaf',
+                description: 'Pod1 leaf — T5-VRF-A vni 70104, host subnet 192.168.3.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.3.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+
+            // ── Pod1 hosts ──────────────────────────────────────────────────────
+            { type: 'server', label: 'host1', x: 80, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.1.10/24' }] },
+            { type: 'server', label: 'host2', x: 200, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.2.10/24' }] },
+            { type: 'server', label: 'host3', x: 320, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.3.10/24' }] },
+
+            // ── Pod2 iGW spines ─────────────────────────────────────────────────
+            {
+                type: 'switch', label: 'spine3 (iGW)', x: 600, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.1/24', loopbackIp: '1.1.1.13/32', asn: 65002, role: 'border-leaf',
+                description: 'Pod2 iGW — chassis-mac3, iRD 1.1.1.13:2, iRT target:1:80104.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine4 (MH peer iGW)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf5' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf6' },
+                ],
+            },
+            {
+                type: 'switch', label: 'spine4 (iGW)', x: 720, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.2/24', loopbackIp: '1.1.1.16/32', asn: 65002, role: 'border-leaf',
+                description: 'Pod2 iGW MH peer — chassis-mac6, iRD 1.1.1.16:2, iRT target:1:80104.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine3 (MH peer iGW)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf5' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf6' },
+                ],
+            },
+
+            // ── Pod2 server leaves ──────────────────────────────────────────────
+            {
+                type: 'switch', label: 'leaf4', x: 540, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.11/24', loopbackIp: '10.2.1.1/32', asn: 65021, role: 'leaf',
+                description: 'Pod2 leaf — T5-VRF-A vni 70104, host subnet 192.168.4.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.4.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+            {
+                type: 'switch', label: 'leaf5', x: 660, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.12/24', loopbackIp: '10.2.1.2/32', asn: 65022, role: 'leaf',
+                description: 'Pod2 leaf — T5-VRF-A vni 70104, host subnet 192.168.5.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.5.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+            {
+                type: 'switch', label: 'leaf6', x: 780, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.13/24', loopbackIp: '10.2.1.3/32', asn: 65023, role: 'leaf',
+                description: 'Pod2 leaf — T5-VRF-A vni 70104, host subnet 192.168.6.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.6.0/24', vlanMode: 'access', vlan: 101 },
+                ],
+            },
+
+            // ── Pod2 hosts ──────────────────────────────────────────────────────
+            { type: 'server', label: 'host4', x: 540, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.4.10/24' }] },
+            { type: 'server', label: 'host5', x: 660, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.5.10/24' }] },
+            { type: 'server', label: 'host6', x: 780, y: 500,
+                ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.6.10/24' }] },
+        ],
+        links: [
+            // Super-spine peer
+            { sourceNode: 0, sourcePort: 'et4', targetNode: 1, targetPort: 'et4' },
+            // Super-spines → all four iGW spines
+            { sourceNode: 0, sourcePort: 'et0', targetNode: 2,  targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et1', targetNode: 3,  targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et2', targetNode: 10, targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et3', targetNode: 11, targetPort: 'et0' },
+            { sourceNode: 1, sourcePort: 'et0', targetNode: 2,  targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et1', targetNode: 3,  targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et2', targetNode: 10, targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et3', targetNode: 11, targetPort: 'et1' },
+            // iGW MH peer links (intra-pod)
+            { sourceNode: 2,  sourcePort: 'et2', targetNode: 3,  targetPort: 'et2' },
+            { sourceNode: 10, sourcePort: 'et2', targetNode: 11, targetPort: 'et2' },
+            // Pod1 iGWs → pod1 leaves (full mesh)
+            { sourceNode: 2, sourcePort: 'et3', targetNode: 4, targetPort: 'et0' },
+            { sourceNode: 2, sourcePort: 'et4', targetNode: 5, targetPort: 'et0' },
+            { sourceNode: 2, sourcePort: 'et5', targetNode: 6, targetPort: 'et0' },
+            { sourceNode: 3, sourcePort: 'et3', targetNode: 4, targetPort: 'et1' },
+            { sourceNode: 3, sourcePort: 'et4', targetNode: 5, targetPort: 'et1' },
+            { sourceNode: 3, sourcePort: 'et5', targetNode: 6, targetPort: 'et1' },
+            // Pod2 iGWs → pod2 leaves (full mesh)
+            { sourceNode: 10, sourcePort: 'et3', targetNode: 12, targetPort: 'et0' },
+            { sourceNode: 10, sourcePort: 'et4', targetNode: 13, targetPort: 'et0' },
+            { sourceNode: 10, sourcePort: 'et5', targetNode: 14, targetPort: 'et0' },
+            { sourceNode: 11, sourcePort: 'et3', targetNode: 12, targetPort: 'et1' },
+            { sourceNode: 11, sourcePort: 'et4', targetNode: 13, targetPort: 'et1' },
+            { sourceNode: 11, sourcePort: 'et5', targetNode: 14, targetPort: 'et1' },
+            // Leaves → hosts
+            { sourceNode: 4,  sourcePort: 'xe0', targetNode: 7,  targetPort: 'eth0' },
+            { sourceNode: 5,  sourcePort: 'xe0', targetNode: 8,  targetPort: 'eth0' },
+            { sourceNode: 6,  sourcePort: 'xe0', targetNode: 9,  targetPort: 'eth0' },
+            { sourceNode: 12, sourcePort: 'xe0', targetNode: 15, targetPort: 'eth0' },
+            { sourceNode: 13, sourcePort: 'xe0', targetNode: 16, targetPort: 'eth0' },
+            { sourceNode: 14, sourcePort: 'xe0', targetNode: 17, targetPort: 'eth0' },
+        ],
+        vrfs: [
+            {
+                id: 't5-vrf-a',
+                name: 'T5-VRF-A',
+                instanceType: 'vrf',
+                routingVni: 70104,
+                routeDistinguisher: '1.1.1.11:1',
+                vrfTarget: 'target:1:101',
+                domainId: '6500:1:evpn',
+                // All leaves AND all iGWs host the VRF. Only the iGWs
+                // carry the interconnect stanza — that's what
+                // `interconnectNodes` narrows down. The leaves run T5-VRF-A
+                // as a regular EVPN-T5 instance; the iGWs additionally
+                // re-originate T5 prefixes onto the interco VNI (80104).
+                memberNodes: [2, 3, 4, 5, 6, 10, 11, 12, 13, 14],
+                interconnectNodes: [2, 3, 10, 11],
+                interconnect: {
+                    routingVni: 80104,
+                    vrfTarget: 'target:1:80104',
+                    domainId: '6500:2:evpn-dci',
+                },
+                description: 'Single tenant DC VRF stitched 1:1 to the interco VRF (vni 80104) at iGWs.',
+            },
+        ],
+    },
+
+    {
+        id: 'jnpr-evpn-t5-stitching-nto1',
+        name: 'Juniper EVPN Pure T5↔T5 Stitching (N:1)',
+        description: '2 PTX super-spines + 4 QFX5130 iGW spines + 6 QFX5120 leaves + 6 hosts. Three tenant T5-VRFs (vni 70104/70105/70106) collapse into a single interconnect VRF T5-VRF-D (vni 80104) at the iGWs. Models RLI 52387 Figure 4 — route aggregation across multiple tenants.',
+        icon: '🪡',
+        category: 'dci',
+        kind: 'container',
+        tags: ['evpn', 'vxlan', 'type-5', 'stitching', 'aggregation', 'multi-pod', 'multi-tenant', 'igw', 'dci', 'rli-52387'],
+        version: '1.0.0',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        macVrfEnabled: true,
+        vniBase: 10000,
+        // Same physical topology as the 1:1 variant — only the VRF membership
+        // and the per-leaf VLAN/tenant assignment differ. We deliberately
+        // duplicate the node/link defs (rather than share a const) so the
+        // template registry remains a flat literal — easy to diff, easy to
+        // tweak per-variant later (e.g. different ASN scheme, additional VRFs).
+        nodes: [
+            { type: 'switch', label: 'super-spine1', x: 380, y: 40,
+                vendor: 'Juniper', model: 'PTX10001-36MR', switchFamily: 'PTX',
+                mgmtIp: '172.16.0.10/24', loopbackIp: '10.0.0.1/32', asn: 65000, role: 'super-spine',
+                description: 'DCI super-spine / EVPN RR for pure-T5 interco domain (vni 80104, T5-VRF-D).',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '400G', description: 'to spine3' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '400G', description: 'to spine4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '400G', description: 'to super-spine2' },
+                ] },
+            { type: 'switch', label: 'super-spine2', x: 540, y: 40,
+                vendor: 'Juniper', model: 'PTX10001-36MR', switchFamily: 'PTX',
+                mgmtIp: '172.16.0.11/24', loopbackIp: '10.0.0.2/32', asn: 65000, role: 'super-spine',
+                description: 'DCI super-spine peer.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '400G', description: 'to spine3' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '400G', description: 'to spine4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '400G', description: 'to super-spine1' },
+                ] },
+            { type: 'switch', label: 'spine1 (iGW)', x: 180, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.1/24', loopbackIp: '1.1.1.1/32', asn: 65001, role: 'border-leaf',
+                description: 'Pod1 iGW — hosts T5-VRF-D (interco vni 80104); aggregates T5-VRF-A/B/C from leaves. chassis-mac1, iRD 1.1.1.1:2.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine2 (MH peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf1 (T5-VRF-A)' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf2 (T5-VRF-B)' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf3 (T5-VRF-C)' },
+                ] },
+            { type: 'switch', label: 'spine2 (iGW)', x: 300, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.2/24', loopbackIp: '1.1.1.4/32', asn: 65001, role: 'border-leaf',
+                description: 'Pod1 iGW MH peer — hosts T5-VRF-D. chassis-mac4, iRD 1.1.1.4:2.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine1 (MH peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf1' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf2' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf3' },
+                ] },
+            { type: 'switch', label: 'leaf1', x: 80, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.11/24', loopbackIp: '10.1.1.1/32', asn: 65011, role: 'leaf',
+                description: 'Pod1 leaf — tenant A. T5-VRF-A vni 70104, RT target:1:101, host net 192.168.1.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.1.0/24', vlanMode: 'access', vlan: 101 },
+                ] },
+            { type: 'switch', label: 'leaf2', x: 200, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.12/24', loopbackIp: '10.1.1.2/32', asn: 65012, role: 'leaf',
+                description: 'Pod1 leaf — tenant B. T5-VRF-B vni 70105, RT target:1:102, host net 192.168.2.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 102, name: 'tenant-b' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.2.0/24', vlanMode: 'access', vlan: 102 },
+                ] },
+            { type: 'switch', label: 'leaf3', x: 320, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.1.13/24', loopbackIp: '10.1.1.3/32', asn: 65013, role: 'leaf',
+                description: 'Pod1 leaf — tenant C. T5-VRF-C vni 70106, RT target:1:103, host net 192.168.3.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 103, name: 'tenant-c' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine2' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.3.0/24', vlanMode: 'access', vlan: 103 },
+                ] },
+            { type: 'server', label: 'host1', x: 80,  y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.1.10/24' }] },
+            { type: 'server', label: 'host2', x: 200, y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.2.10/24' }] },
+            { type: 'server', label: 'host3', x: 320, y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.3.10/24' }] },
+            { type: 'switch', label: 'spine3 (iGW)', x: 600, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.1/24', loopbackIp: '1.1.1.13/32', asn: 65002, role: 'border-leaf',
+                description: 'Pod2 iGW — hosts T5-VRF-D, aggregates T5-VRF-A/B/C from pod2 leaves. chassis-mac3, iRD 1.1.1.13:2.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine4 (MH peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf5' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf6' },
+                ] },
+            { type: 'switch', label: 'spine4 (iGW)', x: 720, y: 180,
+                vendor: 'Juniper', model: 'QFX5130-32CD', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.2/24', loopbackIp: '1.1.1.16/32', asn: 65002, role: 'border-leaf',
+                description: 'Pod2 iGW MH peer. chassis-mac6, iRD 1.1.1.16:2.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to super-spine1' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to super-spine2' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to spine3 (MH peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to leaf4' },
+                    { id: 'et4', label: 'et-0/0/4', enabled: true, speed: '100G', description: 'to leaf5' },
+                    { id: 'et5', label: 'et-0/0/5', enabled: true, speed: '100G', description: 'to leaf6' },
+                ] },
+            { type: 'switch', label: 'leaf4', x: 540, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.11/24', loopbackIp: '10.2.1.1/32', asn: 65021, role: 'leaf',
+                description: 'Pod2 leaf — tenant A. T5-VRF-A vni 70104, host net 192.168.4.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 101, name: 'tenant-a' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3 (iGW)' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4 (iGW)' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.4.0/24', vlanMode: 'access', vlan: 101 },
+                ] },
+            { type: 'switch', label: 'leaf5', x: 660, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.12/24', loopbackIp: '10.2.1.2/32', asn: 65022, role: 'leaf',
+                description: 'Pod2 leaf — tenant B. T5-VRF-B vni 70105, host net 192.168.5.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 102, name: 'tenant-b' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.5.0/24', vlanMode: 'access', vlan: 102 },
+                ] },
+            { type: 'switch', label: 'leaf6', x: 780, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.2.13/24', loopbackIp: '10.2.1.3/32', asn: 65023, role: 'leaf',
+                description: 'Pod2 leaf — tenant C. T5-VRF-C vni 70106, host net 192.168.6.0/24.',
+                vlans: [{ id: 10, name: 'MGMT' }, { id: 103, name: 'tenant-c' }],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to spine3' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to spine4' },
+                    { id: 'xe0', label: 'xe-0/0/0', enabled: true, speed: '25G', description: 'host net 192.168.6.0/24', vlanMode: 'access', vlan: 103 },
+                ] },
+            { type: 'server', label: 'host4', x: 540, y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.4.10/24' }] },
+            { type: 'server', label: 'host5', x: 660, y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.5.10/24' }] },
+            { type: 'server', label: 'host6', x: 780, y: 500, ports: [{ id: 'eth0', label: 'eth0', enabled: true, ipAddress: '192.168.6.10/24' }] },
+        ],
+        links: [
+            { sourceNode: 0, sourcePort: 'et4', targetNode: 1, targetPort: 'et4' },
+            { sourceNode: 0, sourcePort: 'et0', targetNode: 2,  targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et1', targetNode: 3,  targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et2', targetNode: 10, targetPort: 'et0' },
+            { sourceNode: 0, sourcePort: 'et3', targetNode: 11, targetPort: 'et0' },
+            { sourceNode: 1, sourcePort: 'et0', targetNode: 2,  targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et1', targetNode: 3,  targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et2', targetNode: 10, targetPort: 'et1' },
+            { sourceNode: 1, sourcePort: 'et3', targetNode: 11, targetPort: 'et1' },
+            { sourceNode: 2,  sourcePort: 'et2', targetNode: 3,  targetPort: 'et2' },
+            { sourceNode: 10, sourcePort: 'et2', targetNode: 11, targetPort: 'et2' },
+            { sourceNode: 2, sourcePort: 'et3', targetNode: 4, targetPort: 'et0' },
+            { sourceNode: 2, sourcePort: 'et4', targetNode: 5, targetPort: 'et0' },
+            { sourceNode: 2, sourcePort: 'et5', targetNode: 6, targetPort: 'et0' },
+            { sourceNode: 3, sourcePort: 'et3', targetNode: 4, targetPort: 'et1' },
+            { sourceNode: 3, sourcePort: 'et4', targetNode: 5, targetPort: 'et1' },
+            { sourceNode: 3, sourcePort: 'et5', targetNode: 6, targetPort: 'et1' },
+            { sourceNode: 10, sourcePort: 'et3', targetNode: 12, targetPort: 'et0' },
+            { sourceNode: 10, sourcePort: 'et4', targetNode: 13, targetPort: 'et0' },
+            { sourceNode: 10, sourcePort: 'et5', targetNode: 14, targetPort: 'et0' },
+            { sourceNode: 11, sourcePort: 'et3', targetNode: 12, targetPort: 'et1' },
+            { sourceNode: 11, sourcePort: 'et4', targetNode: 13, targetPort: 'et1' },
+            { sourceNode: 11, sourcePort: 'et5', targetNode: 14, targetPort: 'et1' },
+            { sourceNode: 4,  sourcePort: 'xe0', targetNode: 7,  targetPort: 'eth0' },
+            { sourceNode: 5,  sourcePort: 'xe0', targetNode: 8,  targetPort: 'eth0' },
+            { sourceNode: 6,  sourcePort: 'xe0', targetNode: 9,  targetPort: 'eth0' },
+            { sourceNode: 12, sourcePort: 'xe0', targetNode: 15, targetPort: 'eth0' },
+            { sourceNode: 13, sourcePort: 'xe0', targetNode: 16, targetPort: 'eth0' },
+            { sourceNode: 14, sourcePort: 'xe0', targetNode: 17, targetPort: 'eth0' },
+        ],
+        vrfs: [
+            // Tenant A — leaf1 + leaf4 (cross-pod), vni 70104 → stitched into T5-VRF-D
+            {
+                id: 't5-vrf-a',
+                name: 'T5-VRF-A',
+                instanceType: 'vrf',
+                routingVni: 70104,
+                routeDistinguisher: '1.1.1.11:1',
+                vrfTarget: 'target:1:101',
+                domainId: '6500:1:evpn',
+                memberNodes: [4, 12],
+                interconnect: { mapsToVrfId: 't5-vrf-d' },
+                description: 'Tenant A — pod1 leaf1 + pod2 leaf4, host nets 192.168.{1,4}.0/24.',
+            },
+            // Tenant B — leaf2 + leaf5, vni 70105 → T5-VRF-D
+            {
+                id: 't5-vrf-b',
+                name: 'T5-VRF-B',
+                instanceType: 'vrf',
+                routingVni: 70105,
+                routeDistinguisher: '1.1.1.12:1',
+                vrfTarget: 'target:1:102',
+                domainId: '6500:1:evpn',
+                memberNodes: [5, 13],
+                interconnect: { mapsToVrfId: 't5-vrf-d' },
+                description: 'Tenant B — pod1 leaf2 + pod2 leaf5, host nets 192.168.{2,5}.0/24.',
+            },
+            // Tenant C — leaf3 + leaf6, vni 70106 → T5-VRF-D
+            {
+                id: 't5-vrf-c',
+                name: 'T5-VRF-C',
+                instanceType: 'vrf',
+                routingVni: 70106,
+                routeDistinguisher: '1.1.1.13:1',
+                vrfTarget: 'target:1:103',
+                domainId: '6500:1:evpn',
+                memberNodes: [6, 14],
+                interconnect: { mapsToVrfId: 't5-vrf-d' },
+                description: 'Tenant C — pod1 leaf3 + pod2 leaf6, host nets 192.168.{3,6}.0/24.',
+            },
+            // Single interconnect VRF — lives on all four iGW spines, vni 80104
+            {
+                id: 't5-vrf-d',
+                name: 'T5-VRF-D (interco)',
+                instanceType: 'vrf',
+                routingVni: 80104,
+                routeDistinguisher: '1.1.1.1:2',
+                vrfTarget: 'target:200:1',
+                domainId: '6500:2:evpn-dci',
+                memberNodes: [2, 3, 10, 11],
+                description: 'Single interconnect VRF — A/B/C all collapse here. Carries all tenant prefixes across the DCI as one re-originated T5 stream.',
+            },
         ],
     },
 
