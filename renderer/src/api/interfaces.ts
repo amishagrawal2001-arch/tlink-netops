@@ -3653,6 +3653,262 @@ export const TOPOLOGY_TEMPLATES: TopologyTemplate[] = [
         ],
     },
 
+    {
+        // ─────────────────────────────────────────────────────────────────────
+        //  Third T5↔T5 template — mirrors a REAL Juniper sample deployment
+        //  configuration (not the RLI 52387 figures verbatim). Differs from
+        //  the two RLI-figure templates above in six ways the spec allowed
+        //  but didn't mandate:
+        //
+        //    1. Single routing VNI (9100) used on BOTH the DC side AND across
+        //       the interconnect — no separate interco VNI. Loop prevention
+        //       handled at the BGP layer.
+        //    2. Different DC-side vrf-target per pod (target:100:100 vs
+        //       target:300:300). Same VRF name (VRF-100), but routes are
+        //       BGP-isolated locally and can only cross the DCI via the
+        //       shared interconnect vrf-target (target:200:200).
+        //    3. Loop prevention via BGP communities + t5-internal-export
+        //       policy (RLI §2.3.c) — *not* D_PATH/domain-id (RLI §2.3.a).
+        //    4. CE attachment via ESI-LAG (all-active) — the standard real-
+        //       world multi-homing pattern. Modeled as a server node
+        //       connected to BOTH leaves via separate links; the description
+        //       carries the ESI value and lacp-system-id since the data
+        //       model doesn't yet have an EsiLagDefinition type.
+        //    5. Direct GW↔WAN underlay (no super-spines). Single WAN router
+        //       sits between the two DCs.
+        //    6. Dual-AS per node: each GW/leaf has an underlay AS (65101-65104,
+        //       65201-65204) and overlay AS (100 in DC1, 200 in DC2) via the
+        //       `local-as` BGP knob. Modeled here as the underlay AS on the
+        //       node and the overlay AS in the node description, since
+        //       TemplateNodeDef.asn is a single number.
+        //
+        //  These knobs aren't all expressible in the current TypeScript data
+        //  model — they're captured in description strings on nodes/VRFs so a
+        //  human reader can see the full deployment context even where the
+        //  config-gen path can't yet read them out.
+        // ─────────────────────────────────────────────────────────────────────
+        id: 'jnpr-evpn-t5-stitching-sample-deployment',
+        name: 'Juniper EVPN T5↔T5 Stitching (Sample Deployment)',
+        description: '11-node real-deployment shape — 2 GWs + 2 leaves per DC, 1 WAN router, 2 dual-homed CEs via ESI-LAG. Single VNI 9100, different DC-side RTs (100:100 / 300:300), shared interco RT 200:200, community-based loop prevention.',
+        icon: '🌐',
+        category: 'dci',
+        kind: 'container',
+        tags: ['evpn', 'vxlan', 'type-5', 'stitching', 'dci', 'esi-lag', 'single-vni', 'community-policy', 'real-deployment', 'sample-config'],
+        version: '1.0.0',
+        underlayProtocol: 'ebgp',
+        overlayEnabled: true,
+        irbEnabled: true,
+        irbMode: 'symmetric',
+        macVrfEnabled: true,
+        vniBase: 1, // sample config maps VLAN→VNI 1:1 (VLAN_1 → vni 1, etc.)
+        nodes: [
+            // ── DC1 (overlay AS 100) ────────────────────────────────────────
+            {
+                type: 'switch', label: 'DC1-GW11', x: 180, y: 180,
+                vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
+                mgmtIp: '172.16.10.1/24', loopbackIp: '10.255.1.1/32', asn: 65101, role: 'border-leaf',
+                description: 'DC1 iGW. underlay-AS 65101, overlay-AS 100 (via local-as on dci-overlay + 2Tor-overlay-ibgp groups). lo0.1=10.255.1.11/32 used as VRF-100 interface and as iRD source (10.255.1.11:110). interconnect-mh-peer=10.255.1.2 (GW12). Acts as RR cluster (cluster 10.255.1.1) for the 2 DC1 leaves.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (2Tor-underlay, 13.13.13.1/24, peer-as 65103)', ipAddress: '13.13.13.1/24' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to DC1-LEAF12 (2Tor-underlay, 14.14.14.1/24, peer-as 65104)', ipAddress: '14.14.14.1/24' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to DC1-GW12 (interconnect MH-peer link, iBGP overlay AS 100)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to WAN (dci-underlay, 19.19.19.1/24, peer-as 75201)', ipAddress: '19.19.19.1/24' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC1-GW12', x: 320, y: 180,
+                vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
+                mgmtIp: '172.16.10.2/24', loopbackIp: '10.255.1.2/32', asn: 65102, role: 'border-leaf',
+                description: 'DC1 iGW MH-peer. underlay-AS 65102, overlay-AS 100. lo0.1=10.255.1.12/32, iRD=10.255.1.12:110. interconnect-mh-peer=10.255.1.1 (GW11).',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC1-LEAF11 (24.24.24.2/24, peer-as 65103)', ipAddress: '24.24.24.2/24' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to DC1-LEAF12 (23.23.23.2/24, peer-as 65104)', ipAddress: '23.23.23.2/24' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to DC1-GW11 (MH-peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to WAN (29.29.29.2/24, peer-as 75201)', ipAddress: '29.29.29.2/24' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC1-LEAF11', x: 180, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.10.11/24', loopbackIp: '10.255.1.3/32', asn: 65103, role: 'leaf',
+                description: 'DC1 server leaf. underlay-AS 65103, overlay-AS 100 (via local-as on pod-overlay-ibgp). lo0.1=10.255.1.13/32 (VRF-100 interface, advertised with com1=100:101). 4 VLANs (1-4) with IRBs irb.1-irb.4 in VRF-100. ae0 ESI-LAG to CE1 with esi=00:01:02:00:00:00:00:00:00:01 all-active.',
+                vlans: [
+                    { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
+                    { id: 3, name: 'VLAN_3' }, { id: 4, name: 'VLAN_4' },
+                ],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/30', enabled: true, speed: '100G', description: 'to DC1-GW11 (2Spine-underlay, 13.13.13.3/24, peer-as 65101)', ipAddress: '13.13.13.3/24' },
+                    { id: 'et1', label: 'et-0/0/55', enabled: true, speed: '100G', description: 'to DC1-GW12 (24.24.24.3/24, peer-as 65102)', ipAddress: '24.24.24.3/24' },
+                    { id: 'ae0', label: 'ae0', enabled: true, speed: '100G', description: 'ESI-LAG to CE1, esi=00:01:02:00:00:00:00:00:00:01, lacp system-id 44:44:44:44:44:44, trunk VLAN_1-4', vlanMode: 'trunk', trunkAllowedVlans: '1,2,3,4' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC1-LEAF12', x: 320, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.10.12/24', loopbackIp: '10.255.1.4/32', asn: 65104, role: 'leaf',
+                description: 'DC1 server leaf (ESI-LAG peer). underlay-AS 65104, overlay-AS 100. lo0.1=10.255.1.14/32. Same VLANs/IRBs as LEAF11. ae0 ESI-LAG MH-peer.',
+                vlans: [
+                    { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
+                    { id: 3, name: 'VLAN_3' }, { id: 4, name: 'VLAN_4' },
+                ],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/30', enabled: true, speed: '100G', description: 'to DC1-GW11 (14.14.14.4/24, peer-as 65101)', ipAddress: '14.14.14.4/24' },
+                    { id: 'et1', label: 'et-0/0/55', enabled: true, speed: '100G', description: 'to DC1-GW12 (23.23.23.4/24, peer-as 65102)', ipAddress: '23.23.23.4/24' },
+                    { id: 'ae0', label: 'ae0', enabled: true, speed: '100G', description: 'ESI-LAG to CE1 (shared esi)', vlanMode: 'trunk', trunkAllowedVlans: '1,2,3,4' },
+                ],
+            },
+            {
+                type: 'server', label: 'CE1', x: 250, y: 500,
+                description: 'DC1 customer edge. Dual-homed via ae0 ESI-LAG to LEAF11+LEAF12. All-active; both up-links carry traffic.',
+                ports: [
+                    { id: 'eth0', label: 'eth0', enabled: true, description: 'to DC1-LEAF11 ae0 member' },
+                    { id: 'eth1', label: 'eth1', enabled: true, description: 'to DC1-LEAF12 ae0 member' },
+                ],
+            },
+
+            // ── WAN transit (single router between DCs) ─────────────────────
+            {
+                type: 'router', label: 'WAN', x: 480, y: 80,
+                vendor: 'Juniper', model: 'MX10003', switchFamily: 'MX',
+                mgmtIp: '172.16.0.99/24', loopbackIp: '10.255.0.99/32', asn: 75201, role: 'core',
+                description: 'DCI transit router. eBGP IPv4 to both DC GW pairs. dci-overlay (EVPN signaling) flows multihop between GW11/12 (AS 100) and GW21/22 (AS 200) over this router.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '400G', description: 'to DC1-GW11 (19.19.19.9/24)', ipAddress: '19.19.19.9/24' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '400G', description: 'to DC1-GW12 (29.29.29.9/24)', ipAddress: '29.29.29.9/24' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '400G', description: 'to DC2-GW21 (59.59.59.9/24)', ipAddress: '59.59.59.9/24' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '400G', description: 'to DC2-GW22 (69.69.69.9/24)', ipAddress: '69.69.69.9/24' },
+                ],
+            },
+
+            // ── DC2 (overlay AS 200) ────────────────────────────────────────
+            {
+                type: 'switch', label: 'DC2-GW21', x: 640, y: 180,
+                vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
+                mgmtIp: '172.16.20.1/24', loopbackIp: '10.255.2.1/32', asn: 65201, role: 'border-leaf',
+                description: 'DC2 iGW. underlay-AS 65201, overlay-AS 200. lo0.1=10.255.2.11/32, iRD=10.255.2.11:210. interconnect-mh-peer=10.255.2.2 (GW22). Has reject-asymmetric-vni knob set.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (57.57.57.5/24, peer-as 65203)', ipAddress: '57.57.57.5/24' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to DC2-LEAF22 (58.58.58.5/24, peer-as 65204)', ipAddress: '58.58.58.5/24' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to DC2-GW22 (MH-peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to WAN (59.59.59.5/24, peer-as 75201)', ipAddress: '59.59.59.5/24' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC2-GW22', x: 780, y: 180,
+                vendor: 'Juniper', model: 'MX480', switchFamily: 'MX',
+                mgmtIp: '172.16.20.2/24', loopbackIp: '10.255.2.2/32', asn: 65202, role: 'border-leaf',
+                description: 'DC2 iGW MH-peer. underlay-AS 65202, overlay-AS 200. lo0.1=10.255.2.12/32, iRD=10.255.2.12:210.',
+                ports: [
+                    { id: 'et0', label: 'et-0/0/0', enabled: true, speed: '100G', description: 'to DC2-LEAF21 (67.67.67.6/24, peer-as 65203)', ipAddress: '67.67.67.6/24' },
+                    { id: 'et1', label: 'et-0/0/1', enabled: true, speed: '100G', description: 'to DC2-LEAF22 (68.68.68.6/24, peer-as 65204)', ipAddress: '68.68.68.6/24' },
+                    { id: 'et2', label: 'et-0/0/2', enabled: true, speed: '100G', description: 'to DC2-GW21 (MH-peer)' },
+                    { id: 'et3', label: 'et-0/0/3', enabled: true, speed: '100G', description: 'to WAN (69.69.69.6/24, peer-as 75201)', ipAddress: '69.69.69.6/24' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC2-LEAF21', x: 640, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.20.11/24', loopbackIp: '10.255.2.3/32', asn: 65203, role: 'leaf',
+                description: 'DC2 server leaf. underlay-AS 65203, overlay-AS 200. lo0.1=10.255.2.13/32. ae0 ESI-LAG to CE2.',
+                vlans: [
+                    { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
+                    { id: 3, name: 'VLAN_3' }, { id: 4, name: 'VLAN_4' },
+                ],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/30', enabled: true, speed: '100G', description: 'to DC2-GW21 (57.57.57.7/24, peer-as 65201)', ipAddress: '57.57.57.7/24' },
+                    { id: 'et1', label: 'et-0/0/55', enabled: true, speed: '100G', description: 'to DC2-GW22 (67.67.67.7/24, peer-as 65202)', ipAddress: '67.67.67.7/24' },
+                    { id: 'ae0', label: 'ae0', enabled: true, speed: '100G', description: 'ESI-LAG to CE2 esi=00:01:02:00:00:00:00:00:00:02', vlanMode: 'trunk', trunkAllowedVlans: '1,2,3,4' },
+                ],
+            },
+            {
+                type: 'switch', label: 'DC2-LEAF22', x: 780, y: 340,
+                vendor: 'Juniper', model: 'QFX5120-48Y', switchFamily: 'QFX',
+                mgmtIp: '172.16.20.12/24', loopbackIp: '10.255.2.4/32', asn: 65204, role: 'leaf',
+                description: 'DC2 server leaf (ESI-LAG peer). underlay-AS 65204, overlay-AS 200. lo0.1=10.255.2.14/32.',
+                vlans: [
+                    { id: 1, name: 'VLAN_1' }, { id: 2, name: 'VLAN_2' },
+                    { id: 3, name: 'VLAN_3' }, { id: 4, name: 'VLAN_4' },
+                ],
+                ports: [
+                    { id: 'et0', label: 'et-0/0/30', enabled: true, speed: '100G', description: 'to DC2-GW21 (58.58.58.8/24, peer-as 65201)', ipAddress: '58.58.58.8/24' },
+                    { id: 'et1', label: 'et-0/0/55', enabled: true, speed: '100G', description: 'to DC2-GW22 (68.68.68.8/24, peer-as 65202)', ipAddress: '68.68.68.8/24' },
+                    { id: 'ae0', label: 'ae0', enabled: true, speed: '100G', description: 'ESI-LAG to CE2 (shared esi)', vlanMode: 'trunk', trunkAllowedVlans: '1,2,3,4' },
+                ],
+            },
+            {
+                type: 'server', label: 'CE2', x: 710, y: 500,
+                description: 'DC2 customer edge. Dual-homed via ae0 ESI-LAG to LEAF21+LEAF22. All-active.',
+                ports: [
+                    { id: 'eth0', label: 'eth0', enabled: true, description: 'to DC2-LEAF21 ae0 member' },
+                    { id: 'eth1', label: 'eth1', enabled: true, description: 'to DC2-LEAF22 ae0 member' },
+                ],
+            },
+        ],
+        links: [
+            // DC1 pod full-mesh
+            { sourceNode: 2, sourcePort: 'et0', targetNode: 0, targetPort: 'et0' }, // LEAF11→GW11
+            { sourceNode: 2, sourcePort: 'et1', targetNode: 1, targetPort: 'et0' }, // LEAF11→GW12
+            { sourceNode: 3, sourcePort: 'et0', targetNode: 0, targetPort: 'et1' }, // LEAF12→GW11
+            { sourceNode: 3, sourcePort: 'et1', targetNode: 1, targetPort: 'et1' }, // LEAF12→GW12
+            // DC1 ESI-LAG CE→leaves
+            { sourceNode: 4, sourcePort: 'eth0', targetNode: 2, targetPort: 'ae0' }, // CE1→LEAF11
+            { sourceNode: 4, sourcePort: 'eth1', targetNode: 3, targetPort: 'ae0' }, // CE1→LEAF12
+            // DC1 iGW MH-peer
+            { sourceNode: 0, sourcePort: 'et2', targetNode: 1, targetPort: 'et2' },
+            // GW↔WAN underlay
+            { sourceNode: 0, sourcePort: 'et3', targetNode: 5, targetPort: 'et0' }, // GW11→WAN
+            { sourceNode: 1, sourcePort: 'et3', targetNode: 5, targetPort: 'et1' }, // GW12→WAN
+            { sourceNode: 6, sourcePort: 'et3', targetNode: 5, targetPort: 'et2' }, // GW21→WAN
+            { sourceNode: 7, sourcePort: 'et3', targetNode: 5, targetPort: 'et3' }, // GW22→WAN
+            // DC2 iGW MH-peer
+            { sourceNode: 6, sourcePort: 'et2', targetNode: 7, targetPort: 'et2' },
+            // DC2 pod full-mesh
+            { sourceNode: 8, sourcePort: 'et0', targetNode: 6, targetPort: 'et0' }, // LEAF21→GW21
+            { sourceNode: 8, sourcePort: 'et1', targetNode: 7, targetPort: 'et0' }, // LEAF21→GW22
+            { sourceNode: 9, sourcePort: 'et0', targetNode: 6, targetPort: 'et1' }, // LEAF22→GW21
+            { sourceNode: 9, sourcePort: 'et1', targetNode: 7, targetPort: 'et1' }, // LEAF22→GW22
+            // DC2 ESI-LAG CE→leaves
+            { sourceNode: 10, sourcePort: 'eth0', targetNode: 8, targetPort: 'ae0' }, // CE2→LEAF21
+            { sourceNode: 10, sourcePort: 'eth1', targetNode: 9, targetPort: 'ae0' }, // CE2→LEAF22
+        ],
+        vrfs: [
+            {
+                id: 'vrf-100-dc1',
+                name: 'VRF-100 (DC1)',
+                instanceType: 'vrf',
+                routingVni: 9100,
+                routeDistinguisher: '10.255.1.x:100', // each node uses its own loopback as RD source
+                vrfTarget: 'target:100:100', // DC1-local RT (com1=100:101)
+                domainId: undefined, // sample uses BGP community-based loop prevention, not D_PATH
+                memberNodes: [0, 1, 2, 3], // GW11, GW12, LEAF11, LEAF12
+                interconnectNodes: [0, 1], // only the GWs re-originate
+                interconnect: {
+                    vrfTarget: 'target:200:200',          // shared interco RT (com2=200:101)
+                    routeDistinguisher: '10.255.1.1x:110', // iRD pattern (10.255.1.11:110 on GW11, 10.255.1.12:110 on GW12)
+                    mapsToVrfId: 'vrf-100-dc2',
+                    // routingVni omitted — sample reuses the same vni 9100 on the interconnect side
+                },
+                description: 'DC1 tenant VRF. ip-prefix-routes vni 9100. Re-originated by GW11/12 onto interco RT target:200:200 with iRD 10.255.1.{11,12}:110. Loop prevention: t5-internal-export policy rejects routes tagged with com1 arriving from BGP (so the iGW won\'t re-import its own re-origination from the MH peer).',
+            },
+            {
+                id: 'vrf-100-dc2',
+                name: 'VRF-100 (DC2)',
+                instanceType: 'vrf',
+                routingVni: 9100, // same VNI as DC1 side
+                routeDistinguisher: '10.255.2.x:100',
+                vrfTarget: 'target:300:300', // DC2-local RT (com3=300:101) — DIFFERENT from DC1
+                memberNodes: [6, 7, 8, 9], // GW21, GW22, LEAF21, LEAF22
+                interconnectNodes: [6, 7],
+                interconnect: {
+                    vrfTarget: 'target:200:200',           // SAME interco RT — that's the stitching glue
+                    routeDistinguisher: '10.255.2.1x:210',
+                    mapsToVrfId: 'vrf-100-dc1',
+                },
+                description: 'DC2 tenant VRF. Same VRF name as DC1 but DIFFERENT local vrf-target (300:300 vs 100:100) — proper BGP-level isolation. Bound to DC1 only via the shared interconnect target:200:200. GW21 also sets reject-asymmetric-vni.',
+            },
+        ],
+    },
+
     // ─── Juniper IPv6 Templates ─────────────────────────────────────────────────
 
     {
