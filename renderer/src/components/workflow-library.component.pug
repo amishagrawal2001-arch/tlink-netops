@@ -44,6 +44,7 @@
             .wflib-card(
               *ngFor='let p of cat.items',
               [class.destructive]='p.destructive',
+              [class.wflib-card-custom]='isCustomTemplate(p)',
               (click)='pickPlaybook(p)',
               [title]='p.description'
             )
@@ -55,6 +56,14 @@
                   | {{ p.vendors.join(", ") }}
                 span.wflib-card-vendor(*ngIf='!p.vendors.length') any vendor
                 span.wflib-card-warn(*ngIf='p.destructive', title='Makes config changes') ⚠ writes config
+              //- Delete button on custom playbooks only — small ✕ in the
+              //- corner so it doesn't interfere with the click-to-select.
+              button.wflib-card-delete(
+                *ngIf='isCustomTemplate(p)',
+                type='button',
+                title='Delete this custom playbook',
+                (click)='$event.stopPropagation(); deleteCustomPlaybook(p.id)'
+              ) ✕
 
     //- ────────────────────────────────────────────────────────────────────
     //- CONFIGURE VIEW — params form + target picker
@@ -182,9 +191,55 @@
           title='Return to the library to pick a different playbook',
           (click)='backToBrowse()'
         ) ← Pick another playbook
+        //- Retry Failed — only shown when the last run had ≥1 failure. Re-fires
+        //- the same playbook with the same params against just the failed
+        //- targets. The OK targets retain their green status from the prior run.
+        button.wflib-btn.wflib-btn-retry(
+          *ngIf='runComplete && runStats.fail > 0',
+          type='button',
+          title='Re-run this playbook against only the targets that failed in the previous run',
+          (click)='retryFailed()'
+        ) ↻ Retry Failed ({{ runStats.fail }})
+        button.wflib-btn(
+          *ngIf='runComplete && canSaveAsCustom',
+          type='button',
+          title='Save this playbook + parameter values as a reusable Custom playbook for next time',
+          (click)='openSaveDialog()'
+        ) ⭐ Save as Custom Playbook…
         button.wflib-btn.wflib-btn-run(
           type='button',
           [disabled]='!runComplete',
           title='Re-run this same playbook with the same parameters',
           (click)='runAgain()'
         ) ↻ Run again
+
+      //- ── Save dialog (overlay) ────────────────────────────────────────────
+      //- Shown when the user clicks "Save as Custom Playbook…" after a run.
+      //- Captures a name + optional description; the param values come from
+      //- the just-configured paramValues so the user doesn't re-fill the form.
+      .wflib-save-overlay(*ngIf='showSaveDialog', (click)='cancelSaveDialog()')
+        .wflib-save-dialog((click)='$event.stopPropagation()')
+          .wflib-save-title ⭐ Save as Custom Playbook
+          .wflib-save-hint
+            | Saves the current parameter values for <strong>{{ selected?.name }}</strong>.
+            | Appears under <strong>Custom</strong> in the browse list. You can still
+            | tweak the params at run time.
+          .wflib-save-row
+            label.wflib-save-label Name
+            input.wflib-save-input(
+              type='text',
+              [(ngModel)]='saveDialogName',
+              placeholder='e.g. NTP-rollout',
+              autofocus
+            )
+          .wflib-save-row
+            label.wflib-save-label Description
+            input.wflib-save-input(
+              type='text',
+              [(ngModel)]='saveDialogDescription',
+              placeholder='Optional — describe when to use it'
+            )
+          .wflib-save-error(*ngIf='saveDialogError') ⚠ {{ saveDialogError }}
+          .wflib-save-actions
+            button.wflib-btn(type='button', (click)='cancelSaveDialog()') Cancel
+            button.wflib-btn.wflib-btn-run(type='button', (click)='confirmSaveDialog()') Save

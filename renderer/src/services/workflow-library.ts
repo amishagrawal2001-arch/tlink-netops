@@ -33,6 +33,7 @@ export type PlaybookCategory =
     | 'Maintenance'
     | 'Diagnostics'
     | 'Backup'
+    | 'Custom'
 
 export interface PlaybookParam {
     name: string                    // key — keys params record passed to buildSteps
@@ -799,4 +800,82 @@ export function searchPlaybooks (q: string, list: PlaybookTemplate[] = PLAYBOOKS
         p.category.toLowerCase().includes(term) ||
         p.id.includes(term),
     )
+}
+
+// ─── Custom playbooks ────────────────────────────────────────────────────────
+//
+// A "custom playbook" is a saved parameter snapshot over an existing built-in
+// playbook. Stored as { id, name, description, basePlaybookId, paramValues }
+// and persisted to user-prefs key 'workflow-custom-playbooks'. At display
+// time we synthesise a PlaybookTemplate by looking up the base and locking
+// in the saved param values (so the user doesn't have to re-enter the form).
+//
+// This is intentionally simpler than letting users define ad-hoc steps from
+// scratch — that's a Phase-2 visual workflow builder. For now: "save the
+// thing I keep typing" is the 80% of the value with 10% of the complexity.
+
+export interface CustomPlaybook {
+    id: string
+    name: string
+    description: string
+    /** ID of the built-in PlaybookTemplate this custom snapshot is based on. */
+    basePlaybookId: string
+    /** Parameter values to pre-fill when the custom playbook is run. Users
+     *  can still edit them at run time; this is just the defaults. */
+    paramValues: Record<string, any>
+    /** ISO timestamp of when the user saved it. */
+    createdAt: string
+}
+
+const CUSTOM_PREFS_KEY = 'workflow-custom-playbooks'
+
+/** Load saved custom playbooks from user-prefs. Returns [] when prefs are
+ *  unavailable or no customs exist yet. */
+export async function loadCustomPlaybooks (): Promise<CustomPlaybook[]> {
+    const api = (typeof window !== 'undefined' ? (window as any).netopsAPI : undefined)
+    if (!api?.prefGet) { return [] }
+    try {
+        const saved = await api.prefGet(CUSTOM_PREFS_KEY)
+        return Array.isArray(saved) ? saved as CustomPlaybook[] : []
+    } catch {
+        return []
+    }
+}
+
+/** Persist the full list (caller does add / remove / rename and writes back). */
+export async function saveCustomPlaybooks (list: CustomPlaybook[]): Promise<void> {
+    const api = (typeof window !== 'undefined' ? (window as any).netopsAPI : undefined)
+    try { api?.prefSet?.(CUSTOM_PREFS_KEY, list) } catch { /* ignore */ }
+}
+
+/** Project a CustomPlaybook back into a PlaybookTemplate for display in the
+ *  same UI flow as built-in playbooks. The `buildSteps` delegates to the
+ *  base playbook with the saved params merged over whatever the user enters
+ *  at run time (saved params win — the saved playbook IS the locked recipe). */
+export function customAsTemplate (
+    custom: CustomPlaybook,
+    base: PlaybookTemplate | undefined,
+): PlaybookTemplate | null {
+    if (!base) { return null }
+    return {
+        id: custom.id,
+        name: custom.name,
+        description: custom.description || `${base.name} (saved configuration)`,
+        category: 'Custom',
+        icon: '⭐',
+        vendors: base.vendors,
+        destructive: base.destructive,
+        // Surface the same parameter form as the base, with saved values as
+        // defaults so the user can still tweak before running.
+        parameters: base.parameters.map(p => ({
+            ...p,
+            default: (custom.paramValues[p.name] !== undefined) ? custom.paramValues[p.name] : p.default,
+        })),
+        buildSteps: (params, vendor, ctx) => {
+            // Saved values win over passed-in params for any key the saved
+            // playbook explicitly captured. Untouched params still flow through.
+            const merged = { ...params, ...custom.paramValues }
+            return base.buildSteps(merged, vendor, ctx)
+        },
+    }
 }

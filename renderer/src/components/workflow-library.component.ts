@@ -7,8 +7,9 @@ import { TopologyService } from '../services/topology.service'
 import { InventoryService } from '../services/inventory.service'
 import { WorkflowService, Workflow, WorkflowResult } from '../services/workflow.service'
 import {
-    PlaybookTemplate, PlaybookCategory,
+    PlaybookTemplate, PlaybookCategory, PLAYBOOKS,
     groupByCategory, searchPlaybooks,
+    CustomPlaybook, loadCustomPlaybooks, saveCustomPlaybooks, customAsTemplate,
 } from '../services/workflow-library'
 
 interface RunRow {
@@ -80,7 +81,23 @@ export class WorkflowLibraryComponent implements OnInit {
         private wfSvc: WorkflowService,
     ) {}
 
-    ngOnInit (): void {
+    /** User's saved custom playbooks (loaded from prefs at init). Surfaced as a
+     *  "Custom" category alongside the built-ins. Each entry is rendered via
+     *  `customAsTemplate` which delegates back to a base playbook with the
+     *  saved param values pre-filled. */
+    customPlaybooks: CustomPlaybook[] = []
+
+    /** Save dialog state — shown after a successful run lets the user capture
+     *  the just-configured parameter set as a reusable named playbook. */
+    showSaveDialog = false
+    saveDialogName = ''
+    saveDialogDescription = ''
+    saveDialogError = ''
+
+    async ngOnInit (): Promise<void> {
+        // Load custom playbooks BEFORE first refresh so they show up in the
+        // browse list immediately on open.
+        this.customPlaybooks = await loadCustomPlaybooks()
         this._refreshCatalog()
     }
 
@@ -88,13 +105,101 @@ export class WorkflowLibraryComponent implements OnInit {
 
     // ── Browse → Configure ────────────────────────────────────────────────────
 
+    /** Build the full template list = built-ins ∪ projected customs. Customs
+     *  whose base playbook has been removed (shouldn't happen but defensive)
+     *  are dropped silently. */
+    private _allTemplates (): PlaybookTemplate[] {
+        const baseById = new Map(PLAYBOOKS.map(p => [p.id, p]))
+        const projected = this.customPlaybooks
+            .map(c => customAsTemplate(c, baseById.get(c.basePlaybookId)))
+            .filter((t): t is PlaybookTemplate => !!t)
+        return [...PLAYBOOKS, ...projected]
+    }
+
     private _refreshCatalog (): void {
-        const list = searchPlaybooks(this.searchQuery)
+        const list = searchPlaybooks(this.searchQuery, this._allTemplates())
         this.grouped = groupByCategory(list)
         this.cdr.markForCheck()
     }
 
     onSearchChange (): void { this._refreshCatalog() }
+
+    // ── Save as Custom Playbook ──────────────────────────────────────────────
+
+    /** Open the save dialog from the run-results view. Pre-fills name with
+     *  the base playbook's name + " (custom)" so the user has a sensible
+     *  starting point. */
+    openSaveDialog (): void {
+        if (!this.selected) { return }
+        // Don't let the user save a custom-of-a-custom — keeps the chain flat.
+        // (Saving a custom would create one whose base is itself a custom,
+        // which complicates the projection. Custom playbooks always derive
+        // from a built-in template.)
+        const isAlreadyCustom = !PLAYBOOKS.some(p => p.id === this.selected!.id)
+        if (isAlreadyCustom) {
+            this.saveDialogError = 'Cannot save a custom playbook as another custom — modify the params and re-run, then save against the base.'
+            return
+        }
+        this.saveDialogName = `${this.selected.name} (custom)`
+        this.saveDialogDescription = ''
+        this.saveDialogError = ''
+        this.showSaveDialog = true
+        this.cdr.markForCheck()
+    }
+
+    cancelSaveDialog (): void {
+        this.showSaveDialog = false
+        this.saveDialogError = ''
+        this.cdr.markForCheck()
+    }
+
+    async confirmSaveDialog (): Promise<void> {
+        const name = this.saveDialogName.trim()
+        if (!name) { this.saveDialogError = 'Name is required'; this.cdr.markForCheck(); return }
+        if (!this.selected) { return }
+        // Reject duplicate names — would confuse the user in the browse list.
+        if (this.customPlaybooks.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+            this.saveDialogError = `A custom playbook named "${name}" already exists`
+            this.cdr.markForCheck()
+            return
+        }
+        const id = `custom-${Date.now()}-${Math.floor(Math.random() * 9999)}`
+        const newCustom: CustomPlaybook = {
+            id,
+            name,
+            description: this.saveDialogDescription.trim(),
+            basePlaybookId: this.selected.id,
+            paramValues: { ...this.paramValues },
+            createdAt: new Date().toISOString(),
+        }
+        this.customPlaybooks = [...this.customPlaybooks, newCustom]
+        await saveCustomPlaybooks(this.customPlaybooks)
+        this.showSaveDialog = false
+        this._refreshCatalog()
+    }
+
+    /** Delete a custom playbook (called from the browse view). */
+    async deleteCustomPlaybook (id: string): Promise<void> {
+        const cp = this.customPlaybooks.find(c => c.id === id)
+        if (!cp) { return }
+        if (!confirm(`Delete custom playbook "${cp.name}"? This cannot be undone.`)) { return }
+        this.customPlaybooks = this.customPlaybooks.filter(c => c.id !== id)
+        await saveCustomPlaybooks(this.customPlaybooks)
+        this._refreshCatalog()
+    }
+
+    /** True when the playbook currently configured/run is a built-in (vs
+     *  a saved custom one) — used to gate the "Save as custom playbook"
+     *  button so customs can't be re-saved as further customs. */
+    get canSaveAsCustom (): boolean {
+        return !!this.selected && PLAYBOOKS.some(p => p.id === this.selected!.id)
+    }
+
+    /** True for templates whose id matches a saved custom (used by the
+     *  browse-list to render a delete button only on user-saved entries). */
+    isCustomTemplate (t: PlaybookTemplate): boolean {
+        return this.customPlaybooks.some(c => c.id === t.id)
+    }
 
     pickPlaybook (p: PlaybookTemplate): void {
         this.selected = p
@@ -199,10 +304,17 @@ export class WorkflowLibraryComponent implements OnInit {
         this.view = 'run'
         this.cdr.markForCheck()
 
-        // Execute against each target sequentially. Could parallelize later;
-        // sequential is safer for changes that depend on the previous step
-        // (and leaves the door open for an optional approval gate).
-        for (const row of this.runs) {
+        await this._executeRows(this.runs)
+        this.runComplete = true
+        this.cdr.markForCheck()
+    }
+
+    /** Execute the workflow against the given rows. Shared by startRun (full
+     *  run) and retryFailed (partial re-run against just the failed nodes). */
+    private async _executeRows (rows: RunRow[]): Promise<void> {
+        // Sequential. Could parallelize later; sequential is safer for changes
+        // that depend on the previous step (and leaves room for approval gates).
+        for (const row of rows) {
             // Honor user cancellation between targets — already-in-flight
             // workflows finish their current step but no new target starts.
             if (this.runCancelled) {
@@ -229,6 +341,25 @@ export class WorkflowLibraryComponent implements OnInit {
             }
             this.cdr.markForCheck()
         }
+    }
+
+    /** Re-run the same playbook (same params) against ONLY the failed targets
+     *  from the last run. Most-asked workflow ergonomics — closes the loop on
+     *  partial-fail batches without re-applying to working nodes. */
+    async retryFailed (): Promise<void> {
+        const failed = this.runs.filter(r => r.status === 'fail')
+        if (!failed.length) { return }
+        // Reset just the failed rows to 'pending' so the UI shows them as
+        // queued again (the OK rows stay green from the previous run).
+        for (const r of failed) {
+            r.status = 'pending'
+            r.output = ''
+            r.durationMs = undefined
+        }
+        this.runComplete = false
+        this.runCancelled = false
+        this.cdr.markForCheck()
+        await this._executeRows(failed)
         this.runComplete = true
         this.cdr.markForCheck()
     }

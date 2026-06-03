@@ -18,6 +18,31 @@ export interface WorkflowStep {
     action: 'notify' | 'backup_config' | 'run_command' | 'webhook' | 'log' | 'approval'
     config: Record<string, any>
     continueOnError: boolean
+    /**
+     * Conditional execution gate. Evaluated against PRIOR step results before
+     * running this step. Default 'always' preserves backward compatibility:
+     *   - always         — run unconditionally (default)
+     *   - previous-ok    — run only if the immediately-prior step succeeded
+     *   - previous-fail  — run only if the immediately-prior step failed
+     *                      (handy for rollback / cleanup steps)
+     *   - all-ok         — run only if EVERY prior step succeeded
+     *   - any-fail       — run only if any prior step failed (notify-on-fail)
+     * When the gate evaluates false the step is recorded with ok=true and a
+     * 'skipped' marker so the audit trail still shows it considered.
+     */
+    runIf?: 'always' | 'previous-ok' | 'previous-fail' | 'all-ok' | 'any-fail'
+    /**
+     * Per-step retry policy. The executor wraps the step in a loop that
+     * re-tries on failure up to `maxAttempts - 1` extra times, sleeping
+     * `delayMs` between attempts. Use for flaky SSH / transient network
+     * errors. `onlyOnTimeout` restricts retries to timeout-shaped errors
+     * (don't retry "permission denied" — that won't fix itself).
+     */
+    retry?: {
+        maxAttempts: number
+        delayMs: number
+        onlyOnTimeout?: boolean
+    }
 }
 
 /**
@@ -69,6 +94,15 @@ export interface WorkflowStepResult {
     ok: boolean
     output: string
     durationMs: number
+    /** True when the step was bypassed by its `runIf` gate. Counts as `ok`
+     *  for the workflow's overall success calculation but is shown distinctly
+     *  in the dashboard drill-down. */
+    skipped?: boolean
+    /** Reason the step was skipped — surfaced in the drill-down output. */
+    skippedReason?: string
+    /** When `retry` was active and the step needed >1 attempt to succeed,
+     *  how many attempts ran (1 = first try worked, no retry needed). */
+    attempts?: number
 }
 
 export interface WorkflowResult {
@@ -312,10 +346,74 @@ export class WorkflowService {
                 allOk = false
                 break stepLoop
             }
-            const stepStart = Date.now()
+
+            // ── runIf gate: evaluate against PRIOR step results ─────────
+            // If the gate evaluates false the step is recorded with
+            // ok=true + skipped=true so the dashboard drill-down can show
+            // it considered the step but didn't run.
+            const gate = step.runIf ?? 'always'
+            const prior = stepResults
+            const lastReal = [...prior].reverse().find(r => !r.skipped)
+            const lastOk = lastReal ? lastReal.ok : true
+            const allPriorOk = prior.every(r => r.ok || r.skipped)
+            const anyPriorFail = prior.some(r => !r.ok && !r.skipped)
+            let shouldRun = true
+            let skipReason = ''
+            switch (gate) {
+                case 'previous-ok':
+                    if (prior.length > 0 && !lastOk) { shouldRun = false; skipReason = 'previous step failed' }
+                    break
+                case 'previous-fail':
+                    if (prior.length === 0 || lastOk) { shouldRun = false; skipReason = 'previous step succeeded' }
+                    break
+                case 'all-ok':
+                    if (!allPriorOk) { shouldRun = false; skipReason = 'a prior step failed' }
+                    break
+                case 'any-fail':
+                    if (!anyPriorFail) { shouldRun = false; skipReason = 'no prior step has failed' }
+                    break
+                case 'always':
+                default: break
+            }
+            if (!shouldRun) {
+                stepResults.push({
+                    action: step.action,
+                    ok: true,
+                    output: `Skipped — runIf=${gate} (${skipReason})`,
+                    durationMs: 0,
+                    skipped: true,
+                    skippedReason: skipReason,
+                })
+                continue stepLoop
+            }
+
+            // ── Retry policy wrapper ────────────────────────────────────
+            // Wrap the step execution in a loop that retries on failure
+            // up to maxAttempts times. The retry only fires on `ok=false`
+            // results; thrown exceptions get caught and treated as fail
+            // for retry purposes. `onlyOnTimeout` filters to timeout-shape
+            // errors so we don't retry permission denied / syntax errors
+            // that won't fix themselves.
+            const retryCfg = step.retry
+            const maxAttempts = Math.max(1, retryCfg?.maxAttempts ?? 1)
+            const retryDelayMs = Math.max(0, retryCfg?.delayMs ?? 0)
+            const retryOnlyOnTimeout = !!retryCfg?.onlyOnTimeout
+            let attempt = 0
             let ok = true
             let output = ''
+            const stepStart = Date.now()
+            const isTimeoutShape = (out: string): boolean =>
+                /timeout|timed out|client-side timeout|backend did not return/i.test(out)
 
+            attemptLoop: while (attempt < maxAttempts) {
+                attempt++
+                if (attempt > 1 && retryDelayMs > 0) {
+                    // eslint-disable-next-line no-console
+                    console.log(`[Workflow ${workflow.name}] retrying step ${step.action} (attempt ${attempt}/${maxAttempts}) after ${retryDelayMs}ms`)
+                    await new Promise(r => setTimeout(r, retryDelayMs))
+                }
+                ok = true
+                output = ''
             try {
                 switch (step.action) {
                     case 'notify': {
@@ -460,8 +558,19 @@ export class WorkflowService {
                 output = `Error: ${err?.message ?? err}`
             }
 
+                // Inside attemptLoop — decide whether to retry.
+                if (ok) { break attemptLoop }
+                if (attempt >= maxAttempts) { break attemptLoop }
+                if (retryOnlyOnTimeout && !isTimeoutShape(output)) { break attemptLoop }
+                // else: loop and retry
+            }  // end attemptLoop
+
             const durationMs = Date.now() - stepStart
-            stepResults.push({ action: step.action, ok, output, durationMs })
+            stepResults.push({
+                action: step.action,
+                ok, output, durationMs,
+                attempts: attempt > 1 ? attempt : undefined,
+            })
 
             if (!ok) {
                 allOk = false
