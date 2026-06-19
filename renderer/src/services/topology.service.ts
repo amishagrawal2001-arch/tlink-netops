@@ -1876,21 +1876,31 @@ export class TopologyService {
         // of the existing underlay without rewriting underlay state.
         if (asOverlay) {
             const sharedOverlayAsn = config.spineAsnStart ?? 65000
-            // Persist scope for the leaf-only / leaf+spine pattern.
-            if (proto === 'ibgp-fullmesh') {
-                this.topology.ibgpScope = config.ibgpScope ?? 'all'
-            }
-            // Turn the EVPN overlay flag on so the emitter generates the
-            // OVERLAY BGP group + family evpn signaling lines.
-            this.topology.overlayEnabled = true
+            const nonRoutingTypes = ['server', 'pc', 'host']
             // Set per-node overlay AS only — leave node.asn (underlay)
             // and topology.underlayProtocol UNTOUCHED.
-            const nonRoutingTypes = ['server', 'pc', 'host']
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }
                 n.overlayAsn = sharedOverlayAsn
             }
-            this._patch({ nodes: [...this.topology.nodes] })
+            // Build the topology-patch explicitly. Pass overlayEnabled+ibgpScope
+            // through the same _patch call as nodes so the BehaviorSubject
+            // emit carries every change in one event — no chance the regen
+            // sees an in-between state where overlayEnabled hasn't reached
+            // it yet.
+            const patch: Partial<Topology> = {
+                nodes: [...this.topology.nodes],
+                overlayEnabled: true,
+            }
+            if (proto === 'ibgp-fullmesh') {
+                patch.ibgpScope = config.ibgpScope ?? 'all'
+            }
+            this._patch(patch)
+            console.log(
+                `[applyProtocol] overlay-only: shared overlayAsn=${sharedOverlayAsn} ` +
+                `on ${nodes.filter(n => !nonRoutingTypes.includes(n.type)).length} nodes; ` +
+                `overlayEnabled=true; underlay (asn / underlayProtocol) preserved.`,
+            )
             this._regenerateConfigs(true)
             return nodes.length
         }
