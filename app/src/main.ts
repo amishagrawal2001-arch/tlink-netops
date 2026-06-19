@@ -903,7 +903,7 @@ function _runSshShellSession (
                 if (p.test(trimmed)) {
                     const lines = trimmed.split('\n')
                     const errLine = lines.find(l => p.test(l)) ?? ''
-                    const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                    const tail = trimmed.length > 1600 ? '…' + trimmed.slice(-1600) : trimmed
                     return {
                         ok: false,
                         message: `Device error on ${payload.host}: ${errLine.trim()} · output: ${tail}`,
@@ -945,7 +945,7 @@ function _runSshShellSession (
             if (match) {
                 const lines = trimmed.split('\n')
                 const errLine = lines.find(l => match.test(l)) ?? ''
-                const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                const tail = trimmed.length > 1600 ? '…' + trimmed.slice(-1600) : trimmed
                 return {
                     ok: false,
                     message: `Device error on ${payload.host}: ${errLine.trim()} · output: ${tail}`,
@@ -959,7 +959,7 @@ function _runSshShellSession (
             //    error patterns and would otherwise fall through as ok.
             //    Fail closed instead.
             if (expectsCommit) {
-                const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                const tail = trimmed.length > 1600 ? '…' + trimmed.slice(-1600) : trimmed
                 return {
                     ok: false,
                     message: `Commit not confirmed on ${payload.host} — no "commit complete" / "commit successful" / "copy complete" marker in device output. The candidate config may not be applied. · output: ${tail || '(no output)'}`,
@@ -996,7 +996,7 @@ function _runSshShellSession (
                 })
 
                 stream.on('error', (streamErr: Error) => {
-                    const tail = output.trim().slice(-400)
+                    const tail = output.trim().slice(-1600)
                     done({
                         ok: false,
                         message: `SSH shell stream error on ${payload.host}: ${streamErr.message}${tail ? ' · output: …' + tail : ''}`,

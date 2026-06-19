@@ -90,7 +90,12 @@ export const VENDOR_COMMAND_MAP: Record<string, VendorCommands> = {
         showLldpNeighbors: 'show lldp neighbors | display xml | no-more',
         showBgpSummary: 'show bgp summary',
         loadConfigPreamble: ['configure', 'load set terminal'],
-        loadConfigPostamble: ['\x04', 'commit', 'exit', 'exit'],
+        // After commit: `rollback 0` reconciles candidate to running. On a
+        // SUCCESSFUL commit it's a no-op (candidate already equals running).
+        // On a FAILED commit it discards pending changes so `exit` doesn't
+        // hit the "Exit with uncommitted changes? [yes,no] (yes)" prompt
+        // and trigger an "exit is ambiguous" error on the follow-up exit.
+        loadConfigPostamble: ['\x04', 'commit', 'rollback 0', 'exit', 'exit'],
     },
     // ── Juniper cRPD (containerized RIB-PE) ─────────────────────────────────
     // SSH as root on cRPD drops into Unix shell, not Junos CLI.
@@ -109,7 +114,10 @@ export const VENDOR_COMMAND_MAP: Record<string, VendorCommands> = {
         showLldpNeighbors: 'cli -c "show lldp neighbors | display xml | no-more"',
         showBgpSummary: 'cli -c "show bgp summary"',
         loadConfigPreamble: ['cli', 'configure', 'load set terminal'],
-        loadConfigPostamble: ['\x04', 'commit', 'exit', 'exit'],
+        // `rollback 0` after commit reconciles candidate to running so
+        // exit from [edit] doesn't prompt "Exit with uncommitted changes?"
+        // when commit failed. Final two exits: out of configure, out of cli.
+        loadConfigPostamble: ['\x04', 'commit', 'rollback 0', 'exit', 'exit'],
     },
     // ── Arista EOS — PHYSICAL / vEOS ────────────────────────────────────────
     // SSH drops into EOS CLI directly. No bash wrapper needed.
