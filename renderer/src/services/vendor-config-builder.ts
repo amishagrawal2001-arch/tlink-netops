@@ -571,6 +571,13 @@ function emitBgpUnderlay (vendorKey: string, ctx: VendorConfigContext): string[]
             lines.push('! BGP underlay')
             if (is4B) { lines.push(`! 4-byte ASN ${asn} (asdot: ${asnToAsdot(asn)})`) }
             lines.push('router bgp ' + asn)
+            // 4-byte AS is supported natively on IOS-XE/NX-OS via RFC 6793
+            // capability advertisement. `bgp asnotation dot` is purely about
+            // show-command output formatting — display 4-byte AS as `X.Y`
+            // instead of asplain. Emit it whenever any participant (this
+            // node OR a neighbor) uses a 4-byte AS so `show bgp summary`
+            // reads consistently across the fabric.
+            if (any4B) { lines.push(' bgp asnotation dot') }
             if (rid) { lines.push(` bgp router-id ${rid}`) }
             if (isRR && rid) { lines.push(` bgp cluster-id ${rid}`) }
             // iBGP neighbors

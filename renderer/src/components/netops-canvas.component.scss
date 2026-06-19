@@ -6424,6 +6424,17 @@ netops-3d-canvas {
   letter-spacing: 0.04em;
 }
 
+// Inline 4-byte ASN asdot hint shown under the spine/leaf/shared ASN inputs
+// in the Set Protocol dialog. Confirms 4-byte input was accepted and shows
+// the asdot notation so the operator doesn't have to convert manually.
+.bulk-cred-hint {
+  font-size: 11px;
+  color: #60a5fa;
+  font-family: var(--font-mono, "SF Mono", Menlo, monospace);
+  margin: -4px 0 4px 0;
+  padding-left: 4px;
+}
+
 .bulk-cred-input {
   background: var(--bg-input);
   border: 1px solid var(--border);

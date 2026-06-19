@@ -3919,14 +3919,37 @@
         ng-container(*ngIf='protocolChoice === "ebgp"')
           .bulk-cred-row
             span.bulk-cred-label Spine ASN Start
-            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolSpineAsn')
+            input.bulk-cred-input(
+              type='number',
+              min='1',
+              max='4294967295',
+              [(ngModel)]='protocolSpineAsn',
+              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Private ranges: 64512–65534 (2-byte), 4200000000–4294967294 (4-byte).'
+            )
+          //- asdot hint: confirms 4-byte input was accepted without making
+          //- the user mentally convert 4200000000 → 64086.59904 themselves.
+          .bulk-cred-hint(*ngIf='protocolSpineAsnAsdot') 4-byte ASN — asdot: {{ protocolSpineAsnAsdot }}
           .bulk-cred-row
             span.bulk-cred-label Leaf ASN Start
-            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolLeafAsn')
+            input.bulk-cred-input(
+              type='number',
+              min='1',
+              max='4294967295',
+              [(ngModel)]='protocolLeafAsn',
+              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Private ranges: 64512–65534 (2-byte), 4200000000–4294967294 (4-byte).'
+            )
+          .bulk-cred-hint(*ngIf='protocolLeafAsnAsdot') 4-byte ASN — asdot: {{ protocolLeafAsnAsdot }}
         ng-container(*ngIf='protocolChoice === "ibgp-rr"')
           .bulk-cred-row
             span.bulk-cred-label Shared ASN
-            input.bulk-cred-input(type='number', min='1', max='4294967295', [(ngModel)]='protocolSpineAsn')
+            input.bulk-cred-input(
+              type='number',
+              min='1',
+              max='4294967295',
+              [(ngModel)]='protocolSpineAsn',
+              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Same ASN used on every iBGP-RR fabric node.'
+            )
+          .bulk-cred-hint(*ngIf='protocolSpineAsnAsdot') 4-byte ASN — asdot: {{ protocolSpineAsnAsdot }}
         ng-container(*ngIf='protocolChoice === "ospf" || protocolChoice === "ospfv3"')
           .bulk-cred-row
             span.bulk-cred-label OSPF Area

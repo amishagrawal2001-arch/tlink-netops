@@ -648,6 +648,17 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' = 'none'
     protocolSpineAsn = 65000
     protocolLeafAsn = 65100
+
+    /** asdot-notation hint for the Set Protocol dialog — empty string when
+     *  the value is 2-byte (no extra display needed). Lets the user see at
+     *  a glance that their 4-byte input was accepted, e.g. typing
+     *  4200000000 surfaces "(asdot: 64086.59904)" under the field. */
+    get protocolSpineAsnAsdot (): string {
+        return is4ByteAsn(this.protocolSpineAsn) ? asnToAsdot(this.protocolSpineAsn) : ''
+    }
+    get protocolLeafAsnAsdot (): string {
+        return is4ByteAsn(this.protocolLeafAsn) ? asnToAsdot(this.protocolLeafAsn) : ''
+    }
     protocolOspfArea = 0
     protocolIsisLevel: 1 | 2 | 12 = 2
     protocolSrMpls = false
@@ -6946,13 +6957,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const lbl = n.label.toLowerCase()
                 return lbl.includes('leaf') || lbl.includes('tor') || n.role === 'leaf' || n.role === 'border-leaf' || n.role === 'tor'
             }).length
+            // Tip — NOT a rejection: assignment is about to overrun the 2-byte
+            // private range. 4-byte is fully supported (will be applied as-is);
+            // just nudging the operator to consider 4200000000+ for cleanness.
             const exceeds2ByteLimit = (spineEnd > 65534 || leafEnd > 65534) && (this.protocolSpineAsn < 4200000000 && this.protocolLeafAsn < 4200000000)
             if (exceeds2ByteLimit) {
-                warnings.push('ASN range exceeds private 2-byte limit (65534). Use 4-byte private ASNs (4200000000+) for large fabrics.')
+                warnings.push('Tip: spine/leaf assignment will overrun the 2-byte private range (65534). 4-byte private (4200000000–4294967294) is fully supported — set the start values higher to avoid the overrun. Configs will still apply with current values.')
             }
             const isPublicRange = (this.protocolSpineAsn >= 1 && this.protocolSpineAsn < 64512) || (this.protocolLeafAsn >= 1 && this.protocolLeafAsn < 64512)
             if (isPublicRange) {
-                warnings.push('ASN in public range (1-64511). Recommended: use private ASN 64512-65534 or 4200000000+ for lab/fabric.')
+                warnings.push('Tip: ASN in public range (1–64511). For lab/fabric use, the recommended private ranges are 64512–65534 (2-byte) or 4200000000–4294967294 (4-byte). Configs will still apply with current values.')
             }
         }
 
