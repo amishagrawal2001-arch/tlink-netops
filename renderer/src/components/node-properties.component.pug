@@ -44,6 +44,23 @@
         (keydown)='onInfoKeydown($event, "label")'
       )
 
+    //- ── Role ──────────────────────────────────────────────────────────────
+    //- Placed right under Name because it drives so much downstream config:
+    //- Service Profile port-rule matching, BGP overlay shape (RR cluster on
+    //- spines, ERB IRB on leaves), tier-based auto-layout. Hidden for host
+    //- and bridge nodes (they don't participate in fabric routing).
+    //- Empty value = "auto-infer from hostname" — placeholder shows what
+    //- the auto-infer would pick so the operator sees the current behavior.
+    .form-row(*ngIf='!isHostNode && !isBridgeNode')
+      label.form-label Role
+      select.form-input(
+        [(ngModel)]='draft.role',
+        (change)='applyRole()',
+        title='Affects Service Profile port rules (trunk/access by role), BGP overlay shape (RR cluster on spines, IRB on leaves), and tier-based layout. Leave blank to auto-infer from hostname.'
+      )
+        option(value='') — Auto ({{ inferredRoleLabel }}) —
+        option(*ngFor='let r of availableRoles', [value]='r.value') {{ r.label }}
+
     .form-row
       label.form-label Description
       textarea.form-textarea(
@@ -238,22 +255,6 @@
 
     .form-row(*ngIf='showVendorSelector')
       .vendor-msg(*ngIf='portGenMsg') {{ portGenMsg }}
-
-    //- ── Role ──────────────────────────────────────────────────────────────
-    //- Drives Service Profile port-rule matching (which ports become trunk vs
-    //- access), BGP role-aware overlay emission (RR clusters on spines, ERB
-    //- IRB on leaves), and tier-based auto-layout. When blank, the topology
-    //- service auto-infers a role from the node's label — shown as the
-    //- placeholder so the operator knows what's happening today.
-    .form-row(*ngIf='!isHostNode && !isBridgeNode')
-      label.form-label Role
-      select.form-input(
-        [(ngModel)]='draft.role',
-        (change)='applyRole()',
-        title='Affects Service Profile port rules (trunk/access by role), BGP overlay shape (RR cluster on spines, IRB on leaves), and tier-based layout. Leave blank to auto-infer from hostname.'
-      )
-        option(value='') — Auto ({{ inferredRoleLabel }}) —
-        option(*ngFor='let r of availableRoles', [value]='r.value') {{ r.label }}
 
     .form-row(*ngIf='!isHostNode && !isBridgeNode')
       label.form-label ASN
