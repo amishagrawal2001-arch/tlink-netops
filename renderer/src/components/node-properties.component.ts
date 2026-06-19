@@ -2185,9 +2185,12 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             return
         }
 
-        // Use vendor-specific show-version command (e.g. cli -c "show version" for Juniper)
+        // Use vendor-specific show-version command (e.g. cli -c "show version" for Juniper).
+        // Pass the SSH username so Junos+root auto-routes to the shell-wrapped
+        // command set — root logins drop into the FreeBSD shell, not the CLI.
         const vendor = this.node?.vendor ?? ''
-        const cmds = getVendorCommands(vendor)
+        const model = this.node?.model ?? ''
+        const cmds = getVendorCommands(vendor, model, request.username)
 
         this.sshBusy = true
         this._setSshState(false, `Running "${cmds.showVersion}"...`)
@@ -3488,7 +3491,9 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
                 const username = creds.username
                 const password = creds.password
                 const vendorKey = (this.node.vendor ?? '').trim().toLowerCase()
-                const cmds = getVendorCommands(vendorKey)
+                // Pass username so Junos+root routes to shell-wrapped commands
+                // (`cli -c "configure"` instead of bare `configure`).
+                const cmds = getVendorCommands(vendorKey, this.node.model ?? '', username)
                 const preamble = cmds.loadConfigPreamble ?? ['configure terminal']
                 const postamble = cmds.loadConfigPostamble ?? ['end', 'write memory']
 
@@ -3577,7 +3582,8 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
                 const username = (this.node.sshUsername ?? '').trim()
                 const password = this.node.sshPassword ?? ''
                 const vendorKey = (this.node.vendor ?? '').trim().toLowerCase()
-                const cmds = getVendorCommands(vendorKey)
+                // Pass username so Junos+root routes to shell-wrapped commands.
+                const cmds = getVendorCommands(vendorKey, this.node.model ?? '', username)
 
                 const backend = this._getBackendSvc()
                 let result: any

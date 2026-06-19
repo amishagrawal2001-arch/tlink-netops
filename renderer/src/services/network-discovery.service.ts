@@ -171,7 +171,9 @@ export class NetworkDiscoveryService {
                 }
 
                 const vendor = det.vendor
-                const cmds = getVendorCommands(vendor)
+                // Pass username so Junos+root routes to shell-wrapped commands —
+                // root SSH lands in FreeBSD shell, not Junos CLI.
+                const cmds = getVendorCommands(vendor, '', creds.username)
                 // Reuse the captured output if we already ran the same probe
                 // command in detection. Falls back to a fresh fetch otherwise.
                 const versionOutput = det.output && det.output.trim()
@@ -519,7 +521,7 @@ export class NetworkDiscoveryService {
                     }
                     return { links: [], diag: { host: target, status: 'skip', detail: 'vendor not detected' } }
                 }
-                const cmds = getVendorCommands(det.vendor)
+                const cmds = getVendorCommands(det.vendor, '', creds.username)
                 const versionOutput = det.output?.trim() ? det.output : await this._runCommand(creds, cmds.showVersion, timeoutMs)
                 const parsed = parseShowVersion(det.vendor, versionOutput)
 

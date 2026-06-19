@@ -351,21 +351,30 @@ export const VENDOR_COMMAND_MAP: Record<string, VendorCommands> = {
  * Supports explicit sub-types: 'cisco-nxos', 'cisco-iosxr', 'nokia-sros',
  * 'juniper-crpd', 'arista-ceos', 'palo-alto'.
  *
- * Auto-detects sub-type from model string:
- *   Cisco  → nxos (nexus/n9k/n5k/n3k) | iosxr (asr/ncs/xr) | ios (default)
- *   Juniper → juniper-crpd (crpd/container) | juniper (default = physical)
+ * Auto-detects sub-type from model string AND optional SSH username:
+ *   Cisco   → nxos (nexus/n9k/n5k/n3k) | iosxr (asr/ncs/xr) | ios (default)
+ *   Juniper → juniper-crpd (crpd/container, OR sshUser === 'root') | juniper (default)
  *   Arista  → arista-ceos (ceos/container/veos) | arista (default = physical)
  *   Nokia   → nokia-sros (7750/7250/7950/sros) | nokia (default = SR Linux)
  *
+ * Junos quirk: SSH as `root` to physical QFX/MX/EX lands in the FreeBSD
+ * shell (`sh`), NOT the Junos CLI — so `show version` fails with
+ * "sh: show: command not found". Routing root-user logins to the
+ * juniper-crpd command set (which wraps every command with `cli -c "..."`)
+ * makes commands work regardless of how the user lands.
+ *
  * Unknown vendors fall back to Cisco-style commands.
  *
- * @param vendor  - vendor name (e.g. "juniper", "cisco", "fortinet")
- * @param model   - optional model string (drives auto-detect; e.g., "cRPD",
- *                  "Nexus 9000", "ASR 9910", "QFX5130")
+ * @param vendor   - vendor name (e.g. "juniper", "cisco", "fortinet")
+ * @param model    - optional model string (drives auto-detect; e.g., "cRPD",
+ *                   "Nexus 9000", "ASR 9910", "QFX5130")
+ * @param sshUser  - optional SSH username; when 'root' on Juniper, routes to
+ *                   the shell-wrapped command set even on physical devices.
  */
-export function getVendorCommands (vendor: string, model?: string): VendorCommands {
+export function getVendorCommands (vendor: string, model?: string, sshUser?: string): VendorCommands {
     const key = (vendor ?? '').trim().toLowerCase()
     const m = (model ?? '').toLowerCase()
+    const user = (sshUser ?? '').trim().toLowerCase()
 
     // ── Auto-detect sub-type from model BEFORE the base-vendor match so
     //    e.g. vendor="juniper" + model="cRPD" resolves to juniper-crpd, not
@@ -381,12 +390,18 @@ export function getVendorCommands (vendor: string, model?: string): VendorComman
         }
     }
     if (key === 'juniper') {
-        // Physical Juniper drops into Junos CLI on SSH — no `cli` wrapper.
-        // cRPD container drops into Unix shell — needs `cli -c "…"` wrapper.
+        // Physical Juniper:
+        //   - Non-root SSH drops into Junos CLI — no `cli` wrapper needed.
+        //   - Root SSH drops into FreeBSD shell — every command must be
+        //     wrapped with `cli -c "..."` to escape the shell.
+        // cRPD container always drops into Unix shell — same wrapping required.
         if (m.includes('crpd') || m.includes('container')) {
             return VENDOR_COMMAND_MAP['juniper-crpd']
         }
-        // Physical (QFX, MX, EX, SRX, ACX…) is the default.
+        if (user === 'root') {
+            return VENDOR_COMMAND_MAP['juniper-crpd']
+        }
+        // Non-root physical (QFX, MX, EX, SRX, ACX…) is the default.
     }
     if (key === 'arista') {
         // cEOS container drops into bash — needs `FastCli -p 15` wrapper.

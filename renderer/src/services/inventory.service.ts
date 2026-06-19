@@ -132,7 +132,7 @@ export class InventoryService implements OnDestroy {
             return
         }
 
-        const cmds = getVendorCommands(node.vendor ?? '')
+        const cmds = getVendorCommands(node.vendor ?? '', node.model ?? '', (node.sshUsername ?? '').trim())
         const commands = [cmds.showVersion, cmds.showCpu, cmds.showMemory, cmds.showInterfaceBrief]
         if (cmds.showAlarms) { commands.push(cmds.showAlarms) }
 
@@ -342,7 +342,7 @@ export class InventoryService implements OnDestroy {
         const password = node.sshPassword ?? ''
         if (!host || !username || !password) { return null }
 
-        const cmds = getVendorCommands(node.vendor ?? '', node.model ?? '')
+        const cmds = getVendorCommands(node.vendor ?? '', node.model ?? '', username)
         const command = configType === 'running' ? cmds.showRunningConfig : cmds.showStartupConfig
 
         try {
@@ -740,7 +740,7 @@ export class InventoryService implements OnDestroy {
         if (!api?.sshRunCommand) { return }
 
         const host = (node.mgmtIp ?? '').split('/')[0].trim()
-        const cmds = getVendorCommands(node.vendor ?? '')
+        const cmds = getVendorCommands(node.vendor ?? '', node.model ?? '', (node.sshUsername ?? '').trim())
         try {
             let result: any
             if (this._backendClient?.isConnected) {
@@ -773,7 +773,7 @@ export class InventoryService implements OnDestroy {
         if (!api?.sshRunCommand) { return }
 
         const host = (node.mgmtIp ?? '').split('/')[0].trim()
-        const cmds = getVendorCommands(node.vendor ?? '')
+        const cmds = getVendorCommands(node.vendor ?? '', node.model ?? '', (node.sshUsername ?? '').trim())
         try {
             let result: any
             if (this._backendClient?.isConnected) {
