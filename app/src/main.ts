@@ -816,6 +816,24 @@ function _isControlCommand (cmd: string): boolean {
     return controlPatterns.some(p => p.test(t))
 }
 
+/**
+ * Commands that need EXTRA time to land before the next command can
+ * be sent — these aren't just control commands, they're full
+ * subprocess launches that the device takes 1–3s to bring up.
+ *
+ * Most important: `cli` on Junos EVO / cRPD. The binary launches the
+ * Junos CLI on top of the FreeBSD/EVO shell; with only the standard
+ * slowDelay between commands, the next `configure` lands at the SHELL
+ * (where `set` is a noop builtin) instead of inside the CLI — exactly
+ * the bug observed on QFX5240 EVO push.
+ */
+function _isHeavyControlCommand (cmd: string): boolean {
+    const t = cmd.trim().toLowerCase()
+    return t === 'cli'        // Junos CLI launcher
+        || t === 'sr_cli'     // SR Linux CLI
+        || t === 'fastcli'    // Arista cEOS FastCli
+}
+
 function _runSshShellSession (
     payload: SshPayload, commands: string[], delayMs: number,
 ): Promise<SshResult> {
@@ -992,6 +1010,15 @@ function _runSshShellSession (
                 //   • Config body lines get the fast delay — Juniper `load set
                 //     terminal` is buffered so lines can stream at near-wire
                 //     speed.
+                // 3-tier pacing:
+                //   • heavy control (cli / sr_cli / fastcli) → 2.5 s — these
+                //     launch a CLI subprocess on top of a shell and need
+                //     real time to come up before the next command can land
+                //     in the right context.
+                //   • regular control (configure, commit, exit, ^D, etc) →
+                //     slowDelay (default 500 ms)
+                //   • config body lines → fastDelay (~85 ms)
+                const HEAVY_CONTROL_DELAY = Math.max(slowDelay * 5, 2500)
                 let index = 0
                 let stopped = false
                 function sendNext (): void {
@@ -1009,7 +1036,8 @@ function _runSshShellSession (
                         return
                     }
                     const cmd = commands[index++]
-                    const isControl = _isControlCommand(cmd)
+                    const isHeavy = _isHeavyControlCommand(cmd)
+                    const isControl = isHeavy || _isControlCommand(cmd)
                     try {
                         // Control chars (e.g. Ctrl-D \x04) must be sent raw without newline
                         if (cmd.length === 1 && cmd.charCodeAt(0) < 32) {
@@ -1018,7 +1046,8 @@ function _runSshShellSession (
                             stream.write(cmd + '\n')
                         }
                     } catch { stopped = true; return }
-                    setTimeout(sendNext, isControl ? slowDelay : fastDelay)
+                    const nextDelay = isHeavy ? HEAVY_CONTROL_DELAY : isControl ? slowDelay : fastDelay
+                    setTimeout(sendNext, nextDelay)
                 }
 
                 // Wait for initial prompt before sending commands

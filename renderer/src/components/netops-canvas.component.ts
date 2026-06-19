@@ -15042,7 +15042,14 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             updateProgress()
             try {
                 const vendorKey = (node.vendor ?? '').trim().toLowerCase()
-                const cmds = getVendorCommands(vendorKey, node.model ?? '')
+                // Pass username so Junos+root routes to the juniper-crpd map —
+                // root SSH lands in the FreeBSD/EVO shell, NOT the Junos CLI,
+                // so the preamble must lead with `cli` to enter the CLI before
+                // `configure` + `load set terminal`. Missing this routing was
+                // the cause of "push reports ok but no commit on device" on
+                // QFX5240 EVO: the set lines were being typed at the shell,
+                // where `set` is a noop builtin.
+                const cmds = getVendorCommands(vendorKey, node.model ?? '', username)
                 const preamble = cmds.loadConfigPreamble ?? ['configure terminal']
                 const postamble = cmds.loadConfigPostamble ?? ['end', 'write memory']
 
