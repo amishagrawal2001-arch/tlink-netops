@@ -3917,14 +3917,26 @@
             option(value='ospfv3') OSPFv3 (IPv6)
             option(value='isis') IS-IS
         ng-container(*ngIf='protocolChoice === "ebgp"')
+          //- Permanent helper above the inputs — makes the 4-byte range
+          //- discoverable without having to type one in first or hover for
+          //- the tooltip. Includes the quick-pick chips that one-click set
+          //- the canonical 2-byte / 4-byte private starts.
+          .asn-range-hint
+            | Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Private ranges:
+            span.asn-range-pill 64512–65534 (2-byte)
+            | ,
+            span.asn-range-pill 4200000000–4294967294 (4-byte)
+            .asn-presets
+              span.asn-preset-label Quick-set:
+              button.asn-preset-chip(type='button', (click)='protocolSpineAsn = 65000; protocolLeafAsn = 65100') 2-byte (65000/65100)
+              button.asn-preset-chip(type='button', (click)='protocolSpineAsn = 4200000000; protocolLeafAsn = 4200001000') 4-byte (4200000000/4200001000)
           .bulk-cred-row
             span.bulk-cred-label Spine ASN Start
             input.bulk-cred-input(
               type='number',
               min='1',
               max='4294967295',
-              [(ngModel)]='protocolSpineAsn',
-              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Private ranges: 64512–65534 (2-byte), 4200000000–4294967294 (4-byte).'
+              [(ngModel)]='protocolSpineAsn'
             )
           //- asdot hint: confirms 4-byte input was accepted without making
           //- the user mentally convert 4200000000 → 64086.59904 themselves.
@@ -3935,19 +3947,23 @@
               type='number',
               min='1',
               max='4294967295',
-              [(ngModel)]='protocolLeafAsn',
-              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Private ranges: 64512–65534 (2-byte), 4200000000–4294967294 (4-byte).'
+              [(ngModel)]='protocolLeafAsn'
             )
           .bulk-cred-hint(*ngIf='protocolLeafAsnAsdot') 4-byte ASN — asdot: {{ protocolLeafAsnAsdot }}
         ng-container(*ngIf='protocolChoice === "ibgp-rr"')
+          .asn-range-hint
+            | Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Same ASN used on every iBGP-RR fabric node.
+            .asn-presets
+              span.asn-preset-label Quick-set:
+              button.asn-preset-chip(type='button', (click)='protocolSpineAsn = 65000') 2-byte (65000)
+              button.asn-preset-chip(type='button', (click)='protocolSpineAsn = 4200000000') 4-byte (4200000000)
           .bulk-cred-row
             span.bulk-cred-label Shared ASN
             input.bulk-cred-input(
               type='number',
               min='1',
               max='4294967295',
-              [(ngModel)]='protocolSpineAsn',
-              title='Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Same ASN used on every iBGP-RR fabric node.'
+              [(ngModel)]='protocolSpineAsn'
             )
           .bulk-cred-hint(*ngIf='protocolSpineAsnAsdot') 4-byte ASN — asdot: {{ protocolSpineAsnAsdot }}
         ng-container(*ngIf='protocolChoice === "ospf" || protocolChoice === "ospfv3"')
