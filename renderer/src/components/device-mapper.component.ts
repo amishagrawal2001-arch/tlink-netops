@@ -72,6 +72,14 @@ export class DeviceMapperComponent implements OnInit {
      *  the Mapping tab. Canvas owner persists via topology service. */
     @Output() nodeRoleChanged = new EventEmitter<{ nodeId: string; role: string }>()
 
+    /** Fires when the user clicks "🧹 Clear Canvas". Canvas owner is
+     *  expected to confirm + wipe nodes/links via the topology service.
+     *  Distinct from buildFromDiscoveryRequested: this just resets the
+     *  canvas, it does NOT auto-populate from the discovered inventory.
+     *  The Device Mapper stays open afterward so the user can decide
+     *  whether to then click Build Topology. */
+    @Output() clearCanvasRequested = new EventEmitter<void>()
+
     /** Available roles surfaced as a Mapping-tab dropdown. Mirrors the
      *  NodeRole type from interfaces.ts so the labels stay friendly. */
     readonly availableRoles: Array<{ value: string; label: string }> = [

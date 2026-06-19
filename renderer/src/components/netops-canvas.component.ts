@@ -6061,6 +6061,31 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.cdr.markForCheck()
     }
 
+    /**
+     * Wired to <device-mapper (clearCanvasRequested)>. Clears the canvas
+     * (nodes + links + annotations) without auto-populating from the
+     * discovered inventory. Discovered devices stay in the Device Mapper
+     * list so the user can pick Build Topology next, or drag-add devices
+     * manually. Confirms before wiping if there's anything to lose.
+     */
+    onClearCanvasFromMapper (): void {
+        const n = this.topology.nodes.length
+        const l = this.topology.links.length
+        if (n > 0 || l > 0) {
+            const ok = confirm(
+                `Clear the canvas?\n\n` +
+                `This will delete:\n` +
+                `  • ${n} node${n === 1 ? '' : 's'}\n` +
+                `  • ${l} link${l === 1 ? '' : 's'}\n\n` +
+                `Discovered inventory in Device Mapper stays — use Build Topology to repopulate.`,
+            )
+            if (!ok) { return }
+        }
+        this.svc.clearTopology()
+        this.statusMsg = 'Canvas cleared'
+        this.cdr.markForCheck()
+    }
+
     /** Wired to <device-mapper (buildFromDiscoveryRequested)>. */
     onBuildFromDiscovery (evt: {
         devices: Array<{ hostname: string; mgmtIp: string; vendor: string; model: string; interfaces: string[]; sshUsername?: string; sshPassword?: string }>;
