@@ -1849,9 +1849,53 @@ export class TopologyService {
              *  tool's management. Recommended default when ANY node in scope
              *  has an existing ASN. */
             keepExistingAsn?: boolean;
+            /** When true (only honored for iBGP variants), this is treated as
+             *  an OVERLAY protocol layered ON TOP of whatever underlay is
+             *  already configured. Effect:
+             *    • node.asn UNCHANGED — existing per-node ASNs preserved
+             *    • node.overlayAsn = shared AS — what EVPN signaling uses
+             *      via `local-as` override on the OVERLAY BGP group
+             *    • topology.underlayProtocol UNCHANGED
+             *    • topology.overlayEnabled = true
+             *  The canonical EVPN-VXLAN deployment uses eBGP underlay + iBGP
+             *  overlay; this lets the operator add the overlay piece without
+             *  wiping the underlay they pulled / hand-set per node. */
+            applyAsOverlay?: boolean;
         },
         nodeIds?: Set<string>,
     ): number {
+        const asOverlay = config.applyAsOverlay === true
+            && (proto === 'ibgp-rr' || proto === 'ibgp-fullmesh')
+        const nodes = nodeIds?.size
+            ? this.topology.nodes.filter(n => nodeIds.has(n.id))
+            : this.topology.nodes
+
+        // ── Overlay-only mode short-circuit ─────────────────────────────
+        // For dual-AS deployments (eBGP underlay + iBGP overlay), this
+        // mode lets the operator layer the EVPN signaling group on top
+        // of the existing underlay without rewriting underlay state.
+        if (asOverlay) {
+            const sharedOverlayAsn = config.spineAsnStart ?? 65000
+            // Persist scope for the leaf-only / leaf+spine pattern.
+            if (proto === 'ibgp-fullmesh') {
+                this.topology.ibgpScope = config.ibgpScope ?? 'all'
+            }
+            // Turn the EVPN overlay flag on so the emitter generates the
+            // OVERLAY BGP group + family evpn signaling lines.
+            this.topology.overlayEnabled = true
+            // Set per-node overlay AS only — leave node.asn (underlay)
+            // and topology.underlayProtocol UNTOUCHED.
+            const nonRoutingTypes = ['server', 'pc', 'host']
+            for (const n of nodes) {
+                if (nonRoutingTypes.includes(n.type)) { continue }
+                n.overlayAsn = sharedOverlayAsn
+            }
+            this._patch({ nodes: [...this.topology.nodes] })
+            this._regenerateConfigs(true)
+            return nodes.length
+        }
+
+        // ── Underlay-replacement mode (existing behavior) ───────────────
         // Persist ibgpScope on the topology so the emitter can scope the
         // overlay-neighbor derivation correctly on subsequent config regens.
         if (proto === 'ibgp-fullmesh') {
@@ -1862,9 +1906,6 @@ export class TopologyService {
             this.topology.ibgpScope = undefined
         }
         this.topology.underlayProtocol = proto === 'none' ? undefined : proto
-        const nodes = nodeIds?.size
-            ? this.topology.nodes.filter(n => nodeIds.has(n.id))
-            : this.topology.nodes
 
         // Infer role from label when no explicit role is set
         const role = (n: { role?: string; label: string; type: string }): string => {

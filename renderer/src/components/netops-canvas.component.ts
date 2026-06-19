@@ -691,6 +691,12 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     /** Default-on when the topology already has an ASN on any node.
      *  Prevents the Set Protocol Apply from overwriting live device ASNs. */
     protocolKeepExistingAsn = false
+    /** When true (iBGP only): treat the chosen protocol as the OVERLAY
+     *  rather than the underlay. Preserves node.asn + the existing
+     *  underlay; sets node.overlayAsn (shared) + topology.overlayEnabled.
+     *  Default ON when the dialog opens with iBGP selected AND the
+     *  topology already has an underlay configured. */
+    protocolApplyAsOverlay = false
     /** Status message after a Pull-AS run, shown inline in the dialog. */
     protocolPullAsnStatus = ''
     protocolPullAsnRunning = false
@@ -7096,6 +7102,13 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         // safer behavior for live fabrics. Operators bringing greenfield
         // labs through the dialog can uncheck for a clean assignment.
         this.protocolKeepExistingAsn = this.topologyHasExistingAsn
+        // Default-on when ANY underlay exists (an underlay is "configured" if
+        // we have a protocol set OR any node already has an ASN). Operators
+        // adding EVPN signaling on top of a pulled fabric almost always want
+        // this; greenfield labs uncheck it for a full underlay-replacement.
+        this.protocolApplyAsOverlay = (
+            !!this.topology.underlayProtocol || this.topologyHasExistingAsn
+        )
         this.protocolPullAsnStatus = ''
         this.showProtocolDialog = true
         this.cdr.markForCheck()
@@ -7119,6 +7132,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 srv6LocatorBase: this.protocolSrv6LocatorBase,
                 ibgpScope: this.protocolIbgpScope,
                 keepExistingAsn: this.protocolKeepExistingAsn,
+                applyAsOverlay: this.protocolApplyAsOverlay,
             }, nodeIds)
         } catch (err) {
             this.statusMsg = `Protocol apply failed: ${(err as Error).message}`

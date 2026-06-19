@@ -4031,6 +4031,29 @@
             option(value='ospf') OSPF
             option(value='ospfv3') OSPFv3 (IPv6)
             option(value='isis') IS-IS
+        //- ── Apply-as-overlay checkbox ──────────────────────────────────────
+        //- Only relevant for iBGP variants. When checked, this becomes the
+        //- EVPN overlay protocol layered ON TOP of whatever underlay is
+        //- already configured — preserves node.asn and topology.underlayProtocol,
+        //- only sets node.overlayAsn (shared) + topology.overlayEnabled. The
+        //- canonical EVPN-VXLAN deployment uses eBGP underlay + iBGP overlay;
+        //- this is how you add the overlay piece without wiping the underlay.
+        label.bulk-cred-check.bulk-cred-check-overlay(
+          *ngIf='protocolChoice === "ibgp-rr" || protocolChoice === "ibgp-fullmesh"'
+        )
+          input(
+            type='checkbox',
+            [(ngModel)]='protocolApplyAsOverlay',
+            title='When checked, applies this iBGP as the EVPN signaling OVERLAY on top of whatever underlay is already configured. Preserves node.asn and topology.underlayProtocol; only sets node.overlayAsn (shared) and topology.overlayEnabled. Uncheck to use iBGP as the fabric underlay protocol.'
+          )
+          span Apply as EVPN overlay (preserve existing underlay)
+        .svc-overlay-explainer.svc-overlay-auto(
+          *ngIf='(protocolChoice === "ibgp-rr" || protocolChoice === "ibgp-fullmesh") && protocolApplyAsOverlay'
+        )
+          | Each node keeps its existing underlay AS. The shared AS below
+          | becomes the OVERLAY AS, applied via `local-as` override on the
+          | EVPN BGP group only. This is the dual-AS pattern most operators
+          | want for EVPN-VXLAN.
         ng-container(*ngIf='protocolChoice === "ebgp"')
           //- Permanent helper above the inputs — makes the 4-byte range
           //- discoverable without having to type one in first or hover for
