@@ -1991,7 +1991,12 @@ export class TopologyService {
             const mismatches: string[] = []
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }
-                n.ospfArea = 0
+                // Do NOT set ospfArea — iBGP underlay doesn't need OSPF, and
+                // setting it leaks into the emitter's OSPF-interface-map
+                // population (which only checks `node.ospfArea != null`, not
+                // whether OSPF is actually the chosen underlay). Result was
+                // the user seeing both an iBGP BGP block AND an OSPF block
+                // emitted in the same config.
                 if (shouldKeep(n)) {
                     const existing = existingAsn.get(n.id) as number
                     n.asn = existing
@@ -2300,9 +2305,15 @@ export class TopologyService {
         }
 
         // ── Pre-compute per-node OSPF interface list from links ──
+        // GATED on actual OSPF underlay choice. Stale node.ospfArea from a
+        // previous apply (or buggy set in a sibling protocol path) used to
+        // leak interfaces into ospfInterfaceMap regardless of whether OSPF
+        // was the chosen underlay, producing emit-both-protocols configs.
         const ospfInterfaceMap = new Map<string, OspfInterface[]>()
+        const ospfUnderlayChosen = topo.underlayProtocol === 'ospf' || topo.underlayProtocol === 'ospfv3'
 
         for (const link of topo.links) {
+            if (!ospfUnderlayChosen) { continue }
             const srcNode = nodeMap.get(link.sourceNodeId)
             const tgtNode = nodeMap.get(link.targetNodeId)
             if (!srcNode || !tgtNode) { continue }
