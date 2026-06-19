@@ -3139,10 +3139,29 @@
             | iBGP with RR = every node shares the same AS; spines act as
             | route reflectors and leaves peer only with spines. Cleanest at
             | scale (works up to 100s of leaves per RR pair).
+          //- Auto-defaults summary for iBGP — makes clear that loopbacks +
+          //- link IPs + neighbor pairings all get assigned for the operator
+          //- without any extra clicks. Just need to pick the shared AS.
+          .svc-overlay-explainer.svc-overlay-auto(*ngIf='serviceUnderlayProto === "ibgp-rr" || serviceUnderlayProto === "ibgp-fullmesh"')
+            | ⚡ Auto-configured: loopback IPs (10.255.x.x), underlay link IPs
+            | (172.16.x.x), and BGP neighbor pairs. Pick the shared AS below
+            | (or leave at 65000 — most common for labs).
           .svc-overlay-explainer(*ngIf='serviceUnderlayProto === "ibgp-fullmesh"')
             | iBGP full mesh = every node shares the same AS and peers with
             | every other node directly. Simplest config, but operationally
             | unmaintainable past ~6–8 nodes (N×(N−1)/2 sessions).
+          //- Scope picker — only relevant when full mesh is chosen. Lets the
+          //- operator decide whether spines participate or just transit.
+          .bulk-cred-row(*ngIf='serviceUnderlayProto === "ibgp-fullmesh"')
+            span.bulk-cred-label Mesh scope
+            select.bulk-cred-input([(ngModel)]='serviceIbgpScope')
+              option(value='all') Leaf + Spine (every node peers)
+              option(value='leaf-only') Leaf only (spines transit IP, leaves mesh directly)
+          .svc-overlay-explainer(*ngIf='serviceUnderlayProto === "ibgp-fullmesh" && serviceIbgpScope === "leaf-only"')
+            | Spines stay as pure IP transit — no EVPN config on them. Leaves
+            | peer with every other leaf over loopbacks via multihop BGP.
+            | Common in designs where the spine layer is shared between
+            | multiple tenants with different overlay shapes.
           //- ASN-change warning — only shown when the topology already has
           //- ASNs assigned. Pushing a different AS to a live device resets
           //- every BGP session that used the old AS as `local-as` →
@@ -4039,6 +4058,17 @@
               [(ngModel)]='protocolSpineAsn'
             )
           .bulk-cred-hint(*ngIf='protocolSpineAsnAsdot') 4-byte ASN — asdot: {{ protocolSpineAsnAsdot }}
+          //- Scope picker for full-mesh — pick who actually participates.
+          .bulk-cred-row(*ngIf='protocolChoice === "ibgp-fullmesh"')
+            span.bulk-cred-label Mesh scope
+            select.bulk-cred-input([(ngModel)]='protocolIbgpScope')
+              option(value='all') Leaf + Spine (every node peers)
+              option(value='leaf-only') Leaf only (spines transit, leaves mesh directly)
+          .svc-overlay-explainer(*ngIf='protocolChoice === "ibgp-fullmesh" && protocolIbgpScope === "leaf-only"')
+            | Leaves peer directly with every other leaf over loopbacks via
+            | multihop BGP. Spines stay as pure IP transit — no EVPN config
+            | on them. Useful when the spine layer is shared between multiple
+            | overlays.
         ng-container(*ngIf='protocolChoice === "ospf" || protocolChoice === "ospfv3"')
           .bulk-cred-row
             span.bulk-cred-label OSPF Area

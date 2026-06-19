@@ -363,6 +363,12 @@ export interface Topology {
 
     // Routing config generation hints (set by builder or template)
     underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis'
+    /** For iBGP-fullmesh underlay: who participates in the mesh.
+     *  'all' (default) — every node (spine + leaf) peers with every other.
+     *  'leaf-only'    — only leaves form the EVPN-signaling mesh, directly
+     *                    over loopbacks via multihop BGP. Spines stay as
+     *                    pure IP transit with no EVPN config. */
+    ibgpScope?: 'all' | 'leaf-only'
     overlayEnabled?: boolean
     vniBase?: number             // default 10000; VNI = vniBase + vlanId
     irbEnabled?: boolean         // generate IRB interfaces for inter-VLAN routing (distributed gateway)

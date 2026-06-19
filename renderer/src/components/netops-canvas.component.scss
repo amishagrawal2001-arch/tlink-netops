@@ -2742,6 +2742,15 @@ netops-3d-canvas {
   line-height: 1.5;
 }
 
+// Variant of the explainer that highlights an auto-default — green tint
+// so the operator reads it as "good, you don't have to do this manually"
+// rather than "yet another thing to read".
+.svc-overlay-auto {
+  background: rgba(74, 222, 128, 0.08);
+  border-left-color: #4ade80;
+  color: #cbd5e1;
+}
+
 // ASN-change warning — only renders when the topology already has ASNs
 // assigned. Uses a different accent (amber/red) than the blue explainer
 // so it reads as caution-not-info.

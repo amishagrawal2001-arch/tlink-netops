@@ -1838,9 +1838,23 @@ export class TopologyService {
         config: {
             spineAsnStart?: number; leafAsnStart?: number; ospfArea?: number; isisLevel?: 1 | 2 | 12;
             srMpls?: boolean; srv6?: boolean; srgbStart?: number; srgbEnd?: number; srv6LocatorBase?: string;
+            /** For ibgp-fullmesh only. 'all' = every node peers with every
+             *  other; 'leaf-only' = only leaves form the EVPN mesh, spines
+             *  stay as pure IP transit. Persisted to topology.ibgpScope. */
+            ibgpScope?: 'all' | 'leaf-only';
         },
         nodeIds?: Set<string>,
     ): number {
+        // Persist ibgpScope on the topology so the emitter can scope the
+        // overlay-neighbor derivation correctly on subsequent config regens.
+        if (proto === 'ibgp-fullmesh') {
+            this.topology.ibgpScope = config.ibgpScope ?? 'all'
+        } else if (this.topology.ibgpScope) {
+            // Clear the field when switching away from full mesh so a later
+            // ibgp-rr / ebgp choice doesn't inherit a stale scope.
+            this.topology.ibgpScope = undefined
+        }
+        this.topology.underlayProtocol = proto === 'none' ? undefined : proto
         const nodes = nodeIds?.size
             ? this.topology.nodes.filter(n => nodeIds.has(n.id))
             : this.topology.nodes
@@ -2281,7 +2295,22 @@ export class TopologyService {
 
                 // EVPN-VXLAN overlay context
                 overlayEnabled: overlay,
-                overlayNeighbors: isLeafRole ? spineLoopbacks : leafLoopbacks,
+                // Overlay neighbor list depends on iBGP scope:
+                //   • all / RR / eBGP-overlay (default): leaves peer with
+                //     spines, spines peer with leaves — the classic
+                //     hub-and-spoke EVPN signaling pattern.
+                //   • leaf-only (ibgp-fullmesh subset): leaves peer DIRECTLY
+                //     with every other leaf over loopbacks via multihop BGP.
+                //     Spines stay as pure IP transit with no EVPN config —
+                //     overlayNeighbors=[] so the emitter skips the OVERLAY
+                //     BGP group entirely on spines.
+                overlayNeighbors: (
+                    underlay === 'ibgp-fullmesh' && topo.ibgpScope === 'leaf-only'
+                )
+                    ? (isLeafRole
+                        ? leafLoopbacks.filter(ip => ip !== loopIp)
+                        : [])
+                    : (isLeafRole ? spineLoopbacks : leafLoopbacks),
                 // Spines are EVPN RRs — no VTEP/VNI; only leafs get VNI mappings
                 // ERB: spines are pure RRs (no VNI, no VTEP); CRB: spines are centralized gateways (need VNI + VTEP)
                 vniMappings: (isSpineRole && !isCrb)

@@ -440,6 +440,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // an underlay AS / loopback / link IPs won't actually come up.
     serviceConfigureOverlay = true
     serviceUnderlayProto: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' = 'ebgp'
+    /** iBGP-fullmesh scope — who participates in the mesh. */
+    serviceIbgpScope: 'all' | 'leaf-only' = 'all'
     serviceSpineAsn = 65000
     serviceLeafAsn  = 65100
     serviceAutoLoopbacks = true
@@ -684,6 +686,8 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // Set Protocol dialog
     showProtocolDialog = false
     protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis' = 'none'
+    /** iBGP-fullmesh scope for Set Protocol dialog. */
+    protocolIbgpScope: 'all' | 'leaf-only' = 'all'
     protocolSpineAsn = 65000
     protocolLeafAsn = 65100
 
@@ -7069,6 +7073,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 srgbStart: this.protocolSrgbStart,
                 srgbEnd: this.protocolSrgbEnd,
                 srv6LocatorBase: this.protocolSrv6LocatorBase,
+                ibgpScope: this.protocolIbgpScope,
             }, nodeIds)
         } catch (err) {
             this.statusMsg = `Protocol apply failed: ${(err as Error).message}`
@@ -8902,6 +8907,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 this.svc.applyProtocol(proto, {
                     spineAsnStart: this.serviceSpineAsn,
                     leafAsnStart:  this.serviceLeafAsn,
+                    ibgpScope:     this.serviceIbgpScope,
                 })
             } catch (err) {
                 console.warn('[service profile] overlay-underlay setup failed', err)
