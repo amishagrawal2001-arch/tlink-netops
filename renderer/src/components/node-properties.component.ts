@@ -3025,23 +3025,44 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         const usedIds = new Set(this.node.ports.map(p => p.id))
         for (const p of groupPorts) { usedIds.delete(p.id) }
 
+        // Is this the FIRST channelization (parent has no `:N` suffix yet)?
+        // We track this so the :0 sub-port doesn't blindly inherit the
+        // parent's IP — when a physical port is split into sub-ports, the
+        // parent's IP was sized for the original L3 link, but :0 is now a
+        // different interface that Junos treats as separate. Inheriting
+        // the parent's IP creates `identical local address` duplicate-IP
+        // commit failures when the same IP also lives on another port.
+        // Re-channelizing an already-channelized group (e.g. 2× → 4×) is
+        // safe — `existing` for each channel keeps its own IP.
+        const parentBase = baseLabel
+        const parentExisting = existingByChannel.get(0)
+        const parentIsRawPhysical = parentExisting && parentExisting.label === parentBase
+            && !parentExisting.label.includes(':')
+
         const channelized: NodePort[] = []
         for (let channel = 0; channel < channelCount; channel++) {
             const existing = existingByChannel.get(channel)
             const id = existing?.id
                 ?? (channel === 0 ? seedPort.id : this._nextPortId(usedIds, `${seedPort.id}_ch${channel}`))
 
+            // When this is the first-time channelization (parent was raw
+            // physical, no `:N`), clear inherited IP/VLAN/description on
+            // every sub-port — they represent new logical interfaces and
+            // should be configured fresh. When re-channelizing an existing
+            // sub-port group, preserve each channel's own state.
+            const inheritFromExisting = !(parentIsRawPhysical && channel === 0)
+
             channelized.push({
                 id,
                 label: `${baseLabel}:${channel}`,
                 enabled: existing?.enabled ?? seedPort.enabled,
-                ipAddress: existing?.ipAddress ?? '',
-                description: existing?.description ?? '',
+                ipAddress: inheritFromExisting ? (existing?.ipAddress ?? '') : '',
+                description: inheritFromExisting ? (existing?.description ?? '') : '',
                 speed: existing?.speed ?? seedPort.speed,
-                vlan: existing?.vlan ?? seedPort.vlan,
-                vlanMode: existing?.vlanMode ?? seedPort.vlanMode,
-                trunkNativeVlan: existing?.trunkNativeVlan ?? seedPort.trunkNativeVlan,
-                trunkAllowedVlans: existing?.trunkAllowedVlans ?? seedPort.trunkAllowedVlans,
+                vlan: inheritFromExisting ? (existing?.vlan ?? seedPort.vlan) : undefined,
+                vlanMode: inheritFromExisting ? (existing?.vlanMode ?? seedPort.vlanMode) : undefined,
+                trunkNativeVlan: inheritFromExisting ? (existing?.trunkNativeVlan ?? seedPort.trunkNativeVlan) : undefined,
+                trunkAllowedVlans: inheritFromExisting ? (existing?.trunkAllowedVlans ?? seedPort.trunkAllowedVlans) : undefined,
             })
         }
 
