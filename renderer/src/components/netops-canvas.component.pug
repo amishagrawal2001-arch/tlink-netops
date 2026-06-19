@@ -3104,6 +3104,52 @@
       label.auto-ip-check
         input(type='checkbox', [(ngModel)]='serviceRegenConfigs')
         span Regenerate startup configs
+
+      //- ── Overlay-required underlay configuration ───────────────────────
+      //- Shown only when the selected profile enables overlayEnabled (EVPN
+      //- variants — EVPN-VXLAN DC Fabric, CRB, ERB, K8s Fabric…). Lets the
+      //- operator do Service Profile + Set Protocol's underlay setup in
+      //- one click. Without the underlay BGP / loopbacks / link IPs the
+      //- EVPN overlay sessions can't come up.
+      .svc-overlay-section(*ngIf='serviceProfileNeedsOverlay')
+        label.auto-ip-check
+          input(type='checkbox', [(ngModel)]='serviceConfigureOverlay')
+          span ⚡ Also configure overlay underlay (recommended for EVPN profiles)
+        .svc-overlay-form(*ngIf='serviceConfigureOverlay')
+          .svc-overlay-hint
+            | This profile needs an underlay BGP fabric for the EVPN signaling
+            | sessions to come up. Set the basics here or open Set Routing
+            | Protocol later for finer control.
+          .bulk-cred-row
+            span.bulk-cred-label Underlay
+            select.bulk-cred-input([(ngModel)]='serviceUnderlayProto')
+              option(value='ebgp') eBGP Clos (unique ASN/node)
+              option(value='ibgp-rr') iBGP with Route Reflector
+          .bulk-cred-row
+            span.bulk-cred-label Spine ASN Start
+            input.bulk-cred-input(
+              type='number',
+              min='1',
+              max='4294967295',
+              [(ngModel)]='serviceSpineAsn'
+            )
+          .bulk-cred-hint(*ngIf='serviceSpineAsnAsdot') 4-byte ASN — asdot: {{ serviceSpineAsnAsdot }}
+          .bulk-cred-row(*ngIf='serviceUnderlayProto === "ebgp"')
+            span.bulk-cred-label Leaf ASN Start
+            input.bulk-cred-input(
+              type='number',
+              min='1',
+              max='4294967295',
+              [(ngModel)]='serviceLeafAsn'
+            )
+          .bulk-cred-hint(*ngIf='serviceLeafAsnAsdot && serviceUnderlayProto === "ebgp"') 4-byte ASN — asdot: {{ serviceLeafAsnAsdot }}
+          label.auto-ip-check
+            input(type='checkbox', [(ngModel)]='serviceAutoLoopbacks')
+            span Auto-assign loopback IPs (required for VTEP + router-id)
+          label.auto-ip-check
+            input(type='checkbox', [(ngModel)]='serviceAutoLinkIps')
+            span Auto-assign link IPs (required for underlay BGP adjacency)
+
       .auto-ip-actions
         button.btn-tool(type='button', (click)='cancelServiceDialog()')
           span Cancel

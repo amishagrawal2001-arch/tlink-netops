@@ -432,6 +432,36 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     serviceProfileId = ''
     serviceOverwrite = false
     serviceRegenConfigs = true
+
+    // ── Overlay-protocol setup wired into the Service Profile dialog ────────
+    // When a profile that requires overlay (EVPN-VXLAN / CRB / ERB) is
+    // selected, the dialog can ALSO run Set Protocol's underlay flow in one
+    // click. Default ON for overlay-required profiles, since EVPN without
+    // an underlay AS / loopback / link IPs won't actually come up.
+    serviceConfigureOverlay = true
+    serviceUnderlayProto: 'ebgp' | 'ibgp-rr' = 'ebgp'
+    serviceSpineAsn = 65000
+    serviceLeafAsn  = 65100
+    serviceAutoLoopbacks = true
+    serviceAutoLinkIps   = true
+
+    /** True when the currently-selected profile sets overlayEnabled=true.
+     *  Drives the visibility of the overlay-underlay form section in the
+     *  Service Profile dialog so it only appears when relevant. */
+    get serviceProfileNeedsOverlay (): boolean {
+        if (!this.serviceProfileId) { return false }
+        const profile = SERVICE_PROFILES.find(p => p.id === this.serviceProfileId)
+        return profile?.overlayEnabled === true
+    }
+
+    /** asdot hint mirrors the Set Protocol dialog so 4-byte ASN entry is
+     *  discoverable here too. */
+    get serviceSpineAsnAsdot (): string {
+        return is4ByteAsn(this.serviceSpineAsn) ? asnToAsdot(this.serviceSpineAsn) : ''
+    }
+    get serviceLeafAsnAsdot (): string {
+        return is4ByteAsn(this.serviceLeafAsn) ? asnToAsdot(this.serviceLeafAsn) : ''
+    }
     readonly serviceProfiles = SERVICE_PROFILES
 
     // service endpoint stubs on canvas (free ports with configured vlanMode)
@@ -8839,7 +8869,39 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     applyServiceDialog (): void {
         if (!this.serviceProfileId) { return }
-        this.svc.applyServiceProfile(this.serviceProfileId, this.serviceOverwrite, this.serviceRegenConfigs)
+        // Phase 1 — apply the Service Profile itself (VLANs, port modes,
+        // overlay/IRB flags). regenConfigs=false here so we batch the
+        // regen with whatever the overlay-underlay step does below; one
+        // regen at the end is cheaper and avoids a flash of intermediate
+        // state on the canvas.
+        const willConfigureOverlay = this.serviceProfileNeedsOverlay && this.serviceConfigureOverlay
+        this.svc.applyServiceProfile(
+            this.serviceProfileId,
+            this.serviceOverwrite,
+            this.serviceRegenConfigs && !willConfigureOverlay,
+        )
+
+        // Phase 2 — if the profile needs overlay AND the operator opted in,
+        // run the same path as Set Protocol so they don't have to open a
+        // second dialog. Handles ASN assignment, OSPF/IS-IS-area defaults,
+        // and (optionally) auto-loopbacks + auto-link-IPs prerequisites
+        // for the underlay BGP adjacency to come up.
+        if (willConfigureOverlay) {
+            const proto = this.serviceUnderlayProto
+            try {
+                if (this.serviceAutoLoopbacks) { this.svc.autoAssignLoopbacks(false) }
+                if (this.serviceAutoLinkIps)   { this.svc.autoAddressLinks(false) }
+                this.svc.applyProtocol(proto, {
+                    spineAsnStart: this.serviceSpineAsn,
+                    leafAsnStart:  this.serviceLeafAsn,
+                })
+            } catch (err) {
+                console.warn('[service profile] overlay-underlay setup failed', err)
+                this.statusMsg = 'Service Profile applied; overlay underlay setup partially failed — check console.'
+            }
+            if (this.serviceRegenConfigs) { this.svc.regenerateConfigs(true) }
+        }
+
         this.showServiceDialog = false
         this.cdr.markForCheck()
     }

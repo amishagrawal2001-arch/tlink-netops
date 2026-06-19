@@ -2703,6 +2703,31 @@ netops-3d-canvas {
   &:hover { color: var(--text) }
 }
 
+// ─── Service Profile overlay-underlay section ────────────────────────────────
+// Shown inside the Apply Service Profile dialog when the selected profile
+// enables overlayEnabled. Slightly indented so it visually nests under the
+// "Also configure overlay underlay" checkbox.
+
+.svc-overlay-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.svc-overlay-form {
+  margin-top: 8px;
+  margin-left: 18px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(59, 130, 246, 0.4);
+}
+
+.svc-overlay-hint {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
 // ─── Push Output dialog ──────────────────────────────────────────────────────
 // Expandable replacement for the prior window.alert summary. Failed nodes
 // expand by default; ✓ rows stay collapsed unless the user clicks them.
