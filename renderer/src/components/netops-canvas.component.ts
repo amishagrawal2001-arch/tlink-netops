@@ -741,8 +741,14 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     protocolSrgbStart = 16000
     protocolSrgbEnd = 23999
     protocolSrv6LocatorBase = 'fc00:0'
+    // Both default ON — BGP/IGP can't actually come up without router-id
+    // (loopback) AND adjacency IPs (links). Leaving link IPs OFF left
+    // operators with a "Apply succeeded but config has no neighbors" puzzle.
+    // Operators who already have IPs in place via auto-Address from a prior
+    // step won't double-assign because both methods skip already-set ports
+    // (overwrite=false). Operators who manage IPs externally can uncheck.
     protocolAutoAssignLoopbacks = true
-    protocolAutoAssignLinks = false
+    protocolAutoAssignLinks = true
     protocolScope: 'all' | 'selected' = 'all'
 
     // Bulk credential dialog
@@ -7136,6 +7142,16 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 const ipRes = this.svc.autoAddressLinks(false, this.autoIpBaseCidr, this.autoIpLinkPrefix)
                 if (ipRes.addressedLinks) { extras.push(`${ipRes.addressedLinks} link(s)`) }
             } catch { /* skip silently */ }
+        }
+
+        // Force a final regen so the visible configs reflect the COMBINED
+        // state after all of: applyProtocol + auto-loopbacks + auto-links.
+        // Each of those operations runs a regen internally, but only if it
+        // actually changed something — which means a user who already has
+        // IPs in place could end up with configs reflecting the regen from
+        // a step that didn't run. Belt and braces: regen once more here.
+        if (this.protocolChoice !== 'none') {
+            try { this.svc.regenerateConfigs(true) } catch { /* skip silently */ }
         }
 
         this.showProtocolDialog = false
