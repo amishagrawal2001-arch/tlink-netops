@@ -442,16 +442,32 @@
         button.mapper-btn.mapper-btn-apply(
           *ngIf='activeTab === "inventory" && discoveredDevices.length',
           type='button',
-          [title]='selectedDeviceHosts.size > 0 ? "Build topology from the " + selectedDeviceHosts.size + " selected device(s) and the LLDP links between them" : "Create a topology node for every discovered device and draw a link for every LLDP adjacency. Adds to the current canvas."',
+          [title]='(selectedDeviceHosts.size > 0 ? "Build topology from the " + selectedDeviceHosts.size + " selected device(s)" : "Create a topology node for every discovered device") + (includeLldpLinks ? " + the LLDP links between them" : ". LLDP links skipped — nodes land isolated for manual wiring") + ". Adds to the current canvas."',
           (click)='buildTopologyFromDiscovery(false)'
         ) 🔗 Build Topology{{ selectedDeviceHosts.size > 0 ? ' (' + selectedDeviceHosts.size + ')' : '' }}
+        //- ── Include-LLDP-links toggle ──────────────────────────────────────
+        //- Affects BOTH 🔗 Build Topology and ⟳ Replace & Build. When off,
+        //- discovered devices land as isolated nodes and the user wires the
+        //- topology themselves — useful when LLDP coverage is partial or
+        //- when starting from a clean design.
+        label.mapper-link-toggle(
+          *ngIf='activeTab === "inventory" && discoveredDevices.length',
+          [title]='includeLldpLinks ? "Auto-draw LLDP links between built devices. Uncheck to add devices only and wire manually." : "LLDP links will NOT be drawn — devices land isolated. Check to auto-draw LLDP adjacencies."'
+        )
+          input(
+            type='checkbox',
+            [checked]='includeLldpLinks',
+            (change)='includeLldpLinks = $any($event.target).checked; cdr.markForCheck()'
+          )
+          span.mapper-link-toggle-label LLDP links
         //- Replace & Build — wipes the current canvas, then populates it
-        //- with the discovered devices + LLDP links in one shot. Distinct
-        //- from "Build Topology" which is additive (keeps existing nodes).
+        //- with the discovered devices + LLDP links in one shot (or devices
+        //- only if the LLDP-links toggle is off). Distinct from "Build
+        //- Topology" which is additive (keeps existing nodes).
         button.mapper-btn(
           *ngIf='activeTab === "inventory" && discoveredDevices.length',
           type='button',
-          [title]='selectedDeviceHosts.size > 0 ? "Wipe the current canvas, then build from the " + selectedDeviceHosts.size + " selected device(s) + their LLDP links" : "Wipe the current canvas, then rebuild from the " + discoveredDevices.length + " discovered device(s) + LLDP links"',
+          [title]='(selectedDeviceHosts.size > 0 ? "Wipe the current canvas, then build from the " + selectedDeviceHosts.size + " selected device(s)" : "Wipe the current canvas, then rebuild from the " + discoveredDevices.length + " discovered device(s)") + (includeLldpLinks ? " + their LLDP links" : ". LLDP links skipped — nodes land isolated for manual wiring")',
           (click)='buildTopologyFromDiscovery(true)'
         ) ⟳ Replace &amp; Build{{ selectedDeviceHosts.size > 0 ? ' (' + selectedDeviceHosts.size + ')' : '' }}
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', (click)='exportInventoryCsv()') 📥 Export CSV

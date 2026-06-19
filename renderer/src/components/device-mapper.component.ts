@@ -114,6 +114,11 @@ export class DeviceMapperComponent implements OnInit {
     /** LLDP adjacencies from the most recent discovery run. Persists until
      *  the next discovery or "Clear All" — so Apply Mapping can draw links. */
     discoveredLinks: DiscoveredLink[] = []
+    /** When false, both 🔗 Build Topology and ⟳ Replace & Build skip the
+     *  discovered LLDP links — devices land on the canvas as isolated nodes
+     *  and the user draws the wiring themselves. Default true keeps the
+     *  prior behavior. Survives discovery re-runs within a session. */
+    includeLldpLinks = true
     /** Subset of discoveredDevices the user has checkbox-selected for build.
      *  Empty set means "no explicit selection" → Build Topology uses ALL.
      *  Stores hostname (lowercased) as the membership key. */
@@ -1550,6 +1555,15 @@ export class DeviceMapperComponent implements OnInit {
             // Drops cross-boundary links (selected ↔ unselected) so the new
             // topology is self-contained.
             links = this.discoveredLinks.filter(l => isSel(l.srcHost) && isSel(l.dstHost))
+        }
+
+        // "Include LLDP links" toggle — when off, devices land as isolated
+        // nodes on the canvas and the user wires them up manually. Useful
+        // when LLDP discovery is incomplete (some boxes don't speak it) or
+        // when the user wants to design the topology from scratch using
+        // the discovered devices only as starting inventory.
+        if (!this.includeLldpLinks) {
+            links = []
         }
 
         if (!devices.length) {
