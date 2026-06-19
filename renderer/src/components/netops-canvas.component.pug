@@ -3997,7 +3997,30 @@
   .auto-ip-overlay(*ngIf='showProtocolDialog', (click)='showProtocolDialog = false')
     .auto-ip-dialog.bulk-cred-dialog((click)='$event.stopPropagation()')
       .auto-ip-title Set Routing Protocol
+      //- ── Existing-ASN management ────────────────────────────────────────
+      //- When operating on a live fabric, the device's CURRENT AS isn't
+      //- visible to the tool unless we pull it. Two affordances:
+      //-   (1) Pull AS from each node's running config and store it on
+      //-       node.asn, so subsequent Apply can keep it intact.
+      //-   (2) "Keep existing ASNs" checkbox so the operator can confirm
+      //-       intent. Default ON when at least one ASN exists already.
       .bulk-cred-form
+        .protocol-asn-pull
+          button.btn-tool(
+            type='button',
+            [disabled]='protocolPullAsnRunning',
+            title='SSH into every node with credentials and read its current BGP autonomous-system. Updates node.asn so subsequent Apply can keep the existing device AS.',
+            (click)='pullAsnsFromDevices()'
+          ) {{ protocolPullAsnRunning ? '⏳ Pulling…' : '⬇ Pull AS from devices' }}
+          .protocol-asn-pull-status(*ngIf='protocolPullAsnStatus') {{ protocolPullAsnStatus }}
+        label.bulk-cred-check(*ngIf='topologyHasExistingAsn')
+          input(
+            type='checkbox',
+            [(ngModel)]='protocolKeepExistingAsn',
+            title='When checked, Apply preserves any node.asn already set and only assigns ASNs to nodes that lack one. Unchecked = overwrite every node with the spine/leaf scheme below.'
+          )
+          span Keep existing ASNs (only assign to nodes without one)
+
         .bulk-cred-row
           span.bulk-cred-label Protocol
           select.bulk-cred-input([(ngModel)]='protocolChoice', (ngModelChange)='protocolSrMpls = $event === "isis"')

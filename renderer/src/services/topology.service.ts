@@ -1842,6 +1842,13 @@ export class TopologyService {
              *  other; 'leaf-only' = only leaves form the EVPN mesh, spines
              *  stay as pure IP transit. Persisted to topology.ibgpScope. */
             ibgpScope?: 'all' | 'leaf-only';
+            /** When true, nodes that ALREADY have node.asn set keep their
+             *  current value — only nodes without an ASN get one assigned.
+             *  Prevents the "applied protocol → pushed config → live device
+             *  BGP reset" trap when bringing an existing fabric under the
+             *  tool's management. Recommended default when ANY node in scope
+             *  has an existing ASN. */
+            keepExistingAsn?: boolean;
         },
         nodeIds?: Set<string>,
     ): number {
@@ -1875,7 +1882,15 @@ export class TopologyService {
         // Only assign protocol fields to network devices, not servers/PCs/hosts
         const nonRoutingTypes = ['server', 'pc', 'host']
 
-        // Clear old protocol fields on ALL nodes (including servers that may have stale ASNs)
+        // Snapshot the existing ASNs BEFORE clearing — needed for keepExistingAsn.
+        const existingAsn = new Map<string, number>()
+        for (const n of nodes) {
+            if (n.asn != null && n.asn > 0) { existingAsn.set(n.id, n.asn) }
+        }
+
+        // Clear protocol-derived fields on ALL nodes (servers may have stale ASNs).
+        // We keep asn off the clear list when keepExistingAsn is honored —
+        // restoration happens immediately below.
         for (const n of nodes) {
             n.asn = undefined
             n.ospfArea = undefined
@@ -1886,12 +1901,19 @@ export class TopologyService {
             n.srv6Locator = undefined
         }
 
+        const keepExisting = config.keepExistingAsn === true
+        /** Should this node's ASN come from the existing value? True only
+         *  when keepExisting is on AND the node had a value before clear. */
+        const shouldKeep = (n: { id: string }): boolean =>
+            keepExisting && existingAsn.has(n.id)
+
         if (proto === 'ebgp') {
             const spineAsnStart = config.spineAsnStart ?? 65000
             const leafAsnStart  = config.leafAsnStart ?? 65100
             let spineIdx = 0, leafIdx = 0, otherIdx = 0
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }
+                if (shouldKeep(n)) { n.asn = existingAsn.get(n.id); continue }
                 const r = role(n)
                 if (r === 'spine' || r === 'super-spine') { n.asn = spineAsnStart + spineIdx++ }
                 else if (r === 'leaf' || r === 'border-leaf' || r === 'tor') { n.asn = leafAsnStart + leafIdx++ }
@@ -1904,10 +1926,28 @@ export class TopologyService {
             // leaves); ibgp-fullmesh skips the RR setup so every node
             // peers with every other node directly. Practical limit:
             // full mesh stops being maintainable past ~6-8 nodes.
+            //
+            // keepExisting note for iBGP: even if a node has an existing AS,
+            // we still ASSIGN the shared AS to it for consistency with iBGP
+            // semantics. If the operator truly wants per-node ASNs, that's
+            // eBGP — not iBGP. We log a warning when the existing AS differs
+            // from the shared one so they're aware.
             const sharedAsn = config.spineAsnStart ?? 65000
+            const mismatches: string[] = []
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }
+                const existing = existingAsn.get(n.id)
+                if (existing != null && existing !== sharedAsn) {
+                    mismatches.push(`${n.label} (was AS ${existing})`)
+                }
                 n.asn = sharedAsn; n.ospfArea = 0
+            }
+            if (mismatches.length && keepExisting) {
+                console.warn(
+                    `[applyProtocol] iBGP requires a shared AS but these ` +
+                    `nodes had a different one — overwritten to ${sharedAsn}: ` +
+                    mismatches.join(', '),
+                )
             }
         } else if (proto === 'ospf' || proto === 'ospfv3') {
             let sidIdx = 1

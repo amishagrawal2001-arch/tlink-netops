@@ -2751,6 +2751,42 @@ netops-3d-canvas {
   color: #cbd5e1;
 }
 
+// Pull-ASN affordance in the Set Protocol dialog — sits at the top of the
+// form so the operator can run it BEFORE configuring the protocol. Result
+// status renders inline next to the button.
+.protocol-asn-pull {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.protocol-asn-pull-status {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  font-family: var(--font-mono, "SF Mono", Menlo, monospace);
+  white-space: normal;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.bulk-cred-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  margin: 4px 0 10px;
+  padding: 6px 8px;
+  background: rgba(74, 222, 128, 0.06);
+  border-left: 2px solid #4ade80;
+  border-radius: 3px;
+
+  input[type="checkbox"] { margin: 0; }
+}
+
 // ASN-change warning — only renders when the topology already has ASNs
 // assigned. Uses a different accent (amber/red) than the blue explainer
 // so it reads as caution-not-info.

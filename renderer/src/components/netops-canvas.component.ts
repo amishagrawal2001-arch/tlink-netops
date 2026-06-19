@@ -688,6 +688,39 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis' = 'none'
     /** iBGP-fullmesh scope for Set Protocol dialog. */
     protocolIbgpScope: 'all' | 'leaf-only' = 'all'
+    /** Default-on when the topology already has an ASN on any node.
+     *  Prevents the Set Protocol Apply from overwriting live device ASNs. */
+    protocolKeepExistingAsn = false
+    /** Status message after a Pull-AS run, shown inline in the dialog. */
+    protocolPullAsnStatus = ''
+    protocolPullAsnRunning = false
+
+    /** SSH each node in the topology and ask it for its current AS.
+     *  Updates node.asn so subsequent Set Protocol Apply can preserve it.
+     *  No-op for nodes without SSH credentials (server/host/missing creds). */
+    async pullAsnsFromDevices (): Promise<void> {
+        if (this.protocolPullAsnRunning) { return }
+        this.protocolPullAsnRunning = true
+        this.protocolPullAsnStatus = 'Pulling ASNs from devices…'
+        this.cdr.markForCheck()
+        try {
+            const r = await this.invSvc.pullAsnAcrossTopology()
+            const linesOk = r.perNode.filter(p => p.asn != null).map(p => `${p.label}=${p.asn}`).join(', ')
+            const linesFail = r.perNode.filter(p => p.asn == null).map(p => p.label).join(', ')
+            this.protocolPullAsnStatus =
+                `✓ ${r.pulled} pulled${linesOk ? ' (' + linesOk + ')' : ''}` +
+                (r.failed > 0 ? `  ·  ${r.failed} failed${linesFail ? ' (' + linesFail + ')' : ''}` : '') +
+                (r.skipped > 0 ? `  ·  ${r.skipped} skipped (no SSH creds)` : '')
+            // Once we have pulled at least one ASN, switch on keep-existing
+            // by default so the operator doesn't accidentally undo it.
+            if (r.pulled > 0) { this.protocolKeepExistingAsn = true }
+        } catch (err) {
+            this.protocolPullAsnStatus = `Pull failed: ${(err as Error).message}`
+        } finally {
+            this.protocolPullAsnRunning = false
+            this.cdr.markForCheck()
+        }
+    }
     protocolSpineAsn = 65000
     protocolLeafAsn = 65100
 
@@ -7053,6 +7086,11 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         this.protocolSrgbEnd = 23999
         this.protocolSrv6LocatorBase = 'fc00:0'
         this.protocolScope = this.selectedNodeIds.size > 0 ? 'selected' : 'all'
+        // Default keep-existing ON when the topology already has any ASN —
+        // safer behavior for live fabrics. Operators bringing greenfield
+        // labs through the dialog can uncheck for a clean assignment.
+        this.protocolKeepExistingAsn = this.topologyHasExistingAsn
+        this.protocolPullAsnStatus = ''
         this.showProtocolDialog = true
         this.cdr.markForCheck()
     }
@@ -7074,6 +7112,7 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
                 srgbEnd: this.protocolSrgbEnd,
                 srv6LocatorBase: this.protocolSrv6LocatorBase,
                 ibgpScope: this.protocolIbgpScope,
+                keepExistingAsn: this.protocolKeepExistingAsn,
             }, nodeIds)
         } catch (err) {
             this.statusMsg = `Protocol apply failed: ${(err as Error).message}`

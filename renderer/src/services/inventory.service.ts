@@ -324,6 +324,101 @@ export class InventoryService implements OnDestroy {
         this._pruneStore()
     }
 
+    // ── Pull AS from device ──────────────────────────────────────────────────
+
+    /**
+     * SSH into the node, ask it for its currently-committed BGP autonomous-
+     * system number, and write the value to node.asn. Lets the topology
+     * track the live device state instead of falling through to the tool's
+     * default ASN when Set Protocol or Service Profile runs.
+     *
+     * Per-vendor extraction:
+     *   • Juniper: `show configuration | display set | match autonomous-system`
+     *   • Cisco IOS/NX-OS/EOS: `show running-config | include router bgp`
+     *
+     * Returns the parsed AS on success, null otherwise (no SSH, no
+     * credentials, no match in output, device unreachable, vendor not
+     * recognized). Caller decides what to do with null (skip / warn /
+     * keep tool default).
+     */
+    async pullAsnFromDevice (nodeId: string): Promise<number | null> {
+        const node = this.topoSvc.getNode(nodeId)
+        if (!node) { return null }
+        const api = (window as any).netopsAPI
+        if (!api?.sshRunCommand) { return null }
+
+        const host = (node.mgmtIp ?? '').split('/')[0].trim()
+        const username = (node.sshUsername ?? '').trim()
+        const password = node.sshPassword ?? ''
+        if (!host || !username || !password) { return null }
+
+        const vendorKey = (node.vendor ?? '').trim().toLowerCase()
+        // Per-vendor command + parser. Wraps with `cli -c "..."` for root-
+        // Junos automatically via getVendorCommands' shell-detection path.
+        let command = ''
+        let parse: (out: string) => number | null = () => null
+        if (vendorKey === 'juniper') {
+            const isRoot = username === 'root'
+            const base = 'show configuration | display set | match autonomous-system'
+            command = isRoot ? `cli -c "${base}"` : base
+            parse = (out) => {
+                // Junos output: `set routing-options autonomous-system 4200001000`
+                const m = /autonomous-system\s+(\d+)/i.exec(out)
+                return m ? Number(m[1]) : null
+            }
+        } else if (vendorKey === 'cisco' || vendorKey === 'arista') {
+            command = 'show running-config | include router bgp'
+            parse = (out) => {
+                // Both vendors: `router bgp 65001`
+                const m = /router\s+bgp\s+(\d+)/i.exec(out)
+                return m ? Number(m[1]) : null
+            }
+        } else {
+            return null
+        }
+
+        try {
+            const result = await api.sshRunCommand({
+                host, port: node.sshPort ?? 22, username, password,
+                timeoutMs: 10000,
+                command,
+            })
+            if (!result.ok || !result.output) { return null }
+            const asn = parse(result.output)
+            if (asn == null || !Number.isFinite(asn) || asn <= 0) { return null }
+            this.topoSvc.updateNodeConfig(nodeId, { asn })
+            console.log(`[pullAsn] ${node.label}: AS ${asn} pulled from device`)
+            return asn
+        } catch (err) {
+            console.warn(`[pullAsn] ${node.label}: error`, err)
+            return null
+        }
+    }
+
+    /** Pull ASN from every routable node in the topology in parallel.
+     *  Returns a summary that the caller can render in the dialog. */
+    async pullAsnAcrossTopology (): Promise<{ pulled: number; skipped: number; failed: number; perNode: Array<{ label: string; asn: number | null }> }> {
+        const nodes = this.topoSvc.topology.nodes.filter(n =>
+            !['server', 'pc', 'host'].includes(n.type)
+            && n.mgmtIp && n.sshUsername && n.sshPassword,
+        )
+        const results = await Promise.allSettled(
+            nodes.map(n => this.pullAsnFromDevice(n.id).then(asn => ({ label: n.label, asn }))),
+        )
+        let pulled = 0, failed = 0
+        const perNode: Array<{ label: string; asn: number | null }> = []
+        for (const r of results) {
+            if (r.status === 'fulfilled') {
+                perNode.push(r.value)
+                if (r.value.asn != null) { pulled++ } else { failed++ }
+            } else {
+                failed++
+            }
+        }
+        const skipped = this.topoSvc.topology.nodes.length - nodes.length
+        return { pulled, skipped, failed, perNode }
+    }
+
     // ── Config Backup ────────────────────────────────────────────────────────
 
     async backupConfig (
