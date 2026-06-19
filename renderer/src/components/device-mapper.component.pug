@@ -445,16 +445,15 @@
           [title]='selectedDeviceHosts.size > 0 ? "Build topology from the " + selectedDeviceHosts.size + " selected device(s) and the LLDP links between them" : "Create a topology node for every discovered device and draw a link for every LLDP adjacency. Adds to the current canvas."',
           (click)='buildTopologyFromDiscovery(false)'
         ) 🔗 Build Topology{{ selectedDeviceHosts.size > 0 ? ' (' + selectedDeviceHosts.size + ')' : '' }}
-        //- Replace & Build — wipes the current canvas. Does NOT auto-populate
-        //- from the LLDP-discovered inventory. Use Build Topology after this
-        //- if you want to populate from discovery, or just start building
-        //- manually on the empty canvas.
+        //- Replace & Build — wipes the current canvas, then populates it
+        //- with the discovered devices + LLDP links in one shot. Distinct
+        //- from "Build Topology" which is additive (keeps existing nodes).
         button.mapper-btn(
-          *ngIf='activeTab === "inventory"',
+          *ngIf='activeTab === "inventory" && discoveredDevices.length',
           type='button',
-          title='Wipe the current canvas (delete every node + link). Does NOT load the LLDP-discovered topology — use Build Topology after this if you want to populate from discovery.',
-          (click)='clearCanvasRequested.emit()'
-        ) ⟳ Replace &amp; Build
+          [title]='selectedDeviceHosts.size > 0 ? "Wipe the current canvas, then build from the " + selectedDeviceHosts.size + " selected device(s) + their LLDP links" : "Wipe the current canvas, then rebuild from the " + discoveredDevices.length + " discovered device(s) + LLDP links"',
+          (click)='buildTopologyFromDiscovery(true)'
+        ) ⟳ Replace &amp; Build{{ selectedDeviceHosts.size > 0 ? ' (' + selectedDeviceHosts.size + ')' : '' }}
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', (click)='exportInventoryCsv()') 📥 Export CSV
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length', type='button', title='Lossless export — preserves interfaces array and round-trips with import', (click)='exportInventoryJson()') 📥 Export JSON
         button.mapper-btn(*ngIf='activeTab === "inventory" && discoveredDevices.length && !showClearConfirm', (click)='clearAllDevices()') Clear All
