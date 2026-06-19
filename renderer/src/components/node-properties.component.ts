@@ -551,6 +551,7 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
             portSuffix:    this.node.portSuffix ?? '',
             operatingSpeed: this.node.operatingSpeed,
             asn:           this.node.asn,
+            role:          (this.node.role ?? '') as any,
             ospfArea:      this.node.ospfArea,
             isisLevel:     this.node.isisLevel,
             nodeSid:       this.node.nodeSid,
@@ -1968,6 +1969,53 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         if (portSuffix) { details.push(`suffix=${portSuffix}`) }
         this.portGenMsg = `Generated ${ports.length} ${vendor} port labels + startup config${details.length ? ` (${details.join(', ')})` : ''}`
         this.cdr.markForCheck()
+    }
+
+    /** Roles surfaced in the Info-tab Role dropdown. Mirrors the NodeRole
+     *  enum + Device Mapper's availableRoles so labels stay consistent. */
+    readonly availableRoles: Array<{ value: string; label: string }> = [
+        { value: 'super-spine', label: 'Super-Spine' },
+        { value: 'spine',       label: 'Spine' },
+        { value: 'core',        label: 'Core' },
+        { value: 'aggregation', label: 'Aggregation' },
+        { value: 'border-leaf', label: 'Border-Leaf' },
+        { value: 'leaf',        label: 'Leaf' },
+        { value: 'tor',         label: 'ToR' },
+        { value: 'access',      label: 'Access' },
+        { value: 'gateway',     label: 'Gateway' },
+        { value: 'custom',      label: 'Custom / Unspecified' },
+    ]
+
+    /** What role the topology service would auto-infer from the node's
+     *  label if no explicit role is set. Shown as the placeholder in the
+     *  dropdown so the operator sees what the auto-infer would pick. */
+    get inferredRoleLabel (): string {
+        if (!this.node) { return '' }
+        const lbl = this.node.label.toLowerCase()
+        if (lbl.includes('super-spine'))                              { return 'Super-Spine' }
+        if (lbl.includes('spine'))                                    { return 'Spine' }
+        if (lbl.includes('border-leaf') || lbl.includes('borderleaf')) { return 'Border-Leaf' }
+        if (lbl.includes('leaf'))                                     { return 'Leaf' }
+        if (lbl.includes('tor'))                                      { return 'ToR' }
+        if (lbl.includes('core'))                                     { return 'Core' }
+        if (lbl.includes('agg'))                                      { return 'Aggregation' }
+        if (lbl.includes('access'))                                   { return 'Access' }
+        if (lbl.includes('gateway') || lbl.includes('gw'))            { return 'Gateway' }
+        if (this.node.type === 'server')                              { return 'Access' }
+        return 'Custom'
+    }
+
+    /** Persist a Role change. Empty string → clear (back to auto-infer).
+     *  Triggers config regeneration because Role flows into the BGP-group
+     *  / EVPN-overlay emitters AND into Service Profile's port-rule
+     *  matching, so a stale config would be misleading. */
+    applyRole (): void {
+        if (!this.nodeId) { return }
+        const raw = (this.draft.role ?? '').trim()
+        const validValues = new Set(this.availableRoles.map(r => r.value))
+        const role = (raw && validValues.has(raw)) ? raw : undefined
+        this.svc.updateNodeConfig(this.nodeId, { role: role as any })
+        this.svc.regenerateConfigs()
     }
 
     applyAsn (): void {
