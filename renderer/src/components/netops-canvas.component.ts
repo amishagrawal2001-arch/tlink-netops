@@ -439,11 +439,19 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
     // click. Default ON for overlay-required profiles, since EVPN without
     // an underlay AS / loopback / link IPs won't actually come up.
     serviceConfigureOverlay = true
-    serviceUnderlayProto: 'ebgp' | 'ibgp-rr' = 'ebgp'
+    serviceUnderlayProto: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' = 'ebgp'
     serviceSpineAsn = 65000
     serviceLeafAsn  = 65100
     serviceAutoLoopbacks = true
     serviceAutoLinkIps   = true
+
+    /** True when AT LEAST one node already has an ASN assigned. Drives
+     *  the "ASN change will reset BGP sessions" warning in the dialogs —
+     *  greenfield topologies (no ASNs yet) get a quiet experience; live
+     *  fabrics get a heads-up before clicking Apply. */
+    get topologyHasExistingAsn (): boolean {
+        return this.topology.nodes.some(n => n.asn != null && n.asn > 0)
+    }
 
     /** True when the currently-selected profile sets overlayEnabled=true.
      *  Drives the visibility of the overlay-underlay form section in the
@@ -675,7 +683,7 @@ export class NetopsCanvasComponent implements OnInit, OnDestroy {
 
     // Set Protocol dialog
     showProtocolDialog = false
-    protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' = 'none'
+    protocolChoice: 'none' | 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis' = 'none'
     protocolSpineAsn = 65000
     protocolLeafAsn = 65100
 

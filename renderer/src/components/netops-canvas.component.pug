@@ -3124,7 +3124,33 @@
             span.bulk-cred-label Underlay
             select.bulk-cred-input([(ngModel)]='serviceUnderlayProto')
               option(value='ebgp') eBGP Clos (unique ASN/node)
-              option(value='ibgp-rr') iBGP with Route Reflector
+              option(value='ibgp-rr') iBGP with Route Reflector (shared AS, spines as RR)
+              option(value='ibgp-fullmesh') iBGP full mesh (shared AS, all-to-all peering)
+          //- One-line explainer for each underlay choice — helps the operator
+          //- pick without leaving the dialog. The eBGP+iBGP-overlay note
+          //- explains the dual-AS pattern that confuses most newcomers.
+          .svc-overlay-explainer(*ngIf='serviceUnderlayProto === "ebgp"')
+            | eBGP Clos = each node has its own AS. The EVPN overlay then
+            | runs as iBGP using a SEPARATE shared overlay-AS (set per-node
+            | via the `overlayAsn` field; configured via Node Properties or
+            | the sample-deployment template pattern). Modern Junos applies
+            | this as `local-as` override on the OVERLAY BGP group.
+          .svc-overlay-explainer(*ngIf='serviceUnderlayProto === "ibgp-rr"')
+            | iBGP with RR = every node shares the same AS; spines act as
+            | route reflectors and leaves peer only with spines. Cleanest at
+            | scale (works up to 100s of leaves per RR pair).
+          .svc-overlay-explainer(*ngIf='serviceUnderlayProto === "ibgp-fullmesh"')
+            | iBGP full mesh = every node shares the same AS and peers with
+            | every other node directly. Simplest config, but operationally
+            | unmaintainable past ~6–8 nodes (N×(N−1)/2 sessions).
+          //- ASN-change warning — only shown when the topology already has
+          //- ASNs assigned. Pushing a different AS to a live device resets
+          //- every BGP session that used the old AS as `local-as` →
+          //- ~30 s of EVPN signaling outage. Worth a heads-up.
+          .svc-asn-warning(*ngIf='topologyHasExistingAsn')
+            | ⚠ ASNs are already set on your topology. Apply will overwrite
+            | them — on live devices, this resets every BGP session for ~30 s
+            | after push. Greenfield deployments can ignore this.
           .bulk-cred-row
             span.bulk-cred-label Spine ASN Start
             input.bulk-cred-input(
@@ -3958,7 +3984,8 @@
           select.bulk-cred-input([(ngModel)]='protocolChoice', (ngModelChange)='protocolSrMpls = $event === "isis"')
             option(value='none') — None (clear) —
             option(value='ebgp') eBGP Clos (unique ASN/node)
-            option(value='ibgp-rr') iBGP with Route Reflector
+            option(value='ibgp-rr') iBGP with Route Reflector (shared AS, spines as RR)
+            option(value='ibgp-fullmesh') iBGP full mesh (shared AS, all-to-all peering)
             option(value='ospf') OSPF
             option(value='ospfv3') OSPFv3 (IPv6)
             option(value='isis') IS-IS
@@ -3996,9 +4023,9 @@
               [(ngModel)]='protocolLeafAsn'
             )
           .bulk-cred-hint(*ngIf='protocolLeafAsnAsdot') 4-byte ASN — asdot: {{ protocolLeafAsnAsdot }}
-        ng-container(*ngIf='protocolChoice === "ibgp-rr"')
+        ng-container(*ngIf='protocolChoice === "ibgp-rr" || protocolChoice === "ibgp-fullmesh"')
           .asn-range-hint
-            | Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Same ASN used on every iBGP-RR fabric node.
+            | Accepts 2-byte (1–65535) or 4-byte (65536–4294967295). Same ASN used on every iBGP fabric node.
             .asn-presets
               span.asn-preset-label Quick-set:
               button.asn-preset-chip(type='button', (click)='protocolSpineAsn = 65000') 2-byte (65000)
@@ -4059,6 +4086,14 @@
             label(style='display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer')
               input(type='checkbox', [(ngModel)]='protocolAutoAssignLinks')
               span Auto-assign link IPs (for BGP adjacency / IGP interfaces)
+        //- ASN-reset warning — only shown when the topology already has
+        //- ASNs assigned and the chosen protocol will overwrite them.
+        //- Pushing a new AS to a live device resets every BGP session
+        //- that used the old AS as `local-as` → ~30 s outage.
+        .svc-asn-warning(*ngIf='topologyHasExistingAsn && (protocolChoice === "ebgp" || protocolChoice === "ibgp-rr" || protocolChoice === "ibgp-fullmesh")')
+          | ⚠ ASNs are already set on your topology. Apply will overwrite them
+          | — on live devices, this resets every BGP session for ~30 s after
+          | push. Greenfield deployments can ignore this.
         .auto-ip-error(*ngIf='protocolWarnings.length > 0')
           div(*ngFor='let w of protocolWarnings') ⚠ {{ w }}
       .auto-ip-actions

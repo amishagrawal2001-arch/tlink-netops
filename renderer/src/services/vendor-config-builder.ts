@@ -113,7 +113,7 @@ export interface VendorConfigContext {
     overlayAsn?: number
     routerId?: string                 // loopback IP without mask
     bgpNeighbors?: BgpNeighbor[]
-    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' | 'none'
+    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis' | 'none'
 
     // EVPN-VXLAN overlay context
     overlayEnabled?: boolean

@@ -1834,7 +1834,7 @@ export class TopologyService {
      * @returns Number of nodes affected.
      */
     applyProtocol (
-        proto: 'none' | 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis',
+        proto: 'none' | 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis',
         config: {
             spineAsnStart?: number; leafAsnStart?: number; ospfArea?: number; isisLevel?: 1 | 2 | 12;
             srMpls?: boolean; srv6?: boolean; srgbStart?: number; srgbEnd?: number; srv6LocatorBase?: string;
@@ -1883,7 +1883,13 @@ export class TopologyService {
                 else if (r === 'leaf' || r === 'border-leaf' || r === 'tor') { n.asn = leafAsnStart + leafIdx++ }
                 else { n.asn = (leafAsnStart) + 200 + otherIdx++ }
             }
-        } else if (proto === 'ibgp-rr') {
+        } else if (proto === 'ibgp-rr' || proto === 'ibgp-fullmesh') {
+            // Both iBGP variants use a single shared AS across every node.
+            // Difference is in the EMITTER: ibgp-rr makes spines act as
+            // route reflectors (cluster id + route-reflector-client on
+            // leaves); ibgp-fullmesh skips the RR setup so every node
+            // peers with every other node directly. Practical limit:
+            // full mesh stops being maintainable past ~6-8 nodes.
             const sharedAsn = config.spineAsnStart ?? 65000
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }

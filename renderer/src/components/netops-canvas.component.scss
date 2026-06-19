@@ -2728,6 +2728,34 @@ netops-3d-canvas {
   line-height: 1.4;
 }
 
+// Per-underlay-mode explainer block — one line per choice, shown inline
+// under the underlay dropdown to help the operator pick without leaving
+// the dialog.
+.svc-overlay-explainer {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  background: rgba(96, 165, 250, 0.06);
+  border-left: 2px solid #60a5fa;
+  padding: 6px 10px;
+  margin: 4px 0 8px;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+
+// ASN-change warning — only renders when the topology already has ASNs
+// assigned. Uses a different accent (amber/red) than the blue explainer
+// so it reads as caution-not-info.
+.svc-asn-warning {
+  font-size: 11px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border-left: 2px solid #f59e0b;
+  padding: 6px 10px;
+  margin: 8px 0;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+
 // ─── Push Output dialog ──────────────────────────────────────────────────────
 // Expandable replacement for the prior window.alert summary. Failed nodes
 // expand by default; ✓ rows stay collapsed unless the user clicks them.

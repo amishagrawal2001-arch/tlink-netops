@@ -362,7 +362,7 @@ export interface Topology {
     updatedAt: string
 
     // Routing config generation hints (set by builder or template)
-    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis'
+    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis'
     overlayEnabled?: boolean
     vniBase?: number             // default 10000; VNI = vniBase + vlanId
     irbEnabled?: boolean         // generate IRB interfaces for inter-VLAN routing (distributed gateway)
@@ -649,7 +649,7 @@ export interface BuilderConfig {
     vlanTemplateId?: string
     serviceProfileId?: string
     generateConfigs: boolean
-    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis' | 'none'
+    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis' | 'none'
     overlayEnabled?: boolean
     spineAsnStart?: number     // default 65000
     leafAsnStart?: number      // default 65100
@@ -1048,7 +1048,7 @@ export interface TopologyTemplate {
     nodes: TemplateNodeDef[]
     links: TemplateLinkDef[]
     // Routing hints — propagated to Topology when loaded
-    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ospf' | 'ospfv3' | 'isis'
+    underlayProtocol?: 'ebgp' | 'ibgp-rr' | 'ibgp-fullmesh' | 'ospf' | 'ospfv3' | 'isis'
     overlayEnabled?: boolean
     vniBase?: number
     irbEnabled?: boolean
