@@ -819,6 +819,24 @@ function _isControlCommand (cmd: string): boolean {
 function _runSshShellSession (
     payload: SshPayload, commands: string[], delayMs: number,
 ): Promise<SshResult> {
+    // ── Strict-commit detection ─────────────────────────────────────────────
+    // If the command stream contains a `commit` / `save` / `copy run start`
+    // step (i.e. the postamble actually tried to commit), then we REQUIRE
+    // seeing a vendor-specific success marker (`commit complete`, `commit
+    // successful`, `copy complete`, etc.) before reporting ok. Otherwise a
+    // silent commit failure — license missing, candidate conflict, exclusive-
+    // lock held by another session — falls through the no-error-pattern
+    // path and reports false success.
+    const expectsCommit = commands.some(c => {
+        const t = c.trim().toLowerCase()
+        return t === 'commit'
+            || t === 'commit and-quit'
+            || t === 'commit confirmed'
+            || t === 'commit now'
+            || t === 'write memory'
+            || t === 'copy running-config startup-config'
+            || t === 'save'
+    })
     return new Promise(resolve => {
         const conn = new Client()
         let settled = false
@@ -913,6 +931,20 @@ function _runSshShellSession (
                 return {
                     ok: false,
                     message: `Device error on ${payload.host}: ${errLine.trim()} · output: ${tail}`,
+                    output: trimmed || '(no output)',
+                }
+            }
+            // ── Strict mode: when a commit step is in the command stream we
+            //    REQUIRE seeing a success marker. Silently-failing commits
+            //    (license missing, candidate conflict, exclusive lock by
+            //    another session) print a warning that doesn't match our
+            //    error patterns and would otherwise fall through as ok.
+            //    Fail closed instead.
+            if (expectsCommit) {
+                const tail = trimmed.length > 400 ? '…' + trimmed.slice(-400) : trimmed
+                return {
+                    ok: false,
+                    message: `Commit not confirmed on ${payload.host} — no "commit complete" / "commit successful" / "copy complete" marker in device output. The candidate config may not be applied. · output: ${tail || '(no output)'}`,
                     output: trimmed || '(no output)',
                 }
             }
