@@ -684,17 +684,54 @@ $radius:      6px;
 .port-channelize-controls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
 
-    input {
-        width: 90px;
-        flex: 0 0 90px;
+    .input-channel-count {
+        width: 70px;
+        flex: 0 0 70px;
     }
 }
 
 .btn-channelize {
     padding: 4px 10px;
     font-size: 11px;
+}
+
+// Quick-pick channel-count chips (Junos canonical: 2× / 4× / 8×).
+.btn-channel-chip {
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.12s;
+
+    &:hover {
+        border-color: var(--accent);
+        background: rgba(59, 130, 246, 0.12);
+    }
+}
+
+.btn-channel-chip-active {
+    background: var(--accent, #3b82f6);
+    border-color: var(--accent, #3b82f6);
+    color: #fff;
+
+    &:hover {
+        background: var(--accent, #3b82f6);
+        color: #fff;
+    }
+}
+
+// Small inline hint inside a field-label, e.g. " · now: 4×".
+.field-hint {
+    font-size: 11px;
+    color: var(--text-muted, #9ca3af);
+    font-weight: 400;
 }
 
 // ─── VLAN table (VLANs tab) ─────────────────────────────────────────────────

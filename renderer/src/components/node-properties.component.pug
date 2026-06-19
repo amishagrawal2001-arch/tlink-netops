@@ -662,19 +662,46 @@
                       (change)='toggleTrunkAllowAll(port.id, $any($event.target).checked)'
                     )
                     | All
+          //- ── Breakout / channelization (Junos et-* ports) ────────────────
+          //- Channelizes a physical et-0/0/N port into N×sub-ports labeled
+          //- et-0/0/N:0 .. et-0/0/N:M-1. Quick-pick chips cover the canonical
+          //- Junos values (2/4/8); free-form input is also available for
+          //- one-off counts. Reset clears the breakout (back to single port).
           .port-channelize(*ngIf='canChannelizePort(port)')
-            label.field-label Breakout Channels
+            label.field-label
+              | Breakout Channels
+              span.field-hint(*ngIf='currentChannelCount(port) > 0', title='Currently channelized')
+                | &nbsp;· now: {{ currentChannelCount(port) }}×
             .port-channelize-controls
-              input.form-input.input-sm(
+              //- Quick-pick chips — one click per canonical count.
+              button.btn-ghost.btn-channel-chip(
+                *ngFor='let n of breakoutQuickPicksForPort(port)',
+                type='button',
+                [class.btn-channel-chip-active]='currentChannelCount(port) === n',
+                [title]='"Channelize into " + n + " sub-ports (" + port.label + ":0 .. " + port.label + ":" + (n - 1) + ")"',
+                (click)='applyBreakoutCount(port.id, n)'
+              ) {{ n }}×
+              //- Free-form override (still accepts 2-16 for non-standard counts).
+              input.form-input.input-sm.input-channel-count(
                 type='number',
-                min='0',
-                max='64',
+                min='2',
+                max='16',
                 [ngModel]='portChannelDrafts[port.id]',
                 (ngModelChange)='portChannelDrafts[port.id] = $event',
-                placeholder='0'
+                placeholder='custom',
+                title='Custom channel count (2–16). Tab to commit, then Apply.'
               )
-              button.btn-ghost.btn-channelize(type='button', (click)='channelizePort(port.id)') Apply
-              button.btn-ghost.btn-channelize(type='button', *ngIf='hasChannelizedGroup(port)', (click)='resetChannelizedPort(port.id)') Reset
+              button.btn-ghost.btn-channelize(
+                type='button',
+                title='Apply the custom channel count to this port',
+                (click)='channelizePort(port.id)'
+              ) Apply
+              button.btn-ghost.btn-channelize(
+                type='button',
+                *ngIf='hasChannelizedGroup(port)',
+                title='Remove breakout — collapse sub-ports back to a single physical port',
+                (click)='resetChannelizedPort(port.id)'
+              ) Reset
 
     .vendor-msg(*ngIf='portGenMsg') {{ portGenMsg }}
 

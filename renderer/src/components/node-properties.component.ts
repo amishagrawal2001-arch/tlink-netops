@@ -1050,30 +1050,56 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     private _speedBreakoutChannelsForPort (port: NodePort): number | null {
         const vendor = (this.draft.vendor ?? this.node?.vendor ?? '').trim().toLowerCase()
         const switchFamily = this._sanitizeSwitchFamily(this.draft.switchFamily ?? this.node?.switchFamily ?? '')
-        if (vendor !== 'juniper' || switchFamily !== 'QFX') { return null }
+        if (vendor !== 'juniper') { return null }
 
         const model = this._sanitizeModel(this.draft.model ?? this.node?.model ?? '').toUpperCase()
-        if (!model) { return null }
         const speed = port.speed
         if (!speed) { return null }
 
-        const isQfx524x = model.startsWith('QFX5240') || model.startsWith('QFX5241')
-        if (isQfx524x) {
-            if (speed === '800G') { return 1 }
-            if (speed === '400G') { return 2 }
-            if (speed === '200G') { return 4 }
-            if (speed === '100G') { return 8 }
+        // ── QFX series ──────────────────────────────────────────────────────
+        if (switchFamily === 'QFX') {
+            if (!model) { return null }
+            const isQfx524x = model.startsWith('QFX5240') || model.startsWith('QFX5241')
+            if (isQfx524x) {
+                if (speed === '800G') { return 1 }
+                if (speed === '400G') { return 2 }
+                if (speed === '200G') { return 4 }
+                if (speed === '100G') { return 8 }
+                return null
+            }
+
+            const isQfx523x513x522x =
+                model.startsWith('QFX5230') ||
+                model.startsWith('QFX5130') ||
+                model.startsWith('QFX5220')
+            if (isQfx523x513x522x) {
+                if (speed === '400G') { return 1 }
+                if (speed === '200G') { return 4 }
+                if (speed === '100G') { return 8 }
+                return null
+            }
             return null
         }
 
-        const isQfx523x513x522x =
-            model.startsWith('QFX5230') ||
-            model.startsWith('QFX5130') ||
-            model.startsWith('QFX5220')
-        if (isQfx523x513x522x) {
-            if (speed === '400G') { return 1 }
-            if (speed === '200G') { return 4 }
-            if (speed === '100G') { return 8 }
+        // ── MX series (modern et-* MICs/MPCs) ───────────────────────────────
+        // Common patterns: 400G ports breakout to 4x100G or 2x200G;
+        // 100G ports breakout to 4x25G or 10x10G; 200G to 2x100G or 4x50G.
+        // Suggest a sensible default; the user can override.
+        if (switchFamily === 'MX') {
+            if (speed === '800G') { return 2 }   // 2x400G
+            if (speed === '400G') { return 4 }   // 4x100G
+            if (speed === '200G') { return 2 }   // 2x100G
+            if (speed === '100G') { return 4 }   // 4x25G
+            if (speed === '40G')  { return 4 }   // 4x10G
+            return null
+        }
+
+        // ── PTX series ──────────────────────────────────────────────────────
+        if (switchFamily === 'PTX') {
+            if (speed === '800G') { return 2 }   // 2x400G
+            if (speed === '400G') { return 4 }   // 4x100G
+            if (speed === '200G') { return 2 }
+            if (speed === '100G') { return 4 }
             return null
         }
 
@@ -2836,7 +2862,12 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
     private _sanitizeChannelCount (value: unknown, fallback = 2): number {
         const parsed = typeof value === 'number' ? value : Number(value)
         if (!Number.isFinite(parsed)) { return fallback }
-        return Math.max(2, Math.min(64, Math.trunc(parsed)))
+        // Lower bound is 2 — a channel count of 1 is the un-channelized case
+        // (handled separately via resetChannelizedPort). Upper bound is 8 for
+        // Junos; the docs allow `number-of-sub-ports` of 2/4/8 universally,
+        // and a few high-density platforms accept 16 — keep headroom but
+        // narrow from the prior 64.
+        return Math.max(2, Math.min(16, Math.trunc(parsed)))
     }
 
     private _nextPortId (usedIds: Set<string>, baseId: string): string {
@@ -2883,6 +2914,39 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         if (channelIdx !== null && channelIdx !== 0) { return false }
         if (forcedChannels === 1) { return this.hasChannelizedGroup(port) }
         return true
+    }
+
+    /**
+     * Quick-pick channel counts to render as chips next to the breakout
+     * input. Drawn from the speed-aware default (when known) plus the
+     * canonical Junos values 2/4/8 — deduped, ordered. When a model has
+     * `forcedChannels === 1`, no breakout is possible and we return [].
+     */
+    breakoutQuickPicksForPort (port: NodePort): number[] {
+        const forced = this._speedBreakoutChannelsForPort(port)
+        if (forced === 1) { return [] }
+        const set = new Set<number>([2, 4, 8])
+        if (forced && forced >= 2) { set.add(forced) }
+        return [...set].sort((a, b) => a - b)
+    }
+
+    /** Apply a specific channel count from a quick-pick chip in one click. */
+    applyBreakoutCount (portId: string, count: number): void {
+        this.portChannelDrafts[portId] = count
+        this.channelizePort(portId)
+    }
+
+    /** Currently-rendered channel count for a port (0 if not channelized). */
+    currentChannelCount (port: NodePort): number {
+        if (!this.hasChannelizedGroup(port)) { return 0 }
+        const baseLabel = this._portBaseLabel(port.label)
+        const group = this._groupPortsForBase(baseLabel)
+        let max = 0
+        for (const p of group) {
+            const ch = this._channelIndexFromLabel(p.label)
+            if (ch !== null) { max = Math.max(max, ch + 1) }
+        }
+        return max
     }
 
     hasChannelizedGroup (port: NodePort): boolean {
