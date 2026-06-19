@@ -1920,33 +1920,45 @@ export class TopologyService {
                 else { n.asn = (leafAsnStart) + 200 + otherIdx++ }
             }
         } else if (proto === 'ibgp-rr' || proto === 'ibgp-fullmesh') {
-            // Both iBGP variants use a single shared AS across every node.
-            // Difference is in the EMITTER: ibgp-rr makes spines act as
-            // route reflectors (cluster id + route-reflector-client on
-            // leaves); ibgp-fullmesh skips the RR setup so every node
-            // peers with every other node directly. Practical limit:
-            // full mesh stops being maintainable past ~6-8 nodes.
+            // Both iBGP variants nominally use a single shared AS. The
+            // RR vs full-mesh distinction is in the EMITTER (cluster id +
+            // route-reflector-client lines for RR mode); the ASN logic
+            // is the same.
             //
-            // keepExisting note for iBGP: even if a node has an existing AS,
-            // we still ASSIGN the shared AS to it for consistency with iBGP
-            // semantics. If the operator truly wants per-node ASNs, that's
-            // eBGP — not iBGP. We log a warning when the existing AS differs
-            // from the shared one so they're aware.
+            // keepExisting policy: honor the operator's intent universally.
+            // If they checked the box, they're saying "do NOT overwrite my
+            // ASN" — even if the devices are configured with different
+            // per-node ASNs (which technically means they're running eBGP,
+            // not iBGP, regardless of what the dropdown says). The emitter
+            // walks per-link ASN comparisons and produces the right BGP
+            // group config either way (ibgpNeighbors = same-AS peers,
+            // ebgpNeighbors = different-AS peers). Letting keepExisting
+            // override the protocol choice is the safer default — the user
+            // can always switch the checkbox off if they want to FORCE a
+            // re-numbering into a true iBGP fabric.
             const sharedAsn = config.spineAsnStart ?? 65000
             const mismatches: string[] = []
             for (const n of nodes) {
                 if (nonRoutingTypes.includes(n.type)) { continue }
-                const existing = existingAsn.get(n.id)
-                if (existing != null && existing !== sharedAsn) {
-                    mismatches.push(`${n.label} (was AS ${existing})`)
+                n.ospfArea = 0
+                if (shouldKeep(n)) {
+                    const existing = existingAsn.get(n.id) as number
+                    n.asn = existing
+                    if (existing !== sharedAsn) {
+                        mismatches.push(`${n.label} (AS ${existing})`)
+                    }
+                    continue
                 }
-                n.asn = sharedAsn; n.ospfArea = 0
+                n.asn = sharedAsn
             }
-            if (mismatches.length && keepExisting) {
+            if (mismatches.length) {
                 console.warn(
-                    `[applyProtocol] iBGP requires a shared AS but these ` +
-                    `nodes had a different one — overwritten to ${sharedAsn}: ` +
-                    mismatches.join(', '),
+                    `[applyProtocol] iBGP chosen but keep-existing preserved ` +
+                    `per-node ASNs that differ from shared AS ${sharedAsn}: ` +
+                    mismatches.join(', ') +
+                    `. Emitter will produce eBGP-style sessions on links where ` +
+                    `local-AS ≠ peer-AS. Uncheck "Keep existing ASNs" to force ` +
+                    `a true iBGP renumbering.`,
                 )
             }
         } else if (proto === 'ospf' || proto === 'ospfv3') {
