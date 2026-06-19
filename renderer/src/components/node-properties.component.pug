@@ -939,7 +939,18 @@
     .config-push-output(*ngIf='configPushOutput != null')
       .config-push-output-header
         span Push Output
-        button.config-push-close(type='button', (click)='closePushOutput()') ✕
+        .config-push-output-actions
+          button.btn-secondary.btn-expand(
+            type='button',
+            title='Copy the push output to the clipboard',
+            (click)='copyPushOutputToClipboard()'
+          ) 📋 Copy
+          button.btn-secondary.btn-expand(
+            type='button',
+            title='Open the push output in a wider standalone window for long Junos errors / multi-page logs',
+            (click)='expandPushOutputWindow()'
+          ) ⛶ Expand
+          button.config-push-close(type='button', (click)='closePushOutput()') ✕
       pre.config-push-pre {{ configPushOutput }}
 
     //- ── Config Diff ──────────────────────────────────────────────────────────

@@ -14179,6 +14179,90 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
 
     configPushAllRunning = false
 
+    /** Result state for the bulk-push output dialog. Populated when
+     *  pushAllConfigs finishes (success or failure). Replaces the native
+     *  window.alert that truncated long device-error tails. */
+    pushOutputDialog: {
+        visible: boolean
+        success: number
+        failed: number
+        results: Array<{ nodeId: string; nodeLabel: string; ok: boolean; message?: string; durationMs?: number }>
+        timestamp: string
+    } | null = null
+    closePushOutputDialog (): void { this.pushOutputDialog = null; this.cdr.markForCheck() }
+    /** Copy the full output (summary + every per-node message) to clipboard
+     *  so the operator can paste it into a ticket / chat without scrolling
+     *  through a wall of text. */
+    copyPushOutputToClipboard (): void {
+        if (!this.pushOutputDialog) { return }
+        const d = this.pushOutputDialog
+        const lines: string[] = [
+            `Config push @ ${d.timestamp}`,
+            `  ${d.success} succeeded · ${d.failed} failed`,
+            '',
+        ]
+        for (const r of d.results) {
+            lines.push(`${r.ok ? '✓' : '✗'} ${r.nodeLabel}`)
+            if (r.message) {
+                for (const ln of r.message.split('\n')) { lines.push('    ' + ln) }
+            }
+            lines.push('')
+        }
+        try {
+            navigator.clipboard.writeText(lines.join('\n'))
+            this.statusMsg = 'Push output copied to clipboard'
+        } catch (e) {
+            this.statusMsg = 'Could not copy — paste from the dialog manually'
+        }
+        this.cdr.markForCheck()
+    }
+    /** Open the same data in a wider standalone browser window. Mirrors the
+     *  pattern used by Config Diff's expand-window action. */
+    expandPushOutputWindow (): void {
+        const d = this.pushOutputDialog
+        if (!d) { return }
+        const escHtml = (s: string) => (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const rowsHtml = d.results.map(r => {
+            const cls = r.ok ? 'ok' : 'fail'
+            const icon = r.ok ? '✓' : '✗'
+            return `<details class="row ${cls}" ${r.ok ? '' : 'open'}>
+  <summary><span class="icon">${icon}</span> <span class="label">${escHtml(r.nodeLabel)}</span></summary>
+  <pre>${escHtml(r.message || '(no output)')}</pre>
+</details>`
+        }).join('\n')
+        const win = window.open('', '_blank', 'width=1200,height=800,menubar=no,toolbar=no')
+        if (!win) { return }
+        win.document.write(`<!DOCTYPE html><html><head><title>Push Output</title>
+<style>
+  body { margin:0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px; background: #1a1a2e; color: #e0e0e0; }
+  .header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+  .header h2 { margin: 0; font-size: 16px; }
+  .stats { display: flex; gap: 16px; font-size: 13px; }
+  .stats .ok { color: #4ade80; }
+  .stats .fail { color: #f87171; }
+  .body { padding: 12px 20px; overflow: auto; height: calc(100vh - 60px); }
+  details.row { border: 1px solid #2a2a44; border-radius: 4px; margin: 6px 0; background: #15162d; }
+  details.row.fail { border-color: rgba(248,113,113,0.4); }
+  details.row.ok   { border-color: rgba(74,222,128,0.4); }
+  details.row summary { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+  details.row summary .icon { display: inline-block; width: 16px; }
+  details.row.ok summary .icon { color: #4ade80; }
+  details.row.fail summary .icon { color: #f87171; }
+  details.row pre { margin: 0; padding: 10px 18px 14px 36px; white-space: pre-wrap; word-break: break-word; color: #cbd5e1; }
+</style></head><body>
+<div class="header">
+  <h2>Push Output · ${escHtml(d.timestamp)}</h2>
+  <div class="stats">
+    <span class="ok">✓ ${d.success}</span>
+    <span class="fail">✗ ${d.failed}</span>
+  </div>
+</div>
+<div class="body">${rowsHtml}</div>
+</body></html>`)
+        win.document.close()
+        win.document.title = `Push Output (${d.success} ok / ${d.failed} fail)`
+    }
+
     // ── Bulk Replace — preview dialog ───────────────────────────────────────
     //
     // Opens a review step before the ⇅ Replace All push: every pushable node
@@ -15486,13 +15570,20 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
         }
 
         if (failed > 0) {
-            const summary = `Config push: ${success} succeeded, ${failed} failed\n\n` +
-                errors.map(e => `  ✗ ${e}`).join('\n\n') +
-                `\n\n(Full output available in DevTools console — View → Toggle Developer Tools)`
             // Status bar: show first error only (summaries can be long)
             this.statusMsg = `Config push: ${success}✓ ${failed}✗ · ${errors[0] ?? ''}`
+            // Replace native window.alert (which truncated long device errors
+            // mid-sentence) with an expandable in-app dialog. Per-node rows
+            // are collapsible; failed nodes expand by default. Copy-to-
+            // clipboard + open-in-window mirror the diff-window pattern.
+            this.pushOutputDialog = {
+                visible: true,
+                success,
+                failed,
+                results: pushHistoryResults,
+                timestamp: new Date().toLocaleString(),
+            }
             this.cdr.detectChanges()
-            window.alert(summary)
 
             // ── Auto-rollback offer ─────────────────────────────────────
             // If a meaningful fraction of the batch failed BUT some did succeed,
@@ -15529,8 +15620,17 @@ pre { font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-al
             }
         } else {
             this.statusMsg = `Config push complete: ${success} config(s) pushed successfully`
+            // Even on full success, show the expandable dialog so the operator
+            // can review per-node output if they want — much friendlier than
+            // dismissing a native alert and losing the data.
+            this.pushOutputDialog = {
+                visible: true,
+                success,
+                failed,
+                results: pushHistoryResults,
+                timestamp: new Date().toLocaleString(),
+            }
             this.cdr.detectChanges()
-            window.alert(`Config push complete: ${success} config(s) pushed successfully`)
         }
         this.cdr.detectChanges()
     }

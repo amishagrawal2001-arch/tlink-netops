@@ -3560,6 +3560,38 @@ export class NodePropertiesComponent implements OnInit, OnChanges, OnDestroy {
         this.cdr.markForCheck()
     }
 
+    /** Copy the per-node push output to the clipboard. */
+    copyPushOutputToClipboard (): void {
+        if (!this.configPushOutput) { return }
+        try {
+            navigator.clipboard.writeText(this.configPushOutput)
+        } catch { /* clipboard not available in headless test runs */ }
+    }
+
+    /** Open the per-node push output in a wider standalone window. Mirrors
+     *  the diff-window pattern so long Junos commit-failure tails don't get
+     *  cropped in the cramped right-panel <pre>. */
+    expandPushOutputWindow (): void {
+        if (!this.configPushOutput || !this.node) { return }
+        const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const win = window.open('', '_blank', 'width=1200,height=800,menubar=no,toolbar=no')
+        if (!win) { return }
+        win.document.write(`<!DOCTYPE html><html><head><title>Push Output: ${this.node.label}</title>
+<style>
+  body { margin: 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12.5px; background: #1a1a2e; color: #e0e0e0; }
+  .header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+  .header h2 { margin: 0; font-size: 16px; }
+  .body { padding: 12px 20px; white-space: pre-wrap; word-break: break-word; overflow: auto; height: calc(100vh - 60px); }
+</style></head><body>
+<div class="header">
+  <h2>Push Output: ${escHtml(this.node.label)}</h2>
+</div>
+<div class="body">${escHtml(this.configPushOutput)}</div>
+</body></html>`)
+        win.document.close()
+        win.document.title = `Push Output: ${this.node.label}`
+    }
+
     // ── Config Diff (Running vs Startup) ────────────────────────────────────
 
     configDiffOutput: { line: string; type: 'add' | 'remove' | 'same' }[] | null = null

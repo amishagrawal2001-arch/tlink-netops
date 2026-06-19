@@ -4730,6 +4730,50 @@
     (clearCanvasRequested)='onClearCanvasFromMapper()'
   )
 
+  //- ── Push Output dialog ──────────────────────────────────────────────
+  //- Replaces the prior window.alert that truncated long device-error
+  //- tails. Per-node rows are <details> so failed nodes can stay expanded
+  //- while the operator scrolls through the rest. ⛶ opens the same data in
+  //- a wider standalone browser window (mirrors the Config Diff pattern).
+  .push-output-overlay(*ngIf='pushOutputDialog?.visible', (click)='closePushOutputDialog()')
+    .push-output-dialog((click)='$event.stopPropagation()')
+      .push-output-header
+        .push-output-title
+          | Push Output
+          span.push-output-stats
+            span.push-stat-ok ✓ {{ pushOutputDialog.success }}
+            |  ·
+            span.push-stat-fail ✗ {{ pushOutputDialog.failed }}
+            |  ·
+            span.push-stat-time {{ pushOutputDialog.timestamp }}
+        .push-output-actions
+          button.push-output-btn(
+            type='button',
+            title='Copy the full output to clipboard so you can paste into a ticket / chat',
+            (click)='copyPushOutputToClipboard()'
+          ) 📋 Copy
+          button.push-output-btn(
+            type='button',
+            title='Open in a wider standalone window',
+            (click)='expandPushOutputWindow()'
+          ) ⛶ Expand
+          button.push-output-close(
+            type='button',
+            (click)='closePushOutputDialog()'
+          ) ✕
+      .push-output-body
+        details.push-output-row(
+          *ngFor='let r of pushOutputDialog.results',
+          [class.push-output-row-ok]='r.ok',
+          [class.push-output-row-fail]='!r.ok',
+          [open]='!r.ok'
+        )
+          summary
+            span.push-output-icon {{ r.ok ? '✓' : '✗' }}
+            span.push-output-label {{ r.nodeLabel }}
+            span.push-output-msg-preview(*ngIf='!r.ok') &nbsp;— {{ r.message ? (r.message.split(' · output:')[0] || r.message) : 'failed' }}
+          pre.push-output-pre {{ r.message || '(no output)' }}
+
   //- ── Config Diff dialog ───────────────────────────────────────────────
   config-diff(
     *ngIf='showConfigDiff',
